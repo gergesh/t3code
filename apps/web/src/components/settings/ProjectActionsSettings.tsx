@@ -13,9 +13,10 @@ import { useEnvironments } from "../../state/environments";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
+  importableT3FileScripts,
+  newScriptInputFromT3File,
   ProjectScriptEditorDialog,
   ScriptIcon,
-  type NewProjectScriptInput,
   type ProjectScriptEditorRequest,
 } from "../projectScriptEditor";
 import { Button } from "../ui/button";
@@ -83,26 +84,9 @@ export function ProjectActionsSettings() {
     representativeMember?.environmentId ?? EnvironmentId.make("none"),
     representativeMember?.workspaceRoot ?? null,
   );
-  const importableScripts = t3File.scripts.filter(
-    (fileScript) =>
-      !scripts.some(
-        (script) =>
-          script.command === fileScript.command ||
-          script.name.toLowerCase() === fileScript.name.toLowerCase(),
-      ),
-  );
+  const importableScripts = importableT3FileScripts(scripts, t3File.scripts);
   const importFileScript = async (fileScript: T3ProjectFileScript) => {
-    const payload: NewProjectScriptInput = {
-      name: fileScript.name,
-      command: fileScript.command,
-      icon: fileScript.icon ?? "play",
-      runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
-      waitForSetup: fileScript.runOnWorktreeCreate === true && fileScript.async === false,
-      runOnSettle: fileScript.runOnSettle ?? false,
-      keybinding: null,
-      previewUrl: fileScript.previewUrl ?? null,
-      autoOpenPreview: fileScript.previewUrl ? (fileScript.autoOpenPreview ?? false) : false,
-    };
+    const payload = newScriptInputFromT3File(fileScript);
     const result = await submit(null, payload);
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
