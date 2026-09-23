@@ -20,6 +20,7 @@ import * as Layer from "effect/Layer";
 
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as WorktreeCommands from "../vcs/WorktreeCommands.ts";
 
 export const layer = Layer.merge(
   Layer.mock(GitWorkflow.GitWorkflowService)({
@@ -56,6 +57,11 @@ export const layerRealGit = GitWorkflow.layer.pipe(
       Layer.mock(PullRequestService.PullRequestService)({}),
       ServerSettings.layerTest(),
     ),
+  ),
+  Layer.provide(
+    Layer.mock(WorktreeCommands.WorktreeCommands)({
+      resolve: () => Effect.succeed({ create: "", remove: "" }),
+    }),
   ),
   Layer.provide(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer))),
   Layer.provideMerge(GitVcsDriver.layer),
