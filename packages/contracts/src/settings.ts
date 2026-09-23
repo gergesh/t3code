@@ -1025,6 +1025,16 @@ export const WorktreeCleanup = Schema.NullOr(
 );
 export type WorktreeCleanup = typeof WorktreeCleanup.Type;
 
+/**
+ * Shell commands that replace the built-in worktree steps (`git worktree add`
+ * and `git worktree remove`). An empty command keeps the built-in step.
+ */
+export const WorktreeCommands = Schema.Struct({
+  create: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  remove: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+});
+export type WorktreeCommands = typeof WorktreeCommands.Type;
+
 export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "worktreeCleanup",
   "defaultModelSelection",
@@ -1032,6 +1042,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "defaultThreadEnvMode",
   "newWorktreesStartFromOrigin",
   "worktreeSubmodules",
+  "worktreeCommands",
   "defaultAutoPull",
   "defaultProjectScripts",
   "enableAgentBrowserAccess",
@@ -1069,6 +1080,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   worktreeSubmodules: ForwardCompatibleOptional(WorktreeSubmodules),
+  worktreeCommands: Schema.optionalKey(WorktreeCommands),
   defaultAutoPull: Schema.optionalKey(Schema.Boolean),
   defaultProjectScripts: Schema.optionalKey(Schema.Array(ProjectScript)),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
@@ -1314,6 +1326,7 @@ export const ServerSettings = Schema.Struct({
   worktreeSubmodules: ForwardCompatibleNullable(WorktreeSubmodules).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  worktreeCommands: WorktreeCommands.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   /** Clones default to `<addProjectBaseDirectory>/<host>/<owner>/<repo>`, like ghq. */
   ghqCloneLayout: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -1676,6 +1689,12 @@ export const ServerSettingsPatch = Schema.Struct({
   defaultThreadEnvMode: Schema.optionalKey(Schema.NullOr(ThreadEnvMode)),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   worktreeSubmodules: Schema.optionalKey(Schema.NullOr(WorktreeSubmodules)),
+  worktreeCommands: Schema.optionalKey(
+    Schema.Struct({
+      create: Schema.optionalKey(TrimmedString),
+      remove: Schema.optionalKey(TrimmedString),
+    }),
+  ),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   ghqCloneLayout: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),

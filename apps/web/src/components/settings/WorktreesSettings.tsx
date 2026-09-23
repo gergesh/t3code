@@ -13,6 +13,7 @@ import {
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { WorktreeCleanupSection, WorktreesDirectoryRow } from "./StorageSettings";
+import { WorktreeCommandsSettings } from "./WorktreeCommandsSettings";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 function StartFromRemoteRow() {
@@ -60,6 +61,7 @@ export function WorktreesSettingsPanel() {
       <SettingsSection id="worktree-creation" title="Creation">
         {!isProjectScope && <WorktreesDirectoryRow />}
         <StartFromRemoteRow />
+        <WorktreeCommandsSettings />
         <AdvancedSettings targetIds={[searchableSetting("worktree-submodules").id]}>
           <WorktreeSubmodulesRow />
         </AdvancedSettings>

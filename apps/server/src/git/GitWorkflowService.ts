@@ -1,5 +1,6 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 
@@ -31,8 +32,10 @@ import {
 
 import * as GitManager from "./GitManager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import type { CustomWorktreeCheckoutInput } from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import * as WorktreeCommands from "../vcs/WorktreeCommands.ts";
 
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
@@ -175,6 +178,7 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
+  const worktreeCommands = yield* WorktreeCommands.WorktreeCommands;
   const fileSystem = yield* FileSystem.FileSystem;
 
   // Nested projects and path aliases must share the checkout's branch-mutation lease.
@@ -183,6 +187,50 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => rootPath),
       Effect.flatMap((cwd) => withWorkspaceLease(cwd, effect)),
     );
+
+  const pathExists = (path: string) =>
+    fileSystem.exists(path).pipe(Effect.orElseSucceed(() => false));
+
+  /**
+   * Replaces `git worktree remove` with the user's command. Without `force`, a worktree with
+   * changes is refused first, the guarantee the built-in step gives.
+   */
+  const removeWithCustomCommand = Effect.fn("GitWorkflowService.removeWithCustomCommand")(
+    function* (command: string, input: VcsRemoveWorktreeInput) {
+      const operation = "GitWorkflowService.removeWorktree";
+      if (!input.force && (yield* pathExists(input.path))) {
+        const status = yield* git.execute({
+          operation,
+          cwd: input.path,
+          args: ["status", "--porcelain"],
+        });
+        if (status.stdout.trim() !== "") {
+          return yield* new GitCommandError({
+            operation,
+            command,
+            cwd: input.cwd,
+            detail: `${input.path} has uncommitted changes. Remove it with force to discard them.`,
+          });
+        }
+      }
+      yield* worktreeCommands.run({
+        operation,
+        command,
+        projectCwd: input.cwd,
+        env: WorktreeCommands.worktreeRemoveCommandEnv(input),
+      });
+      if (yield* pathExists(input.path)) {
+        return yield* new GitCommandError({
+          operation,
+          command,
+          cwd: input.cwd,
+          detail: `The custom worktree remove command left ${input.path} in place.`,
+        });
+      }
+      // Drop any registration the command left behind so the path can be reused.
+      yield* git.pruneWorktrees({ cwd: input.cwd });
+    },
+  );
 
   const ensureGit = Effect.fn("GitWorkflowService.ensureGit")(function* (
     operation: string,
@@ -412,7 +460,26 @@ export const make = Effect.gen(function* () {
     }),
     createWorktree: Effect.fn("GitWorkflowService.createWorktree")(function (input, options) {
       return ensureGitCommand("GitWorkflowService.createWorktree", input.cwd).pipe(
-        Effect.andThen(gitManager.createWorktree(input, options)),
+        Effect.andThen(worktreeCommands.resolve(input.cwd)),
+        Effect.flatMap(({ create }) =>
+          gitManager.createWorktree(
+            input,
+            create === ""
+              ? options
+              : {
+                  ...options,
+                  customCheckout: (checkout: CustomWorktreeCheckoutInput) =>
+                    worktreeCommands
+                      .run({
+                        operation: "GitWorkflowService.createWorktree",
+                        command: create,
+                        projectCwd: input.cwd,
+                        env: WorktreeCommands.worktreeCreateCommandEnv(input.cwd, checkout),
+                      })
+                      .pipe(Effect.map(WorktreeCommands.reportedCheckoutPath)),
+                },
+          ),
+        ),
       );
     }),
     listLocalBranchNames: Effect.fn("GitWorkflowService.listLocalBranchNames")(function (cwd) {
@@ -458,7 +525,10 @@ export const make = Effect.gen(function* () {
     ),
     removeWorktree: Effect.fn("GitWorkflowService.removeWorktree")(function (input) {
       return ensureGitCommand("GitWorkflowService.removeWorktree", input.cwd).pipe(
-        Effect.andThen(git.removeWorktree(input)),
+        Effect.andThen(worktreeCommands.resolve(input.cwd)),
+        Effect.flatMap(({ remove }) =>
+          remove === "" ? git.removeWorktree(input) : removeWithCustomCommand(remove, input),
+        ),
       );
     }),
     pruneWorktrees: Effect.fn("GitWorkflowService.pruneWorktrees")(function (input) {

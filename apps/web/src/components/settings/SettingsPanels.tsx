@@ -549,6 +549,10 @@ export function useSettingsRestore(onRestored?: () => void) {
     DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin
       ? ["New worktrees start from remote"]
       : []),
+    ...(settings.worktreeCommands.create !== DEFAULT_UNIFIED_SETTINGS.worktreeCommands.create ||
+    settings.worktreeCommands.remove !== DEFAULT_UNIFIED_SETTINGS.worktreeCommands.remove
+      ? ["Worktree commands"]
+      : []),
     ...(settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
       ? ["Add project base directory"]
       : []),
@@ -667,6 +671,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       providerHealthRefreshInterval: DEFAULT_UNIFIED_SETTINGS.providerHealthRefreshInterval,
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
       newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
+      worktreeCommands: DEFAULT_UNIFIED_SETTINGS.worktreeCommands,
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
       ghqCloneLayout: DEFAULT_UNIFIED_SETTINGS.ghqCloneLayout,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,

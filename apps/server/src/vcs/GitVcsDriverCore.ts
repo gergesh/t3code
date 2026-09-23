@@ -4240,64 +4240,106 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }
       worktreePath = path.join(parentDir, repoName, directoryName);
     }
+    const requestedPath = worktreePath;
     const newRefName = input.newRefName;
-    if (newRefName) {
-      // Kept apart from the checkout so the shared-config lock only covers the tracking write.
-      yield* createBranchAt(
-        "GitVcsDriver.createWorktree.createBranch",
-        { cwd: input.cwd, branch: newRefName, startPoint: input.refName },
-        "git worktree add failed",
-      );
-    }
-    const args = ["worktree", "add", "--", worktreePath, newRefName ?? input.refName];
     const progress = options?.progress;
     const onCheckoutProgress = progress?.onCheckoutProgress;
+    const readBranchBase =
+      newRefName && input.baseRefName
+        ? resolveBranchBase(input.cwd, input.baseRefName)
+        : Effect.succeed(null);
 
-    // Both reads leave the repository alone, so they share one round trip before the checkout.
-    const [configuredCheckoutWorkers, base] = yield* Effect.all(
-      [
-        readConfigValue(input.cwd, "checkout.workers"),
-        input.newRefName && input.baseRefName
-          ? resolveBranchBase(input.cwd, input.baseRefName)
-          : Effect.succeed(null),
-      ],
-      { concurrency: "unbounded" },
-    );
-    const checkoutWorkers = configuredCheckoutWorkers ?? "0";
-    yield* executeGitWithStableDiagnostics(
-      "GitVcsDriver.createWorktree",
-      input.cwd,
-      ["-c", `checkout.workers=${checkoutWorkers}`, ...args],
-      {
-        fallbackErrorDetail: "git worktree add failed",
-        // Large checkouts and post-checkout hooks can legitimately run for many
-        // minutes; a fixed deadline kills them and leaves an orphaned worktree.
-        timeoutMs: null,
-        ...(onCheckoutProgress
-          ? {
-              // Git only prints checkout progress when stderr is a tty or the
-              // delay elapsed. GIT_PROGRESS_DELAY=0 forces it through the pipe.
-              env: { GIT_PROGRESS_DELAY: "0" },
-              progress: {
-                onStderrLine: (line) => {
-                  const parsed = parseGitCheckoutProgressLine(line);
-                  return parsed ? onCheckoutProgress(parsed) : Effect.void;
+    let base: Effect.Success<typeof readBranchBase>;
+    if (options?.customCheckout) {
+      base = yield* readBranchBase;
+      // `git worktree add` creates missing parents; a custom command may not.
+      yield* fileSystem
+        .makeDirectory(path.dirname(requestedPath), { recursive: true })
+        .pipe(Effect.ignore);
+      const reportedPath = yield* options.customCheckout({
+        worktreePath: requestedPath,
+        branch: targetBranch,
+        startRef: input.refName,
+        createBranch: newRefName !== undefined,
+      });
+      worktreePath = reportedPath ?? requestedPath;
+      // T3 records the branch on the thread, so a command that checked out
+      // something else would leave every later git action lying.
+      const [topLevel = "", checkedOut = null] = yield* runGitStdout(
+        "GitVcsDriver.createWorktree.verifyCustomCheckout",
+        worktreePath,
+        ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"],
+      ).pipe(
+        Effect.map((stdout) => stdout.trim().split("\n")),
+        Effect.orElseSucceed(() => []),
+      );
+      const realPath = (value: string) =>
+        fileSystem.realPath(value).pipe(Effect.orElseSucceed(() => value));
+      const isWorktreeRoot =
+        topLevel !== "" && (yield* realPath(topLevel)) === (yield* realPath(worktreePath));
+      if (!isWorktreeRoot || checkedOut !== targetBranch) {
+        return yield* new GitCommandError({
+          operation: "GitVcsDriver.createWorktree",
+          command: "custom worktree create command",
+          cwd: input.cwd,
+          detail:
+            !isWorktreeRoot || checkedOut === null
+              ? `The custom worktree create command did not create a git worktree at ${worktreePath}.`
+              : `The custom worktree create command checked out ${checkedOut} at ${worktreePath}, expected ${targetBranch}.`,
+        });
+      }
+    } else {
+      if (newRefName) {
+        // Kept apart from the checkout so the shared-config lock only covers the tracking write.
+        yield* createBranchAt(
+          "GitVcsDriver.createWorktree.createBranch",
+          { cwd: input.cwd, branch: newRefName, startPoint: input.refName },
+          "git worktree add failed",
+        );
+      }
+      const args = ["worktree", "add", "--", requestedPath, newRefName ?? input.refName];
+      // Both reads leave the repository alone, so they share one round trip before the checkout.
+      const [configuredCheckoutWorkers, resolvedBase] = yield* Effect.all(
+        [readConfigValue(input.cwd, "checkout.workers"), readBranchBase],
+        { concurrency: "unbounded" },
+      );
+      base = resolvedBase;
+      const checkoutWorkers = configuredCheckoutWorkers ?? "0";
+      yield* executeGitWithStableDiagnostics(
+        "GitVcsDriver.createWorktree",
+        input.cwd,
+        ["-c", `checkout.workers=${checkoutWorkers}`, ...args],
+        {
+          fallbackErrorDetail: "git worktree add failed",
+          // Large checkouts and post-checkout hooks can legitimately run for many
+          // minutes; a fixed deadline kills them and leaves an orphaned worktree.
+          timeoutMs: null,
+          ...(onCheckoutProgress
+            ? {
+                // Git only prints checkout progress when stderr is a tty or the
+                // delay elapsed. GIT_PROGRESS_DELAY=0 forces it through the pipe.
+                env: { GIT_PROGRESS_DELAY: "0" },
+                progress: {
+                  onStderrLine: (line) => {
+                    const parsed = parseGitCheckoutProgressLine(line);
+                    return parsed ? onCheckoutProgress(parsed) : Effect.void;
+                  },
                 },
-              },
-            }
-          : {}),
-      },
-    ).pipe(
-      Effect.onError(() =>
-        newRefName
-          ? deleteLocalBranch({ cwd: input.cwd, refName: newRefName, force: true }).pipe(
-              Effect.catch((cause) =>
-                Effect.logWarning("could not remove the branch of a failed worktree", { cause }),
-              ),
-            )
-          : Effect.void,
-      ),
-    );
+              }
+            : {}),
+        },
+      ).pipe(
+        Effect.onError(() =>
+          newRefName
+            ? deleteLocalBranch({ cwd: input.cwd, refName: newRefName, force: true }).pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("could not remove the branch of a failed worktree", { cause }),
+                ),
+              )
+            : Effect.void,
+        ),
+      );
+    }
 
     if (progress?.onWorktreeClaimed) {
       yield* progress.onWorktreeClaimed(worktreePath);
