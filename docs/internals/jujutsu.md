@@ -142,6 +142,18 @@ preserves that guidance through the public repository-service error. Local jj pr
 such as an undescribed change, retain their actionable explanation instead. The remote remains
 for retry. Git's error mapper and publishing implementation are unchanged.
 
+## A thread's bookmark is born on its first commit
+
+`jj workspace add -r <base>` gets no bookmark. An empty bookmark on the base would sit in every
+`jj log` for threads that never produce work, and it would point at the base, not the work, anyway.
+Push, commit and workspace removal create it on `@-` through `bookmarkTo`.
+
+The workspace name is a digest of the bookmark name, so until then nothing in jj leads from the
+workspace back to its thread's name. [`JjWorkspaceBookmark`](../../apps/server/src/vcs/JjWorkspaceBookmark.ts)
+records it in the colocated git config, and `resolveWorkspaceRefName` falls back to that record
+before the nearest bookmark, which would otherwise be the base, and Push would target it. Anything
+that renames, switches or forgets a T3 workspace has to move or drop the record.
+
 ## Unavailable and unsupported repositories
 
 Missing `jj` or a version older than 0.46.0

@@ -43,7 +43,7 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { makeJjRefs } from "./JjRefs.ts";
 import { makeJjRemotes } from "./JjRemotes.ts";
 import { makeJjStackedAction, type JjStackedActionOps } from "./JjStackedAction.ts";
-import { workspaceNameForRef } from "./JjWorkspaces.ts";
+import { makeJjWorkspaces, workspaceNameForRef, type JjWorkspaceOps } from "./JjWorkspaces.ts";
 
 const decodeThreadProjection = Schema.decodeUnknownEffect(OrchestrationV2ThreadProjection);
 
@@ -84,6 +84,7 @@ interface ActionFixture {
   readonly path: Path.Path;
   readonly actions: JjStackedActionOps;
   readonly createRef: (cwd: string, refName: string) => Effect.Effect<unknown, GitCommandError>;
+  readonly workspaces: JjWorkspaceOps;
   readonly events: Array<GitActionProgressEvent>;
   /** Every process invocation the action made, so the built argv can be asserted directly. */
   readonly runs: Array<VcsProcess.VcsProcessInput>;
@@ -183,6 +184,14 @@ const withRepo = <A, E>(
       path,
       actions,
       createRef: (cwd, refName) => refs.createRef({ cwd, refName }),
+      workspaces: makeJjWorkspaces({
+        driver,
+        process,
+        fileSystem,
+        path,
+        worktreesDir: path.join(path.dirname(root), "worktrees"),
+        bookmarkTo: remotes.bookmarkTo,
+      }),
       events,
       runs,
       root,
@@ -581,6 +590,36 @@ describeJj("JjStackedAction commit phase", () => {
         assert.equal(first.push.status, "pushed");
         assert.equal(second.commit.status, "skipped_no_changes");
         assert.equal(second.push.status, "skipped_up_to_date");
+      }),
+    ),
+  );
+});
+
+describeJj("JjStackedAction in a thread workspace", () => {
+  it.effect("creates the thread's bookmark on the work when it first commits and pushes", () =>
+    withRepo(({ actions, driver, events, fileSystem, path, root, workspaces }) =>
+      Effect.gen(function* () {
+        const mainBefore = yield* driver.changeAt(root, 'bookmarks(exact:"main")');
+        const created = yield* workspaces.createWorktree({
+          cwd: root,
+          refName: "main",
+          newRefName: "t3/0123abcd",
+          path: null,
+        });
+        yield* fileSystem.writeFileString(path.join(created.worktree.path, "thread.txt"), "work\n");
+
+        const result = yield* actions.runStackedAction(
+          runInput({ cwd: created.worktree.path, action: "commit_push", commitMessage: "Work" }),
+          reporter(events),
+        );
+
+        assert.equal(result.push.status, "pushed");
+        assert.equal(result.push.branch, "t3/0123abcd");
+        const committed = yield* driver.changeAt(created.worktree.path, "@-");
+        assert.include(committed?.localBookmarks ?? [], "t3/0123abcd");
+        assert.include(committed?.description ?? "", "Work");
+        const mainAfter = yield* driver.changeAt(root, 'bookmarks(exact:"main")');
+        assert.equal(mainAfter?.commitId, mainBefore?.commitId);
       }),
     ),
   );
