@@ -15,11 +15,11 @@ import {
 } from "../hooks/useHandleNewThread";
 import { createScratchProjectActions } from "../hooks/useScratchProject";
 import { getClientSettings } from "../hooks/useSettings";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import { selectProjectGroupingSettings } from "@t3tools/client-runtime/state/project-grouping";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
+import { buildSidebarProjectSnapshots, resolveSidebarScopedProjectRef } from "../sidebarProjectGrouping";
 import { readProjects, readThreadShell } from "../state/entities";
 import { defaultProjectFallbackReadyAtom } from "../state/projects";
 import { environmentPresentations } from "../state/presentation";
@@ -94,6 +94,11 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       primaryEnvironmentId: appAtomRegistry.get(primaryEnvironmentIdAtom),
       resolveEnvironmentLabel: () => null,
     });
+  // The sidebar's scope filter, keyed like its own; several picked projects match no group.
+  const readSidebarScopeKey = () => {
+    const keys = useUiStateStore.getState().sidebarProjectScopeKeys;
+    return keys.length === 0 ? null : keys.join("\n");
+  };
   const canOperatePreview = (environmentId: EnvironmentId) =>
     readEnvironmentScope(environmentId, AuthPreviewOperateScope);
 
@@ -132,6 +137,19 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       },
       "chat.new": (event) => {
         const groups = readProjectGroups();
+        // Filtered to one project: that's the answer the picker would ask for.
+        const scopedProjectRef = legacySidebarEnabled
+          ? null
+          : resolveSidebarScopedProjectRef({
+              groups,
+              scopeKey: readSidebarScopeKey(),
+              preferredProjectRef: resolveThreadActionProjectRef(readThreadContext()),
+            });
+        if (scopedProjectRef) {
+          claim(event);
+          void handleNewThread(scopedProjectRef);
+          return;
+        }
         if (
           !shouldCreateNewThreadInCurrentProject(
             false,
