@@ -212,3 +212,25 @@ export function buildSidebarProjectPickerEntries(input: {
     ...entries.slice(preferredIndex + 1),
   ];
 }
+
+/**
+ * While the sidebar is filtered to one project, "new thread" targets that
+ * project instead of asking. Within the group, the member matching the
+ * contextual project (then its environment) wins, same as the picker.
+ */
+export function resolveSidebarScopedProjectRef(input: {
+  groups: ReadonlyArray<SidebarProjectSnapshot>;
+  scopeKey: string | null;
+  preferredProjectRef: ScopedProjectRef | null;
+}): ScopedProjectRef | null {
+  if (input.scopeKey === null) return null;
+  const group = input.groups.find((candidate) => candidate.projectKey === input.scopeKey);
+  if (!group) return null;
+  const [entry] = buildSidebarProjectPickerEntries({
+    groups: [group],
+    preferredProjectRef: input.preferredProjectRef,
+  });
+  return entry
+    ? { environmentId: entry.targetProject.environmentId, projectId: entry.targetProject.id }
+    : null;
+}

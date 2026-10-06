@@ -7,6 +7,7 @@ import {
   buildSidebarProjectSnapshots,
   resolveSidebarProjectScopeKey,
   getSidebarProjectSettingsKey,
+  resolveSidebarScopedProjectRef,
 } from "./sidebarProjectGrouping";
 import type { Project } from "./types";
 
@@ -206,6 +207,51 @@ describe("environment grouping", () => {
     });
     expect(pickerEntry?.isPreferred).toBe(true);
     expect(pickerEntry?.targetProject.id).toBe(canonical.id);
+  });
+
+  it("targets the scoped project for new threads, keeping the contextual environment", () => {
+    const primary = makeProject({ repositoryIdentity });
+    const remote = makeProject({
+      id: ProjectId.make("project-remote"),
+      environmentId: remoteEnvironmentId,
+      repositoryIdentity,
+    });
+    const separate = makeProject({
+      id: ProjectId.make("project-separate"),
+      title: "separate",
+      workspaceRoot: "/tmp/separate",
+    });
+    const groups = buildSidebarProjectSnapshots({
+      projects: [separate, primary, remote],
+      settings: defaultGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: () => null,
+    });
+    const scopeKey = repositoryIdentity.canonicalKey;
+
+    // Unscoped, or scoped to a project that no longer exists: nothing to target.
+    expect(
+      resolveSidebarScopedProjectRef({ groups, scopeKey: null, preferredProjectRef: null }),
+    ).toBeNull();
+    expect(
+      resolveSidebarScopedProjectRef({ groups, scopeKey: "missing", preferredProjectRef: null }),
+    ).toBeNull();
+    // Context in another project still lands in the scoped one.
+    expect(
+      resolveSidebarScopedProjectRef({
+        groups,
+        scopeKey,
+        preferredProjectRef: { environmentId: primaryEnvironmentId, projectId: separate.id },
+      }),
+    ).toEqual({ environmentId: primaryEnvironmentId, projectId: primary.id });
+    // Context inside the scoped group picks that member.
+    expect(
+      resolveSidebarScopedProjectRef({
+        groups,
+        scopeKey,
+        preferredProjectRef: { environmentId: remoteEnvironmentId, projectId: remote.id },
+      }),
+    ).toEqual({ environmentId: remoteEnvironmentId, projectId: remote.id });
   });
 
   it("keeps the current environment when available and falls back otherwise", () => {

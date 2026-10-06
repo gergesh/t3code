@@ -17,11 +17,14 @@ import { isPreviewAvailableFor } from "../browser/previewRuntime";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentScope } from "../state/session";
 import { selectProjectGroupingSettings } from "../logicalProject";
-import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
+import {
+  buildSidebarProjectSnapshots,
+  resolveSidebarScopedProjectRef,
+} from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useScratchProject } from "../hooks/useScratchProject";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isEditableFocused } from "../lib/editableFocus";
@@ -30,6 +33,7 @@ import { resolveShortcutCommand } from "../keybindings";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
+import { useUiStateStore } from "../uiStateStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
@@ -49,12 +53,13 @@ function ChatRouteGlobalShortcuts() {
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { scratchEnvironmentId, startScratchThread } = useScratchProject();
-  const projectGroupCount = buildSidebarProjectSnapshots({
+  const projectGroups = buildSidebarProjectSnapshots({
     projects,
     settings: projectGroupingSettings,
     primaryEnvironmentId,
     resolveEnvironmentLabel: () => null,
-  }).length;
+  });
+  const sidebarProjectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
@@ -116,7 +121,23 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.new") {
         event.preventDefault();
         event.stopPropagation();
-        if (!legacySidebarEnabled && projectGroupCount > 1) {
+        const scopedProjectRef = legacySidebarEnabled
+          ? null
+          : resolveSidebarScopedProjectRef({
+              groups: projectGroups,
+              scopeKey: sidebarProjectScopeKey,
+              preferredProjectRef: resolveThreadActionProjectRef({
+                activeDraftThread,
+                activeThread: activeThread ?? undefined,
+                defaultProjectRef,
+                handleNewThread,
+              }),
+            });
+        if (scopedProjectRef) {
+          void handleNewThread(scopedProjectRef);
+          return;
+        }
+        if (!legacySidebarEnabled && projectGroups.length > 1) {
           openCommandPalette({ open: "new-thread-in" });
           return;
         }
@@ -185,7 +206,8 @@ function ChatRouteGlobalShortcuts() {
     defaultProjectRef,
     previewOpen,
     primaryEnvironmentId,
-    projectGroupCount,
+    projectGroups,
+    sidebarProjectScopeKey,
     routeThreadRef,
     scratchEnvironmentId,
     selectedThreadKeysSize,
