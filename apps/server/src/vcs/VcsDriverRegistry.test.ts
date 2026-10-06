@@ -68,6 +68,7 @@ describeJj("VcsDriverRegistry JJ cache invalidation", () => {
 describe("VcsDriverRegistry", () => {
   it.effect("routes directly by VCS driver kind for non-repository workflows", () => {
     const layer = Layer.effect(VcsDriverRegistry.VcsDriverRegistry, VcsDriverRegistry.make).pipe(
+      Layer.provide(JjVcsDriver.layer),
       Layer.provide(NodeServices.layer),
       Layer.provide(
         Layer.mock(VcsProjectConfig.VcsProjectConfig)({
@@ -92,6 +93,7 @@ describe("VcsDriverRegistry", () => {
   it.effect("auto-detects a colocated workspace as jj, ahead of git, without a subprocess", () => {
     let processCalls = 0;
     const layer = Layer.effect(VcsDriverRegistry.VcsDriverRegistry, VcsDriverRegistry.make).pipe(
+      Layer.provide(JjVcsDriver.layer),
       Layer.provideMerge(NodeServices.layer),
       Layer.provide(
         Layer.mock(VcsProjectConfig.VcsProjectConfig)({
@@ -131,6 +133,7 @@ describe("VcsDriverRegistry", () => {
   // `rootDir`, that holds `.git` is the repository.
   const makeDiskBackedLayer = (rootDir: string, calls: string[]) =>
     Layer.effect(VcsDriverRegistry.VcsDriverRegistry, VcsDriverRegistry.make).pipe(
+      Layer.provide(JjVcsDriver.layer),
       Layer.provide(NodeServices.layer),
       Layer.provide(
         Layer.mock(VcsProjectConfig.VcsProjectConfig)({
