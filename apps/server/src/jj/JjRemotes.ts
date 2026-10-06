@@ -11,6 +11,7 @@ import {
   bookmarkNameArgument,
   exactStringPattern,
   localBookmarkRevset,
+  parseWorkspaceRefName,
   remoteBookmarkRevset,
   splitRemoteRefName,
 } from "../vcs/JjRevset.ts";
@@ -319,6 +320,8 @@ export const makeJjRemotes = (deps: JjRemoteOpsDeps): JjRemoteOps => {
     input: Parameters<JjRemoteOps["fetchRemote"]>[0],
     ignoreImmutable = false,
   ) {
+    // A workspace's working copy has no remote counterpart, and jj rejects `@` in `--branch`.
+    if (input.refName !== undefined && parseWorkspaceRefName(input.refName) !== null) return;
     const bookmark =
       input.refName === undefined
         ? undefined
