@@ -131,7 +131,12 @@ function refNameFromWorkspaceSegment(
 export const resolveWorkspaceRefName = Effect.fn("JjStatus.resolveWorkspaceRefName")(function* (
   driver: Pick<
     JjVcsDriverShape,
-    "repoPaths" | "listWorkspaces" | "changeAt" | "listBookmarks" | "countRevset"
+    | "repoPaths"
+    | "listWorkspaces"
+    | "changeAt"
+    | "listBookmarks"
+    | "countRevset"
+    | "recordedWorkspaceBookmark"
   >,
   cwd: string,
   segment: ReadonlyArray<JjSegmentRow>,
@@ -143,7 +148,12 @@ export const resolveWorkspaceRefName = Effect.fn("JjStatus.resolveWorkspaceRefNa
   const workspace = workspaces.find((entry) => entry.root === paths.workspaceRoot);
   if (workspace === undefined) return null;
   if (isT3WorkspaceName(workspace.name)) {
-    return refNameFromWorkspaceSegment(segment, workspace.name);
+    const bookmarked = refNameFromWorkspaceSegment(segment, workspace.name);
+    if (bookmarked !== null) return bookmarked;
+    // A workspace starts with no bookmark; its thread's name lives in the record until the first
+    // commit or push creates it.
+    const recorded = yield* driver.recordedWorkspaceBookmark(cwd, workspace.name);
+    return recorded !== null && workspaceNameForRef(recorded) === workspace.name ? recorded : null;
   }
   // Child bookmarks can share the parent's revision without becoming the parent's current ref.
   const otherManagedWorkspaces = new Set<string>();
