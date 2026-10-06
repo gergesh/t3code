@@ -3291,7 +3291,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   false,
                   scopeGroups.length,
                   projectGroups.length,
-                )
+                ) && scopedProjectGroups.length !== 1
               }
               searchInputRef={threadSearchInputRef}
               searchQuery={threadSearchQuery}
