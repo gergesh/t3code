@@ -524,7 +524,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Worktree create command",
     to: "/settings/general",
     scope: "project-defaults",
-    searchTerms: ["custom script workspace provider git worktree add clone t3.json"],
+    searchTerms: ["custom script workspace provider git worktree add jj clone t3.json"],
   },
   {
     id: "worktree-remove-command",

@@ -211,13 +211,14 @@ export const make = Effect.gen(function* () {
     fileSystem.exists(path).pipe(Effect.orElseSucceed(() => false));
 
   /**
-   * Replaces `git worktree remove` with the user's command. Without `force`, a worktree with
-   * changes is refused first, the guarantee the built-in step gives.
+   * Replaces `git worktree remove` / `jj workspace forget` with the user's command. Without
+   * `force`, a git worktree with changes is refused first, the guarantee the built-in step gives;
+   * jj has already snapshotted its working copy into a commit.
    */
   const removeWithCustomCommand = Effect.fn("GitWorkflowService.removeWithCustomCommand")(
-    function* (command: string, input: VcsRemoveWorktreeInput) {
+    function* (kind: WorkflowKind, command: string, input: VcsRemoveWorktreeInput) {
       const operation = "GitWorkflowService.removeWorktree";
-      if (!input.force && (yield* pathExists(input.path))) {
+      if (kind === "git" && !input.force && (yield* pathExists(input.path))) {
         const status = yield* git.execute({
           operation,
           cwd: input.path,
@@ -247,7 +248,9 @@ export const make = Effect.gen(function* () {
         });
       }
       // Drop any registration the command left behind so the path can be reused.
-      yield* git.pruneWorktrees({ cwd: input.cwd });
+      yield* kind === "git"
+        ? git.pruneWorktrees({ cwd: input.cwd })
+        : jjWorkflow.pruneWorktrees({ cwd: input.cwd });
     },
   );
 
@@ -674,35 +677,31 @@ export const make = Effect.gen(function* () {
       { git: git.listRefs, jj: jjWorkflow.listRefs },
     ),
     createWorktree: (input, options) =>
-      route("GitWorkflowService.createWorktree", commandRouting, {
-        git: (worktreeInput: VcsCreateWorktreeInput) =>
-          worktreeCommands.resolve(worktreeInput.cwd).pipe(
-            Effect.flatMap(({ create }) =>
-              gitManager.createWorktree(
-                worktreeInput,
-                create === ""
-                  ? options
-                  : {
-                      ...options,
-                      customCheckout: (checkout: CustomWorktreeCheckoutInput) =>
-                        worktreeCommands
-                          .run({
-                            operation: "GitWorkflowService.createWorktree",
-                            command: create,
-                            projectCwd: worktreeInput.cwd,
-                            env: WorktreeCommands.worktreeCreateCommandEnv(
-                              worktreeInput.cwd,
-                              checkout,
-                            ),
-                          })
-                          .pipe(Effect.map(WorktreeCommands.reportedCheckoutPath)),
-                    },
-              ),
-            ),
-          ),
-        jj: (worktreeInput: VcsCreateWorktreeInput) =>
-          jjWorkflow.createWorktree(worktreeInput, options),
-      })(input),
+      worktreeCommands.resolve(input.cwd).pipe(
+        Effect.flatMap(({ create }) => {
+          const resolvedOptions =
+            create === ""
+              ? options
+              : {
+                  ...options,
+                  customCheckout: (checkout: CustomWorktreeCheckoutInput) =>
+                    worktreeCommands
+                      .run({
+                        operation: "GitWorkflowService.createWorktree",
+                        command: create,
+                        projectCwd: input.cwd,
+                        env: WorktreeCommands.worktreeCreateCommandEnv(input.cwd, checkout),
+                      })
+                      .pipe(Effect.map(WorktreeCommands.reportedCheckoutPath)),
+                };
+          return route("GitWorkflowService.createWorktree", commandRouting, {
+            git: (worktreeInput: VcsCreateWorktreeInput) =>
+              gitManager.createWorktree(worktreeInput, resolvedOptions),
+            jj: (worktreeInput: VcsCreateWorktreeInput) =>
+              jjWorkflow.createWorktree(worktreeInput, resolvedOptions),
+          })(input);
+        }),
+      ),
     listLocalBranchNames: (cwd) =>
       route("GitWorkflowService.listLocalBranchNames", commandRouting, {
         git: () => git.listLocalBranchNames(cwd),
@@ -754,17 +753,17 @@ export const make = Effect.gen(function* () {
         Effect.flatMap((kind) =>
           kind === null
             ? notARepositoryCommand("GitWorkflowService.removeWorktree", input.cwd)
-            : kind === "git"
-              ? worktreeCommands
-                  .resolve(input.cwd)
-                  .pipe(
-                    Effect.flatMap(({ remove }) =>
-                      remove === ""
+            : worktreeCommands
+                .resolve(input.cwd)
+                .pipe(
+                  Effect.flatMap(({ remove }) =>
+                    remove !== ""
+                      ? removeWithCustomCommand(kind, remove, input)
+                      : kind === "git"
                         ? git.removeWorktree(input)
-                        : removeWithCustomCommand(remove, input),
-                    ),
-                  )
-              : jjWorkflow.removeWorktree(input),
+                        : jjWorkflow.removeWorktree(input),
+                  ),
+                ),
         ),
       ),
     pruneWorktrees: route("GitWorkflowService.pruneWorktrees", commandRouting, {

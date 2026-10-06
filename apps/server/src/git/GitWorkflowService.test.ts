@@ -1305,6 +1305,41 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
       }).pipe(Effect.provide(NodeServices.layer));
     });
 
+    it.effect("removes a jj workspace with the command and prunes through the jj lane", () => {
+      const gitExecute = vi.fn(() => gitStatus(" M src/index.ts\n"));
+      const gitPrune = vi.fn(() => Effect.void);
+      const jjPrune = vi.fn(() => Effect.void);
+
+      return Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const worktreePath = `${yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-custom-rm-" })}/workspace`;
+        yield* fileSystem.makeDirectory(worktreePath);
+        const workflow = yield* GitWorkflowService.GitWorkflowService.pipe(
+          Effect.provide(
+            makeLayer({
+              detect: () => Effect.succeed(handleFor("jj")),
+              git: { execute: gitExecute, pruneWorktrees: gitPrune },
+              jj: { pruneWorktrees: jjPrune },
+              worktreeCommands: {
+                resolve: () => Effect.succeed({ create: "", remove: "drop-workspace" }),
+                run: ({ env }) =>
+                  fileSystem
+                    .remove(env.T3CODE_WORKTREE_PATH!, { recursive: true })
+                    .pipe(Effect.as(""), Effect.orDie),
+              },
+            }),
+          ),
+        );
+
+        // jj has snapshotted the working copy, so no unforced dirty check applies.
+        yield* workflow.removeWorktree({ cwd: "/repo", path: worktreePath });
+
+        assert.equal(gitExecute.mock.calls.length, 0);
+        assert.equal(gitPrune.mock.calls.length, 0);
+        assert.equal(jjPrune.mock.calls.length, 1);
+      }).pipe(Effect.provide(NodeServices.layer));
+    });
+
     it.effect("fails when the remove command leaves the worktree in place", () =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;

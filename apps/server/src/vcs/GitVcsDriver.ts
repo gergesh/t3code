@@ -140,12 +140,14 @@ export interface CreateWorktreeProgress {
 export interface CustomWorktreeCheckoutInput {
   /** Directory T3 Code picked for the checkout. */
   readonly worktreePath: string;
-  /** Branch the checkout must have checked out. */
+  /** Branch (or jj bookmark) the checkout must have checked out. */
   readonly branch: string;
   /** Ref the new branch starts from; equals `branch` when the branch already exists. */
   readonly startRef: string;
   /** True when the command itself must create `branch` from `startRef`. */
   readonly createBranch: boolean;
+  /** jj only: the workspace name T3 Code uses to find and prune the workspace later. */
+  readonly jjWorkspaceName?: string;
 }
 
 export interface CreateWorktreeOptions {
@@ -154,9 +156,9 @@ export interface CreateWorktreeOptions {
   readonly submodules?: WorktreeSubmodules | null;
   readonly worktreesDirectory?: string;
   /**
-   * Replaces the built-in `git worktree add` step with a user-configured
-   * command. The steps around the checkout (submodules, base-ref config)
-   * still run. Resolves to the checkout's path
+   * Replaces the built-in `git worktree add` / `jj workspace add` step with a
+   * user-configured command. The steps around the checkout (bookmarks,
+   * submodules, base-ref config) still run. Resolves to the checkout's path
    * when the command placed it somewhere other than `worktreePath`.
    */
   readonly customCheckout?: (

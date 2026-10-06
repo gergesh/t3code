@@ -8,6 +8,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
+import type { CustomWorktreeCheckoutInput } from "../vcs/GitVcsDriver.ts";
 import * as JjVcsDriver from "../vcs/JjVcsDriver.ts";
 import { commitId, describeJj, runGit, runJj, withJjRepo } from "../vcs/testing/JjTestSupport.ts";
 import { makeJjRefs, type JjRefsOps } from "./JjRefs.ts";
@@ -456,6 +457,110 @@ describeJj("JjWorkspaces.createWorktree", () => {
         assert.isTrue(created.worktree.path.startsWith(worktreesDir));
         const bookmarks = yield* runJj(root, ["bookmark", "list"]);
         assert.include(bookmarks, "feat/one");
+      }),
+    ),
+  );
+
+  it.effect("hands the workspace step to a custom command under the T3 workspace name", () =>
+    withRepo(({ driver, ops, root }) =>
+      Effect.gen(function* () {
+        const checkouts: Array<CustomWorktreeCheckoutInput> = [];
+        const created = yield* ops.createWorktree(
+          { cwd: root, refName: "main", newRefName: "feat/custom", path: null },
+          {
+            customCheckout: (checkout) =>
+              runJj(root, [
+                "workspace",
+                "add",
+                "--name",
+                checkout.jjWorkspaceName!,
+                "-r",
+                `bookmarks(exact:"${checkout.branch}")`,
+                checkout.worktreePath,
+              ]).pipe(
+                Effect.tap(() => Effect.sync(() => checkouts.push(checkout))),
+                Effect.as(null),
+                Effect.orDie,
+              ),
+          },
+        );
+
+        assert.deepStrictEqual(checkouts, [
+          {
+            worktreePath: created.worktree.path,
+            branch: "feat/custom",
+            startRef: "feat/custom",
+            createBranch: false,
+            jjWorkspaceName: workspaceNameForRef("feat/custom"),
+          },
+        ]);
+        const workspaces = yield* driver.listWorkspaces(root);
+        assert.isTrue(
+          workspaces.some((workspace) => workspace.name === workspaceNameForRef("feat/custom")),
+        );
+      }),
+    ),
+  );
+
+  it.effect("fails when a custom command leaves no Jujutsu workspace behind", () =>
+    withRepo(({ ops, root }) =>
+      Effect.gen(function* () {
+        const error = yield* ops
+          .createWorktree(
+            { cwd: root, refName: "main", newRefName: "feat/nothing", path: null },
+            { customCheckout: () => Effect.succeed(null) },
+          )
+          .pipe(Effect.flip);
+
+        assert.include(error.detail, "did not create a Jujutsu workspace");
+      }),
+    ),
+  );
+
+  it.effect("starts named and unnamed workspaces from a resolved commit ID", () =>
+    withRepo(({ ops, root }) =>
+      Effect.gen(function* () {
+        const commitId = (yield* runJj(root, [
+          "log",
+          "-r",
+          'bookmarks(exact:"main")',
+          "--no-graph",
+          "-T",
+          "commit_id",
+        ])).trim();
+
+        const named = yield* ops.createWorktree({
+          cwd: root,
+          refName: commitId,
+          newRefName: "topic/from-origin",
+          path: null,
+        });
+        assert.equal(named.worktree.refName, "topic/from-origin");
+        assert.equal(
+          (yield* runJj(named.worktree.path, [
+            "log",
+            "-r",
+            "@-",
+            "--no-graph",
+            "-T",
+            "commit_id",
+          ])).trim(),
+          commitId,
+        );
+
+        const unnamed = yield* ops.createWorktree({ cwd: root, refName: commitId, path: null });
+        assert.equal(unnamed.worktree.refName, commitId);
+        assert.equal(
+          (yield* runJj(unnamed.worktree.path, [
+            "log",
+            "-r",
+            "@-",
+            "--no-graph",
+            "-T",
+            "commit_id",
+          ])).trim(),
+          commitId,
+        );
       }),
     ),
   );

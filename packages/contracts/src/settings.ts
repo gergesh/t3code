@@ -953,8 +953,8 @@ export const WorktreeCleanup = Schema.NullOr(
 export type WorktreeCleanup = typeof WorktreeCleanup.Type;
 
 /**
- * Shell commands that replace the built-in worktree steps (`git worktree add`
- * and `git worktree remove`). An empty command keeps the built-in step.
+ * Shell commands that replace the built-in worktree steps (`git worktree add` /
+ * `jj workspace add`, and their removal). An empty command keeps the built-in step.
  */
 export const WorktreeCommands = Schema.Struct({
   create: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),

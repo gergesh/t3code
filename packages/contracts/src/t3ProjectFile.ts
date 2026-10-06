@@ -101,7 +101,7 @@ export const T3ProjectFile = Schema.Struct({
       create: Schema.optionalKey(
         trimmedNonEmpty({
           description:
-            "Shell command that creates the worktree in place of T3 Code's built-in step. It runs at the project root and must create a checkout of $T3CODE_BRANCH at $T3CODE_WORKTREE_PATH, or print the absolute path of the checkout it created as its last line of output.",
+            "Shell command that creates the worktree (or jj workspace) in place of T3 Code's built-in step. It runs at the project root and must create a checkout of $T3CODE_BRANCH at $T3CODE_WORKTREE_PATH, or print the absolute path of the checkout it created as its last line of output.",
         }),
       ),
       remove: Schema.optionalKey(

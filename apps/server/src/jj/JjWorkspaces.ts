@@ -315,7 +315,7 @@ export const makeJjWorkspaces = (deps: JjWorkspaceOpsDeps): JjWorkspaceOps => {
               timeoutMs: 20_000,
             },
           ).pipe(Effect.ignore);
-    yield* Effect.acquireUseRelease(
+    const checkoutPath = yield* Effect.acquireUseRelease(
       input.newRefName === undefined
         ? Effect.succeed(false)
         : run(
@@ -335,6 +335,29 @@ export const makeJjWorkspaces = (deps: JjWorkspaceOpsDeps): JjWorkspaceOps => {
             .pipe(
               mapJjFailure(operation, input.cwd, `Could not create ${path.dirname(worktreePath)}.`),
             );
+
+          if (options?.customCheckout) {
+            // The bookmark exists by now, so the command only has to add the workspace. It must use
+            // the T3 workspace name, or prune and reuse above cannot recognise it later.
+            const reportedPath = yield* options.customCheckout({
+              worktreePath,
+              branch: targetRef,
+              startRef: targetRef,
+              createBranch: false,
+              jjWorkspaceName: workspaceName,
+            });
+            const checkedOut = reportedPath ?? worktreePath;
+            if (!(yield* isJjWorkspaceDirectory(checkedOut))) {
+              return yield* Effect.fail(
+                jjFailure(
+                  operation,
+                  input.cwd,
+                  `The custom worktree create command did not create a Jujutsu workspace at ${checkedOut}.`,
+                ),
+              );
+            }
+            return checkedOut;
+          }
 
           // `-r X` means "@ is a fresh empty child of X". The bookmark stays on X and the thread's
           // edits land in `@`, which is git's `worktree add -b new base` translated.
@@ -368,6 +391,7 @@ export const makeJjWorkspaces = (deps: JjWorkspaceOpsDeps): JjWorkspaceOps => {
               ),
             ),
           );
+          return worktreePath;
         }),
       (createdBookmark, exit) =>
         createdBookmark && Exit.isFailure(exit) ? rollbackBookmark() : Effect.void,
@@ -375,7 +399,7 @@ export const makeJjWorkspaces = (deps: JjWorkspaceOpsDeps): JjWorkspaceOps => {
 
     // gh consumes a provider branch name; T3 retains the full selected remote for comparison.
     return {
-      worktree: { path: worktreePath, refName: targetRef },
+      worktree: { path: checkoutPath, refName: targetRef },
       newlyCreated: true as const,
       gitConfig: {
         process,

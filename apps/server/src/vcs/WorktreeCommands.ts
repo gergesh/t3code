@@ -38,6 +38,9 @@ export function worktreeCreateCommandEnv(
     T3CODE_BRANCH: input.branch,
     T3CODE_START_REF: input.startRef,
     T3CODE_CREATE_BRANCH: input.createBranch ? "1" : "0",
+    ...(input.jjWorkspaceName !== undefined
+      ? { T3CODE_JJ_WORKSPACE_NAME: input.jjWorkspaceName }
+      : {}),
   };
 }
 

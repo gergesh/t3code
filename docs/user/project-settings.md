@@ -178,8 +178,8 @@ are, and cleanup covers both the default folder and the custom one.
 ## Custom worktree commands
 
 In **Settings → General → Projects & threads**, **Worktree create command** and **Worktree remove
-command** replace the built-in `git worktree add` and its removal. Use them for tools such as
-copy-on-write clones or your own worktree manager. Leave a command empty to keep the
+command** replace the built-in `git worktree add` or `jj workspace add` and its removal. Use them
+for tools such as copy-on-write clones or your own worktree manager. Leave a command empty to keep the
 built-in step. Set them for an environment or override them per project. On mobile, they are under
 **Settings → Source control → Worktrees**.
 
@@ -188,13 +188,16 @@ Commands run in your shell at the project root with:
 - `T3CODE_PROJECT_ROOT` and `T3CODE_WORKTREE_PATH`: the project and the worktree's path.
 - `T3CODE_BRANCH`, `T3CODE_START_REF` and `T3CODE_CREATE_BRANCH`: the branch to check out, where it
   starts, and `1` when the command must create that branch itself.
+- `T3CODE_JJ_WORKSPACE_NAME` (Jujutsu only): pass it to `--name` so T3 Code can find the workspace
+  again. The bookmark already exists when the command runs. Add `--colocate` so Git tooling and
+  submodules work in the workspace, as the built-in step does.
 - `T3CODE_FORCE` (remove only): `1` when uncommitted work may be discarded.
 
-The create command must leave a git worktree with that branch checked out at
+The create command must leave a git worktree or Jujutsu workspace with that branch checked out at
 `T3CODE_WORKTREE_PATH`. A tool that picks its own location can instead print the checkout's
 absolute path as the last line of its output. The remove command must delete the directory. T3
 Code checks both and reports the command's output when it fails. It still refuses to remove a
-worktree with uncommitted changes unless the removal is forced.
+Git worktree with uncommitted changes unless the removal is forced.
 
 A repository can suggest commands in `t3.json`:
 
