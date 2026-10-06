@@ -16,6 +16,7 @@ import {
   exactStringPattern,
   localBookmarkRevset,
   splitRemoteRefName,
+  workspaceRefName,
 } from "../vcs/JjRevset.ts";
 import type { JjBookmark, JjVcsDriverShape, JjWorkspace } from "../vcs/JjVcsDriver.ts";
 import type * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -150,6 +151,28 @@ export const makeJjRefs = Effect.fn("JjRefs.makeJjRefs")(function* (
           }) satisfies VcsRef,
       );
 
+    // A workspace no local bookmark maps to (made outside T3, or whose bookmark is gone) is
+    // still somewhere a thread can run or branch from. The main workspace is the project itself.
+    const claimedWorkspaceNames = new Set(
+      snapshot.bookmarks
+        .filter((bookmark) => bookmark.remote === null)
+        .map((bookmark) => workspaceNameForRef(bookmark.name)),
+    );
+    const workspaceRefs: ReadonlyArray<VcsRef> = snapshot.workspaces.flatMap((workspace) =>
+      workspace.root === null ||
+      workspace.root === paths.mainWorkspaceRoot ||
+      claimedWorkspaceNames.has(workspace.name)
+        ? []
+        : [
+            {
+              name: workspaceRefName(workspace.name),
+              current: false,
+              isDefault: false,
+              worktreePath: workspace.root,
+            } satisfies VcsRef,
+          ],
+    );
+
     const remoteRefs: ReadonlyArray<VcsRef> = snapshot.bookmarks
       .filter((bookmark) => bookmark.remote !== null)
       .toSorted((left, right) => right.targetTimestamp - left.targetTimestamp)
@@ -167,8 +190,8 @@ export const makeJjRefs = Effect.fn("JjRefs.makeJjRefs")(function* (
 
     const combined =
       input.includeMatchingRemoteRefs === true
-        ? [...localRefs, ...remoteRefs]
-        : dedupeRemoteBranchesWithLocalMatches([...localRefs, ...remoteRefs]);
+        ? [...localRefs, ...workspaceRefs, ...remoteRefs]
+        : dedupeRemoteBranchesWithLocalMatches([...localRefs, ...workspaceRefs, ...remoteRefs]);
     // Keep current/default refs on the first page, the way the Git implementation does.
     const allRefs = combined.toSorted((left, right) => {
       const leftPriority = left.current ? 0 : left.isDefault ? 1 : 2;

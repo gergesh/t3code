@@ -262,6 +262,39 @@ describeJj("JjRefs.listRefs", () => {
     ),
   );
 
+  it.effect("lists a workspace no bookmark names, and a new workspace can branch from it", () =>
+    withRepo({}, ({ driver, fileSystem, path, refs, root, workspaces }) =>
+      Effect.gen(function* () {
+        yield* workspaces.createWorktree({
+          cwd: root,
+          refName: "main",
+          newRefName: "feat/threaded",
+          path: null,
+        });
+        const handMade = path.join(path.dirname(root), "invite-styles");
+        yield* runJj(root, ["workspace", "add", "--name", "invite-styles", handMade]);
+        yield* fileSystem.writeFileString(path.join(handMade, "styles.css"), "a {}\n");
+        const handMadeChange = yield* driver.currentChange(handMade);
+
+        const listed = yield* refs.listRefs({ cwd: root, refresh: true });
+        const workspaceRows = listed.refs.filter((ref) => ref.name.endsWith("@"));
+        assert.deepStrictEqual(
+          workspaceRows.map((ref) => [ref.name, ref.worktreePath]),
+          [["invite-styles@", yield* fileSystem.realPath(handMade)]],
+        );
+
+        const branched = yield* workspaces.createWorktree({
+          cwd: root,
+          refName: "invite-styles@",
+          newRefName: "feat/from-workspace",
+          path: null,
+        });
+        const branchedChange = yield* driver.currentChange(branched.worktree.path);
+        assert.deepStrictEqual(branchedChange.parentCommitIds, [handMadeChange.commitId]);
+      }),
+    ),
+  );
+
   it.effect("filters, orders and pages the way the Git implementation does", () =>
     withRepo({}, ({ refs, root }) =>
       Effect.gen(function* () {
