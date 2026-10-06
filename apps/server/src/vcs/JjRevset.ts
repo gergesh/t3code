@@ -56,6 +56,19 @@ export function remoteBookmarkRevset(remote: string, name: string): string {
 }
 
 /**
+ * `<workspace>@` is jj's own spelling of a workspace's working copy. `listRefs` uses it for a
+ * workspace no bookmark names; `@` is not valid in a bookmark name, so it cannot collide.
+ */
+export function workspaceRefName(workspaceName: string): string {
+  return `${workspaceName}@`;
+}
+
+/** The workspace name behind a {@link workspaceRefName} ref, or `null` for any other ref. */
+export function parseWorkspaceRefName(refName: string): string | null {
+  return refName.length > 1 && refName.endsWith("@") ? refName.slice(0, -1) : null;
+}
+
+/**
  * Client ref name to jj revset. A commit id or change id is returned unchanged so a base handed
  * over the wire as a revision still resolves.
  */
@@ -63,6 +76,10 @@ export function refNameToRevset(refName: string, remoteNames: ReadonlyArray<stri
   const remoteRef = splitRemoteRefName(refName, remoteNames);
   if (remoteRef) {
     return remoteBookmarkRevset(remoteRef.remote, remoteRef.name);
+  }
+  const workspaceName = parseWorkspaceRefName(refName);
+  if (workspaceName !== null) {
+    return `"${escapeRevsetString(workspaceName)}"@`;
   }
   if (COMMIT_ID_PATTERN.test(refName) || CHANGE_ID_PATTERN.test(refName)) {
     return refName;
