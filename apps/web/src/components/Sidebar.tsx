@@ -117,6 +117,7 @@ import {
   projectGroupsSpanEnvironments,
   resolveSidebarProjectScopeKeys,
   getSidebarProjectSettingsKey,
+  resolveSidebarScopedProjectRef,
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { resolveProjectExpanded, useUiStateStore } from "../uiStateStore";
@@ -135,7 +136,7 @@ import { useProjectPin } from "../hooks/useProjectGroupUpdate";
 import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -2946,6 +2947,22 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const showJumpHints = useThreadJumpHintsVisible(keybindings, routeThreadRef);
 
   const handleNewThreadClick = (event?: ReactMouseEvent) => {
+    // Filtered to one project: that's the answer the picker would ask for.
+    const scopedProjectRef = resolveSidebarScopedProjectRef({
+      groups: projectGroups,
+      scopeKey: projectScopeKey,
+      preferredProjectRef: resolveThreadActionProjectRef({
+        activeDraftThread: newThreadContext.activeDraftThread,
+        activeThread: newThreadContext.activeThread ?? undefined,
+        defaultProjectRef: newThreadContext.defaultProjectRef,
+        handleNewThread: newThreadContext.handleNewThread,
+      }),
+    });
+    if (scopedProjectRef) {
+      if (isMobile) setOpenMobile(false);
+      void newThreadContext.handleNewThread(scopedProjectRef);
+      return;
+    }
     if (
       shouldCreateNewThreadInCurrentProject(
         event?.shiftKey ?? false,
@@ -3204,7 +3221,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   false,
                   scopeGroups.length,
                   projectGroups.length,
-                )
+                ) && scopedProjectGroups.length !== 1
               }
               searchInputRef={threadSearchInputRef}
               searchQuery={threadSearchQuery}
