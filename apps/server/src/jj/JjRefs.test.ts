@@ -8,6 +8,7 @@ import * as JjVcsDriver from "../vcs/JjVcsDriver.ts";
 import { describeJj, runGit, runJj, withJjRepo } from "../vcs/testing/JjTestSupport.ts";
 import { makeJjRefs, type JjRefsOps } from "./JjRefs.ts";
 import { makeJjRemotes } from "./JjRemotes.ts";
+import { resolveWorkspaceRefName } from "./JjStatus.ts";
 import { makeJjWorkspaces, workspaceNameForRef, type JjWorkspaceOps } from "./JjWorkspaces.ts";
 
 interface RefsFixture {
@@ -251,6 +252,8 @@ describeJj("JjRefs.listRefs", () => {
           newRefName: "feat/threaded",
           path: null,
         });
+        // The bookmark a first push would create.
+        yield* runJj(root, ["bookmark", "create", "feat/threaded", "-r", "main"]);
         const listed = yield* refs.listRefs({ cwd: root, refresh: true });
 
         assert.equal(
@@ -258,6 +261,25 @@ describeJj("JjRefs.listRefs", () => {
           created.worktree.path,
         );
         assert.equal(listed.refs.find((ref) => ref.name === "main")?.worktreePath, null);
+      }),
+    ),
+  );
+
+  it.effect("lists a thread workspace before its bookmark exists, as current from inside it", () =>
+    withRepo({}, ({ fileSystem, refs, root, workspaces }) =>
+      Effect.gen(function* () {
+        const created = yield* workspaces.createWorktree({
+          cwd: root,
+          refName: "main",
+          newRefName: "feat/unborn",
+          path: null,
+        });
+
+        const listed = yield* refs.listRefs({ cwd: created.worktree.path, refresh: true });
+        const row = listed.refs.find((ref) => ref.name === "feat/unborn");
+        assert.equal(row?.worktreePath, yield* fileSystem.realPath(created.worktree.path));
+        assert.equal(row?.current, true);
+        assert.equal(listed.refs.find((ref) => ref.name === "main")?.current, false);
       }),
     ),
   );
@@ -271,6 +293,7 @@ describeJj("JjRefs.listRefs", () => {
           newRefName: "feat/threaded",
           path: null,
         });
+        yield* runJj(root, ["bookmark", "create", "feat/threaded", "-r", "main"]);
         const handMade = path.join(path.dirname(root), "invite-styles");
         yield* runJj(root, ["workspace", "add", "--name", "invite-styles", handMade]);
         yield* fileSystem.writeFileString(path.join(handMade, "styles.css"), "a {}\n");
@@ -501,6 +524,7 @@ describeJj("JjRefs.renameBranch", () => {
           newRefName: "feat/old",
           path: null,
         });
+        yield* runJj(root, ["bookmark", "create", "feat/old", "-r", "main"]);
 
         const renamed = yield* refs.renameBranch({
           cwd: created.worktree.path,
@@ -521,6 +545,65 @@ describeJj("JjRefs.renameBranch", () => {
     ),
   );
 
+  it.effect("renames a workspace whose bookmark does not exist yet", () =>
+    withRepo({}, ({ driver, refs, root, workspaces }) =>
+      Effect.gen(function* () {
+        const created = yield* workspaces.createWorktree({
+          cwd: root,
+          refName: "main",
+          newRefName: "t3/0123abcd",
+          path: null,
+        });
+
+        yield* refs.renameBranch({
+          cwd: created.worktree.path,
+          oldBranch: "t3/0123abcd",
+          newBranch: "feat/named",
+        });
+
+        assert.notInclude(yield* runJj(root, ["bookmark", "list"]), "feat/named");
+        const workspaceNames = (yield* driver.listWorkspaces(root)).map(
+          (workspace) => workspace.name,
+        );
+        assert.include(workspaceNames, workspaceNameForRef("feat/named"));
+        const segment = yield* driver.currentSegment(created.worktree.path);
+        assert.equal(
+          yield* resolveWorkspaceRefName(driver, created.worktree.path, segment),
+          "feat/named",
+        );
+      }),
+    ),
+  );
+
+  it.effect("refuses to rename a workspace onto an existing bookmark", () =>
+    withRepo({}, ({ driver, refs, root, workspaces }) =>
+      Effect.gen(function* () {
+        const created = yield* workspaces.createWorktree({
+          cwd: root,
+          refName: "main",
+          newRefName: "t3/0123abcd",
+          path: null,
+        });
+
+        const failure = yield* refs
+          .renameBranch({
+            cwd: created.worktree.path,
+            oldBranch: "t3/0123abcd",
+            newBranch: "main",
+            exactName: true,
+          })
+          .pipe(Effect.flip);
+
+        assert.include(failure.detail, "already exists");
+        const segment = yield* driver.currentSegment(created.worktree.path);
+        assert.equal(
+          yield* resolveWorkspaceRefName(driver, created.worktree.path, segment),
+          "t3/0123abcd",
+        );
+      }),
+    ),
+  );
+
   it.effect("leaves every workspace alone when the rename runs from the project root", () =>
     withRepo({}, ({ driver, refs, root, workspaces }) =>
       Effect.gen(function* () {
@@ -530,6 +613,7 @@ describeJj("JjRefs.renameBranch", () => {
           newRefName: "feat/elsewhere",
           path: null,
         });
+        yield* runJj(root, ["bookmark", "create", "feat/elsewhere", "-r", "main"]);
 
         yield* refs.renameBranch({
           cwd: root,

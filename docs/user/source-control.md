@@ -285,6 +285,8 @@ Pull fetches the remote and refuses when the selected bookmark has unpublished c
 - **Git hooks do not run** for commits made through T3 Code. Hooks that read the Git index, such as
   `lint-staged` or a staged-diff format check, see nothing under Jujutsu, so T3 Code skips them
   rather than reporting a hook run that did nothing. Run them yourself if you depend on them.
+- A new thread's workspace starts without a bookmark. T3 Code creates the thread's bookmark when you
+  first commit or push from T3 Code, or when it removes a workspace that still holds commits.
 - A change with conflicts cannot be committed or pushed until you resolve it, and its diff shows one side of each
   conflicted file rather than the markers on disk.
 - Jujutsu refuses to snapshot a new file above `snapshot.max-new-file-size`, 1 MiB by default. That

@@ -4,7 +4,6 @@ import * as NodeCrypto from "node:crypto";
 import * as NodePath from "node:path";
 
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import type * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import type * as Path from "effect/Path";
@@ -17,8 +16,9 @@ import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import type { VcsWorkflowOps } from "../git/GitWorkflowService.ts";
 import * as JjProcess from "../vcs/JjProcess.ts";
 import type { JjRepoPaths } from "../vcs/JjRepo.ts";
-import { bookmarkNameArgument, refNameToRevset, splitRemoteRefName } from "../vcs/JjRevset.ts";
+import { localBookmarkRevset, refNameToRevset, splitRemoteRefName } from "../vcs/JjRevset.ts";
 import type { JjVcsDriverShape } from "../vcs/JjVcsDriver.ts";
+import { clearWorkspaceBookmark, writeWorkspaceBookmark } from "../vcs/JjWorkspaceBookmark.ts";
 import type * as VcsProcess from "../vcs/VcsProcess.ts";
 import { jjFailure, mapJjFailure } from "./JjFailure.ts";
 import {
@@ -114,11 +114,23 @@ export const makeJjWorkspaces = (deps: JjWorkspaceOpsDeps): JjWorkspaceOps => {
   const isJjWorkspaceDirectory = (candidate: string) =>
     fileSystem.exists(path.join(candidate, ".jj")).pipe(Effect.orElseSucceed(() => false));
 
-  const forgetWorkspace = (operation: string, cwd: string, name: string) =>
-    run(operation, cwd, ["workspace", "forget", name], {
+  const forgetWorkspace = (
+    operation: string,
+    paths: { readonly mainWorkspaceRoot: string; readonly gitDir: string },
+    name: string,
+  ) =>
+    run(operation, paths.mainWorkspaceRoot, ["workspace", "forget", name], {
       allowNonZeroExit: true,
       timeoutMs: 30_000,
-    });
+    }).pipe(
+      Effect.tap(() =>
+        clearWorkspaceBookmark(process, {
+          gitDir: paths.gitDir,
+          cwd: paths.mainWorkspaceRoot,
+          workspaceName: name,
+        }),
+      ),
+    );
 
   const pruneGitWorktrees = (operation: string, gitDir: string, cwd: string) =>
     JjProcess.colocatedGitCommand(
@@ -237,7 +249,7 @@ export const makeJjWorkspaces = (deps: JjWorkspaceOpsDeps): JjWorkspaceOps => {
       }
       // A registered workspace whose directory is gone, or that holds no `.jj`, is the
       // half-created state a failed `jj workspace add` leaves behind.
-      yield* forgetWorkspace(operation, paths.mainWorkspaceRoot, workspaceName).pipe(Effect.ignore);
+      yield* forgetWorkspace(operation, paths, workspaceName).pipe(Effect.ignore);
       yield* removeIfOnlyJjMetadata(existingRoot);
       // Forget cannot remove Git's registration when the directory was already deleted.
       yield* pruneGitWorktrees(operation, paths.gitDir, paths.mainWorkspaceRoot).pipe(
@@ -303,99 +315,98 @@ export const makeJjWorkspaces = (deps: JjWorkspaceOpsDeps): JjWorkspaceOps => {
         baseRevset = resolved.stdout.trim();
       }
     }
-    const rollbackBookmark = () =>
-      input.newRefName === undefined
-        ? Effect.void
-        : run(
-            operation,
-            input.cwd,
-            ["bookmark", "delete", bookmarkNameArgument(input.newRefName)],
-            {
-              allowNonZeroExit: true,
-              timeoutMs: 20_000,
-            },
-          ).pipe(Effect.ignore);
-    const checkoutPath = yield* Effect.acquireUseRelease(
-      input.newRefName === undefined
-        ? Effect.succeed(false)
-        : run(
-            operation,
-            input.cwd,
-            ["bookmark", "create", bookmarkNameArgument(input.newRefName), "-r", baseRevset],
-            { timeoutMs: 20_000 },
-          ).pipe(
-            mapJjFailure(operation, input.cwd, `Could not create bookmark ${input.newRefName}.`),
-            Effect.as(true),
-          ),
-      () =>
-        Effect.gen(function* () {
-          // jj creates only the leaf directory; a missing parent fails with "Cannot access ...".
-          yield* fileSystem
-            .makeDirectory(path.dirname(worktreePath), { recursive: true })
-            .pipe(
-              mapJjFailure(operation, input.cwd, `Could not create ${path.dirname(worktreePath)}.`),
-            );
-
-          if (options?.customCheckout) {
-            // The bookmark exists by now, so the command only has to add the workspace. It must use
-            // the T3 workspace name, or prune and reuse above cannot recognise it later.
-            const reportedPath = yield* options.customCheckout({
-              worktreePath,
-              branch: targetRef,
-              startRef: targetRef,
-              createBranch: false,
-              jjWorkspaceName: workspaceName,
-            });
-            const checkedOut = reportedPath ?? worktreePath;
-            if (!(yield* isJjWorkspaceDirectory(checkedOut))) {
-              return yield* Effect.fail(
-                jjFailure(
-                  operation,
-                  input.cwd,
-                  `The custom worktree create command did not create a Jujutsu workspace at ${checkedOut}.`,
-                ),
-              );
-            }
-            return checkedOut;
-          }
-
-          // `-r X` means "@ is a fresh empty child of X". The bookmark stays on X and the thread's
-          // edits land in `@`, which is git's `worktree add -b new base` translated.
-          yield* run(
-            operation,
-            input.cwd,
-            [
-              "workspace",
-              "add",
-              // Git-dependent tooling and submodule initialization require a colocated child.
-              "--colocate",
-              "--name",
-              workspaceName,
-              "-r",
-              input.newRefName === undefined ? baseRevset : refNameToRevset(targetRef, remoteNames),
-              worktreePath,
-            ],
-            { timeoutMs: WORKSPACE_ADD_TIMEOUT_MS },
-          ).pipe(
-            mapJjFailure(operation, input.cwd, `Could not create a workspace at ${worktreePath}.`),
-            // jj can register the workspace and then fail, and a retry on a registered name fails
-            // with "Workspace named '<name>' already exists".
-            Effect.onError(() =>
-              forgetWorkspace(operation, paths.mainWorkspaceRoot, workspaceName).pipe(
-                Effect.ignore,
-                Effect.andThen(
-                  destinationExisted
-                    ? Effect.void
-                    : fileSystem.remove(worktreePath, { recursive: true }).pipe(Effect.ignore),
-                ),
-              ),
-            ),
-          );
-          return worktreePath;
-        }),
-      (createdBookmark, exit) =>
-        createdBookmark && Exit.isFailure(exit) ? rollbackBookmark() : Effect.void,
+    // A new name gets no bookmark here: an empty bookmark on the base is noise in every log, and
+    // push or commit creates it on the work itself. The record below keeps the name until then.
+    const localBookmarkNames = new Set(
+      bookmarks.filter((bookmark) => bookmark.remote === null).map((bookmark) => bookmark.name),
     );
+    if (input.newRefName !== undefined && localBookmarkNames.has(input.newRefName)) {
+      return yield* Effect.fail(
+        jjFailure(operation, input.cwd, `Bookmark ${input.newRefName} already exists.`),
+      );
+    }
+    // A thread whose workspace vanished before its first commit is re-created by name alone,
+    // and that name has no bookmark yet. It starts over on the default bookmark.
+    const resumesUnbornName =
+      input.newRefName === undefined &&
+      baseRevset === localBookmarkRevset(baseRef) &&
+      !localBookmarkNames.has(baseRef);
+    const recordedName = input.newRefName ?? (resumesUnbornName ? baseRef : undefined);
+    let startRevset = baseRevset;
+    if (resumesUnbornName) {
+      const defaultBookmark = yield* driver
+        .resolveDefaultBookmark(input.cwd)
+        .pipe(Effect.orElseSucceed(() => null));
+      startRevset = defaultBookmark === null ? "trunk()" : localBookmarkRevset(defaultBookmark);
+    }
+
+    // jj creates only the leaf directory; a missing parent fails with "Cannot access ...".
+    yield* fileSystem
+      .makeDirectory(path.dirname(worktreePath), { recursive: true })
+      .pipe(mapJjFailure(operation, input.cwd, `Could not create ${path.dirname(worktreePath)}.`));
+
+    let checkoutPath = worktreePath;
+    if (options?.customCheckout) {
+      // The command only adds the workspace at `startRevset`; the bookmark comes later. It must
+      // use the T3 workspace name, or prune and reuse above cannot recognise it later.
+      const reportedPath = yield* options.customCheckout({
+        worktreePath,
+        branch: targetRef,
+        startRef: startRevset,
+        createBranch: false,
+        jjWorkspaceName: workspaceName,
+      });
+      checkoutPath = reportedPath ?? worktreePath;
+      if (!(yield* isJjWorkspaceDirectory(checkoutPath))) {
+        return yield* Effect.fail(
+          jjFailure(
+            operation,
+            input.cwd,
+            `The custom worktree create command did not create a Jujutsu workspace at ${checkoutPath}.`,
+          ),
+        );
+      }
+    } else {
+      // `-r X` means "@ is a fresh empty child of X": the thread's edits land in `@`.
+      yield* run(
+        operation,
+        input.cwd,
+        [
+          "workspace",
+          "add",
+          // Git-dependent tooling and submodule initialization require a colocated child.
+          "--colocate",
+          "--name",
+          workspaceName,
+          "-r",
+          startRevset,
+          worktreePath,
+        ],
+        { timeoutMs: WORKSPACE_ADD_TIMEOUT_MS },
+      ).pipe(
+        mapJjFailure(operation, input.cwd, `Could not create a workspace at ${worktreePath}.`),
+        // jj can register the workspace and then fail, and a retry on a registered name fails
+        // with "Workspace named '<name>' already exists".
+        Effect.onError(() =>
+          forgetWorkspace(operation, paths, workspaceName).pipe(
+            Effect.ignore,
+            Effect.andThen(
+              destinationExisted
+                ? Effect.void
+                : fileSystem.remove(worktreePath, { recursive: true }).pipe(Effect.ignore),
+            ),
+          ),
+        ),
+      );
+    }
+    if (recordedName !== undefined) {
+      yield* writeWorkspaceBookmark(process, {
+        gitDir: paths.gitDir,
+        cwd: input.cwd,
+        workspaceName,
+        bookmark: recordedName,
+      });
+    }
 
     // gh consumes a provider branch name; T3 retains the full selected remote for comparison.
     return {
@@ -568,7 +579,7 @@ export const makeJjWorkspaces = (deps: JjWorkspaceOpsDeps): JjWorkspaceOps => {
         .exists(matched.root)
         .pipe(Effect.orElseSucceed(() => false));
       if (!directoryExists) {
-        yield* forgetWorkspace(operation, paths.mainWorkspaceRoot, matched.name).pipe(
+        yield* forgetWorkspace(operation, paths, matched.name).pipe(
           Effect.ignore,
         );
         yield* driver.invalidateRepoCaches(paths.mainWorkspaceRoot);
@@ -650,7 +661,7 @@ export const makeJjWorkspaces = (deps: JjWorkspaceOpsDeps): JjWorkspaceOps => {
         if (present) {
           continue;
         }
-        yield* forgetWorkspace(operation, paths.mainWorkspaceRoot, workspace.name).pipe(
+        yield* forgetWorkspace(operation, paths, workspace.name).pipe(
           Effect.ignore,
         );
         yield* driver.invalidateRepoCaches(paths.mainWorkspaceRoot);

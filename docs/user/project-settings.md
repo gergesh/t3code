@@ -189,7 +189,8 @@ Commands run in your shell at the project root with:
 - `T3CODE_BRANCH`, `T3CODE_START_REF` and `T3CODE_CREATE_BRANCH`: the branch to check out, where it
   starts, and `1` when the command must create that branch itself.
 - `T3CODE_JJ_WORKSPACE_NAME` (Jujutsu only): pass it to `--name` so T3 Code can find the workspace
-  again. The bookmark already exists when the command runs. Add `--colocate` so Git tooling and
+  again. Under Jujutsu, `T3CODE_START_REF` is a revset for `-r` and the command must not create the
+  bookmark; T3 Code creates it on the first commit or push. Add `--colocate` so Git tooling and
   submodules work in the workspace, as the built-in step does.
 - `T3CODE_FORCE` (remove only): `1` when uncommitted work may be discarded.
 

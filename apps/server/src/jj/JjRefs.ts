@@ -18,12 +18,13 @@ import {
   splitRemoteRefName,
   workspaceRefName,
 } from "../vcs/JjRevset.ts";
+import { clearWorkspaceBookmark, writeWorkspaceBookmark } from "../vcs/JjWorkspaceBookmark.ts";
 import type { JjBookmark, JjVcsDriverShape, JjWorkspace } from "../vcs/JjVcsDriver.ts";
 import type * as VcsProcess from "../vcs/VcsProcess.ts";
 import { jjFailure, mapJjFailure } from "./JjFailure.ts";
 import { assertBookmarkUsable, trackRemoteBookmark } from "./JjRemotes.ts";
 import { resolveWorkspaceRefName, strandedSegmentRows } from "./JjStatus.ts";
-import { workspaceNameForRef } from "./JjWorkspaces.ts";
+import { isT3WorkspaceName, workspaceNameForRef } from "./JjWorkspaces.ts";
 
 const LIST_REFS_SNAPSHOT_CACHE_CAPACITY = 64;
 const LIST_REFS_SNAPSHOT_CACHE_TTL = Duration.minutes(2);
@@ -158,19 +159,33 @@ export const makeJjRefs = Effect.fn("JjRefs.makeJjRefs")(function* (
         .filter((bookmark) => bookmark.remote === null)
         .map((bookmark) => workspaceNameForRef(bookmark.name)),
     );
-    const workspaceRefs: ReadonlyArray<VcsRef> = snapshot.workspaces.flatMap((workspace) =>
-      workspace.root === null ||
-      workspace.root === paths.mainWorkspaceRoot ||
-      claimedWorkspaceNames.has(workspace.name)
-        ? []
-        : [
-            {
-              name: workspaceRefName(workspace.name),
-              current: false,
-              isDefault: false,
-              worktreePath: workspace.root,
-            } satisfies VcsRef,
-          ],
+    // A thread workspace whose bookmark is unborn is listed under the thread's recorded name.
+    const workspaceRefs: ReadonlyArray<VcsRef> = yield* Effect.forEach(
+      snapshot.workspaces.filter(
+        (workspace) =>
+          workspace.root !== null &&
+          workspace.root !== paths.mainWorkspaceRoot &&
+          !claimedWorkspaceNames.has(workspace.name),
+      ),
+      (workspace) =>
+        (isT3WorkspaceName(workspace.name)
+          ? driver.recordedWorkspaceBookmark(input.cwd, workspace.name)
+          : Effect.succeed(null)
+        ).pipe(
+          Effect.map(
+            (recorded) =>
+              ({
+                name:
+                  recorded !== null && workspaceNameForRef(recorded) === workspace.name
+                    ? recorded
+                    : workspaceRefName(workspace.name),
+                current: workspace.root === paths.workspaceRoot,
+                isDefault: false,
+                worktreePath: workspace.root,
+              }) satisfies VcsRef,
+          ),
+        ),
+      { concurrency: 4 },
     );
 
     const remoteRefs: ReadonlyArray<VcsRef> = snapshot.bookmarks
@@ -304,6 +319,20 @@ export const makeJjRefs = Effect.fn("JjRefs.makeJjRefs")(function* (
     yield* run(operation, input.cwd, ["new", localBookmarkRevset(localName)], {
       timeoutMs: 60_000,
     }).pipe(mapJjFailure(operation, input.cwd, `Could not switch to ${localName}.`));
+    // The workspace now follows `localName`; a name recorded for a bookmark that was never
+    // created would otherwise keep winning in `resolveWorkspaceRefName`.
+    const currentWorkspace = (yield* driver
+      .listWorkspaces(input.cwd)
+      .pipe(Effect.orElseSucceed(() => []))).find(
+      (workspace) => workspace.root === paths.workspaceRoot,
+    );
+    if (currentWorkspace !== undefined && currentWorkspace.root !== paths.mainWorkspaceRoot) {
+      yield* clearWorkspaceBookmark(process, {
+        gitDir: paths.gitDir,
+        cwd: input.cwd,
+        workspaceName: currentWorkspace.name,
+      });
+    }
     yield* driver.invalidateRepoCaches(input.cwd);
 
     return { refName: localName };
@@ -315,20 +344,53 @@ export const makeJjRefs = Effect.fn("JjRefs.makeJjRefs")(function* (
       const operation = "JjRefs.renameBranch";
       const paths = yield* repoPathsFor(operation, input.cwd);
       yield* assertBookmarkUsable(driver, operation, input.cwd, input.oldBranch);
-      let targetBranch = input.newBranch;
-      if (!input.exactName) {
-        const bookmarks = yield* driver
+      // `jj workspace rename` renames the workspace `cwd` belongs to and takes no name, so it may
+      // only run when that workspace is the one the old bookmark named. From the project root it
+      // would rename `default`.
+      const workspaces = yield* driver
+        .listWorkspaces(input.cwd)
+        .pipe(mapJjFailure(operation, input.cwd, "Could not list Jujutsu workspaces."));
+      const oldWorkspaceName = workspaceNameForRef(input.oldBranch);
+      const ownsWorkspace = workspaces.some(
+        (workspace) =>
+          workspace.root === paths.workspaceRoot && workspace.name === oldWorkspaceName,
+      );
+      const localBookmarkNames = new Set(
+        (yield* driver
           .listBookmarks(input.cwd)
-          .pipe(mapJjFailure(operation, input.cwd, "Could not list Jujutsu bookmarks."));
-        const names = new Set(
-          bookmarks.filter((bookmark) => bookmark.remote === null).map((bookmark) => bookmark.name),
+          .pipe(mapJjFailure(operation, input.cwd, "Could not list Jujutsu bookmarks.")))
+          .filter((bookmark) => bookmark.remote === null)
+          .map((bookmark) => bookmark.name),
+      );
+      // A workspace's bookmark does not exist until its first commit or push; renaming one
+      // before that only renames the workspace and its record.
+      const bookmarkExists = localBookmarkNames.has(input.oldBranch);
+      if (!bookmarkExists && !ownsWorkspace) {
+        return yield* Effect.fail(
+          jjFailure(operation, input.cwd, `Bookmark ${input.oldBranch} does not exist.`),
         );
+      }
+      // An unborn name must avoid taken names too, or the workspace would later resolve to
+      // someone else's bookmark.
+      const isTaken = (name: string) =>
+        localBookmarkNames.has(name) ||
+        (ownsWorkspace &&
+          workspaces.some((workspace) => workspace.name === workspaceNameForRef(name)));
+      let targetBranch = input.newBranch;
+      if (input.exactName) {
+        // An existing bookmark leaves the collision to `jj bookmark rename` itself.
+        if (!bookmarkExists && isTaken(targetBranch)) {
+          return yield* Effect.fail(
+            jjFailure(operation, input.cwd, `Bookmark ${targetBranch} already exists.`),
+          );
+        }
+      } else {
         let suffix = 1;
-        while (names.has(targetBranch) && suffix <= 100) {
+        while (isTaken(targetBranch) && suffix <= 100) {
           targetBranch = `${input.newBranch}-${suffix}`;
           suffix += 1;
         }
-        if (names.has(targetBranch)) {
+        if (isTaken(targetBranch)) {
           return yield* Effect.fail(
             jjFailure(
               operation,
@@ -339,43 +401,41 @@ export const makeJjRefs = Effect.fn("JjRefs.makeJjRefs")(function* (
         }
       }
 
-      yield* run(
-        operation,
-        input.cwd,
-        [
-          "bookmark",
-          "rename",
-          bookmarkNameArgument(input.oldBranch),
-          bookmarkNameArgument(targetBranch),
-        ],
-        {
-          timeoutMs: 20_000,
-        },
-      ).pipe(
-        mapJjFailure(
-          operation,
-          input.cwd,
-          `Could not rename bookmark ${input.oldBranch} to ${targetBranch}.`,
-        ),
-      );
-
-      // Without the workspace rename the bookmark-to-workspace mapping `listRefs` reports breaks
-      // for this thread. `jj workspace rename` renames the workspace `cwd` belongs to and takes no
-      // name, so it may only run when that workspace is the one the old bookmark named. From the
-      // project root it would rename `default`.
-      const workspaces = yield* driver
-        .listWorkspaces(input.cwd)
-        .pipe(mapJjFailure(operation, input.cwd, "Could not list Jujutsu workspaces."));
-      const currentWorkspace = workspaces.find(
-        (workspace) => workspace.root === paths.workspaceRoot,
-      );
-      if (currentWorkspace?.name === workspaceNameForRef(input.oldBranch)) {
+      if (bookmarkExists) {
         yield* run(
           operation,
           input.cwd,
-          ["workspace", "rename", workspaceNameForRef(targetBranch)],
-          { allowNonZeroExit: true, timeoutMs: 20_000 },
-        ).pipe(Effect.ignore);
+          [
+            "bookmark",
+            "rename",
+            bookmarkNameArgument(input.oldBranch),
+            bookmarkNameArgument(targetBranch),
+          ],
+          { timeoutMs: 20_000 },
+        ).pipe(
+          mapJjFailure(
+            operation,
+            input.cwd,
+            `Could not rename bookmark ${input.oldBranch} to ${targetBranch}.`,
+          ),
+        );
+      }
+
+      // Without the workspace rename the bookmark-to-workspace mapping `listRefs` reports breaks
+      // for this thread.
+      if (ownsWorkspace) {
+        const newWorkspaceName = workspaceNameForRef(targetBranch);
+        yield* run(operation, input.cwd, ["workspace", "rename", newWorkspaceName], {
+          allowNonZeroExit: true,
+          timeoutMs: 20_000,
+        }).pipe(Effect.ignore);
+        const record = { gitDir: paths.gitDir, cwd: input.cwd };
+        yield* clearWorkspaceBookmark(process, { ...record, workspaceName: oldWorkspaceName });
+        yield* writeWorkspaceBookmark(process, {
+          ...record,
+          workspaceName: newWorkspaceName,
+          bookmark: targetBranch,
+        });
       }
 
       yield* moveBookmarkGitConfig(process, {

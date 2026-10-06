@@ -13,6 +13,7 @@ import * as JjVcsDriver from "../vcs/JjVcsDriver.ts";
 import { commitId, describeJj, runGit, runJj, withJjRepo } from "../vcs/testing/JjTestSupport.ts";
 import { makeJjRefs, type JjRefsOps } from "./JjRefs.ts";
 import { makeJjRemotes } from "./JjRemotes.ts";
+import { resolveWorkspaceRefName } from "./JjStatus.ts";
 import {
   defaultWorkspacePathForRef,
   isT3WorkspaceName,
@@ -443,8 +444,8 @@ describeJj("JjWorkspaces.createWorktree", () => {
     ),
   );
 
-  it.effect("mints the bookmark and lands under the worktrees directory", () =>
-    withRepo(({ ops, root, worktreesDir }) =>
+  it.effect("names the workspace without minting its bookmark", () =>
+    withRepo(({ driver, ops, root, worktreesDir }) =>
       Effect.gen(function* () {
         const created = yield* ops.createWorktree({
           cwd: root,
@@ -456,7 +457,13 @@ describeJj("JjWorkspaces.createWorktree", () => {
         assert.equal(created.worktree.refName, "feat/one");
         assert.isTrue(created.worktree.path.startsWith(worktreesDir));
         const bookmarks = yield* runJj(root, ["bookmark", "list"]);
-        assert.include(bookmarks, "feat/one");
+        assert.notInclude(bookmarks, "feat/one");
+        // The base bookmark is the nearest one, but the workspace still reports its own name.
+        const segment = yield* driver.currentSegment(created.worktree.path);
+        assert.equal(
+          yield* resolveWorkspaceRefName(driver, created.worktree.path, segment),
+          "feat/one",
+        );
       }),
     ),
   );
@@ -475,7 +482,7 @@ describeJj("JjWorkspaces.createWorktree", () => {
                 "--name",
                 checkout.jjWorkspaceName!,
                 "-r",
-                `bookmarks(exact:"${checkout.branch}")`,
+                checkout.startRef,
                 checkout.worktreePath,
               ]).pipe(
                 Effect.tap(() => Effect.sync(() => checkouts.push(checkout))),
@@ -489,7 +496,7 @@ describeJj("JjWorkspaces.createWorktree", () => {
           {
             worktreePath: created.worktree.path,
             branch: "feat/custom",
-            startRef: "feat/custom",
+            startRef: 'bookmarks(exact:"main")',
             createBranch: false,
             jjWorkspaceName: workspaceNameForRef("feat/custom"),
           },
@@ -1076,6 +1083,8 @@ describeJj("JjWorkspaces.removeWorktree", () => {
           newRefName: "aaa-child",
           path: null,
         });
+        // The bookmark a first push would create.
+        yield* runJj(root, ["bookmark", "create", "aaa-child", "-r", "main"]);
         const childBefore = yield* commitId(root, "aaa-child");
         const review = path.join(root, "..", "review");
         yield* runJj(root, [
@@ -1169,7 +1178,8 @@ describeJj("JjWorkspaces.removeWorktree", () => {
         yield* fileSystem.writeFileString(`${created.worktree.path}/agent.txt`, "work\n");
         yield* runJj(created.worktree.path, ["commit", "-m", "stranded agent work"]);
         const listed = yield* refs.listRefs({ cwd: created.worktree.path, refresh: true });
-        assert.isFalse(listed.refs.some((ref) => ref.current));
+        // The workspace falls back to its recorded name, never to the base bookmark.
+        assert.notEqual(listed.refs.find((ref) => ref.current)?.name, "main");
         yield* ops.removeWorktree({ cwd: root, path: created.worktree.path, force: true });
         assert.equal(yield* commitId(root, "main"), mainBefore);
       }),

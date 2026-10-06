@@ -39,6 +39,7 @@ export interface JjReviewDiffDeps {
   readonly listWorkspaces: JjVcsDriverShape["listWorkspaces"];
   readonly listBookmarks: JjVcsDriverShape["listBookmarks"];
   readonly countRevset: JjVcsDriverShape["countRevset"];
+  readonly recordedWorkspaceBookmark: JjVcsDriverShape["recordedWorkspaceBookmark"];
   readonly changeAt: (cwd: string, revset: string) => Effect.Effect<JjChange | null, VcsError>;
   readonly listRemoteNames: (cwd: string) => Effect.Effect<ReadonlyArray<string>, VcsError>;
   readonly resolveDefaultBookmark: (cwd: string) => Effect.Effect<string | null, VcsError>;

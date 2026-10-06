@@ -26,6 +26,7 @@ import { makeJjCheckpointOps } from "./JjCheckpoints.ts";
 import * as JjProcess from "./JjProcess.ts";
 import * as JjRepo from "./JjRepo.ts";
 import { makeJjReviewDiff, type JjReviewDiffOps } from "./JjReviewDiff.ts";
+import * as JjWorkspaceBookmark from "./JjWorkspaceBookmark.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 import { chunkPathsForCheckIgnore, splitLineSeparatedPaths } from "./VcsPathCodecs.ts";
 import * as VcsProcess from "./VcsProcess.ts";
@@ -105,6 +106,11 @@ export interface JjVcsDriverShape extends VcsDriverService {
   ) => Effect.Effect<ReadonlyArray<JjSegmentRow>, VcsError>;
   readonly listBookmarks: (cwd: string) => Effect.Effect<ReadonlyArray<JjBookmark>, VcsError>;
   readonly listWorkspaces: (cwd: string) => Effect.Effect<ReadonlyArray<JjWorkspace>, VcsError>;
+  /** The bookmark recorded for a T3 workspace, which need not exist yet. See `JjWorkspaceBookmark`. */
+  readonly recordedWorkspaceBookmark: (
+    cwd: string,
+    workspaceName: string,
+  ) => Effect.Effect<string | null, never>;
   /** Commits in a revset, capped; used for ahead/behind. */
   readonly countRevset: (cwd: string, revset: string) => Effect.Effect<number, VcsError>;
   readonly resolveDefaultBookmark: (cwd: string) => Effect.Effect<string | null, VcsError>;
@@ -930,6 +936,23 @@ const makeVcsDriverShape = Effect.gen(function* () {
   const ensureGitDir = (operation: string, cwd: string) =>
     ensureUsable(operation, cwd).pipe(Effect.map((paths) => paths.gitDir));
 
+  const recordedWorkspaceBookmark: JjVcsDriverShape["recordedWorkspaceBookmark"] = (
+    cwd,
+    workspaceName,
+  ) =>
+    repoPaths(cwd).pipe(
+      Effect.flatMap((paths) =>
+        paths.gitDir === null
+          ? Effect.succeed(null)
+          : JjWorkspaceBookmark.readWorkspaceBookmark(vcsProcess, {
+              gitDir: paths.gitDir,
+              cwd,
+              workspaceName,
+            }),
+      ),
+      Effect.orElseSucceed(() => null),
+    );
+
   const reviewDiff = makeJjReviewDiff({
     crypto,
     process: vcsProcess,
@@ -940,6 +963,7 @@ const makeVcsDriverShape = Effect.gen(function* () {
     listWorkspaces,
     listBookmarks,
     countRevset,
+    recordedWorkspaceBookmark,
     changeAt,
     listRemoteNames,
     resolveDefaultBookmark,
@@ -969,6 +993,7 @@ const makeVcsDriverShape = Effect.gen(function* () {
     currentSegment,
     listBookmarks,
     listWorkspaces,
+    recordedWorkspaceBookmark,
     countRevset,
     resolveDefaultBookmark,
     listRemoteNames,
