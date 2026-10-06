@@ -9,6 +9,8 @@ import { ChildProcessSpawner } from "effect/process";
 import * as VcsProcess from "./VcsProcess.ts";
 import * as VcsProjectConfig from "./VcsProjectConfig.ts";
 import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
+import * as JjVcsDriver from "./JjVcsDriver.ts";
+import { commitId, describeJj, runJj, seedJjRepo } from "./testing/JjTestSupport.ts";
 
 const processOutput = (stdout: string): VcsProcess.VcsProcessOutput => ({
   exitCode: ChildProcessSpawner.ExitCode(0),
@@ -20,6 +22,48 @@ const processOutput = (stdout: string): VcsProcess.VcsProcessOutput => ({
 
 const normalizeGitArgs = (args: ReadonlyArray<string>): ReadonlyArray<string> =>
   args[0] === "-C" && args.length >= 2 ? args.slice(2) : args;
+
+describeJj("VcsDriverRegistry JJ cache invalidation", () => {
+  it.effect("refreshes registered review diffs after the JJ service invalidates repo caches", () =>
+    Effect.gen(function* () {
+      const { root } = yield* seedJjRepo({ prefix: "t3-jj-registry-cache-", withRemote: true });
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+      const jj = yield* JjVcsDriver.JjVcsDriver;
+      const { driver } = yield* registry.resolve({ cwd: root });
+      const getDiffPreview = driver.getDiffPreview;
+      if (!getDiffPreview || !jj.getDiffPreview) {
+        assert.fail("The Jujutsu driver exposes no review diff preview.");
+      }
+      yield* fileSystem.writeFileString(path.join(root, "seed.txt"), "updated\n");
+
+      const expectedFiles = [{ path: "seed.txt", previousPath: null, additions: 1, deletions: 1 }];
+      const before = yield* getDiffPreview({ cwd: root, baseRef: "origin/main" });
+      assert.deepEqual(before.sources[1]?.files, expectedFiles);
+
+      yield* runJj(root, ["git", "remote", "rename", "origin", "upstream"]);
+      yield* jj.invalidateRepoCaches(root);
+
+      const refreshed = yield* jj.getDiffPreview({ cwd: root, baseRef: "upstream/main" });
+      assert.deepEqual(refreshed.sources[1]?.files, expectedFiles);
+      assert.equal(refreshed.sources[1]?.baseRef, yield* commitId(root, "main@upstream"));
+
+      const after = yield* getDiffPreview({ cwd: root, baseRef: "upstream/main" });
+      assert.deepEqual(after.sources[1]?.files, expectedFiles);
+      assert.equal(after.sources[1]?.baseRef, refreshed.sources[1]?.baseRef);
+      assert.include(after.sources[1]?.diff ?? "", "-seed\n+updated\n");
+    }).pipe(
+      Effect.provide(
+        VcsDriverRegistry.layer.pipe(
+          Layer.provideMerge(JjVcsDriver.layer),
+          Layer.provide(VcsProcess.layer),
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+});
 
 describe("VcsDriverRegistry", () => {
   it.effect("routes directly by VCS driver kind for non-repository workflows", () => {
