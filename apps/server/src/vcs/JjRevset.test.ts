@@ -52,6 +52,11 @@ describe("JjRevset", () => {
     assert.equal(localBookmarkRevset('weird"name\\'), 'bookmarks(exact:"weird\\"name\\\\")');
   });
 
+  it("converts a workspace ref to jj's working-copy revset", () => {
+    assert.equal(refNameToRevset("invite-styles@", ["origin"]), '"invite-styles"@');
+    assert.equal(refNameToRevset("@", ["origin"]), 'bookmarks(exact:"@")');
+  });
+
   it("passes revisions through unchanged", () => {
     const commitId = "b17b3034179d638b3a97c41e17e7ffe25b8c4f74";
     assert.equal(refNameToRevset(commitId, ["origin"]), commitId);
