@@ -758,6 +758,7 @@ export function ThreadRelationshipsPanel(props: {
     const RelationshipPopup = agent ? ThreadHoverCardPopup : TooltipPopup;
     const relationshipTooltip = agent ? (
       <SubagentTooltipContent
+        environmentId={props.environmentId}
         title={threadTitle}
         model={agent.model}
         providerInstanceId={agent.providerInstanceId}
@@ -837,6 +838,7 @@ export function ThreadRelationshipsPanel(props: {
         <ThreadLineageWorkflowRow
           key={threadId}
           group={workflowGroup}
+          environmentId={props.environmentId}
           providerInstanceId={agent.providerInstanceId}
           provider={provider}
           providers={providers}

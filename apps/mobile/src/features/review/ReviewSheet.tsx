@@ -1,5 +1,8 @@
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
+import { getVcsTerminology, type VcsTerminology } from "@t3tools/shared/vcs";
+import { selectKind, selectUnsupportedReason, vcsEnvironment } from "../../state/vcs";
+import { useEnvironmentQuerySelector } from "../../state/query";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -63,6 +66,7 @@ import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspace
 
 function ReviewHeader(
   props: Parameters<typeof useReviewHeaderPresentation>[0] & {
+    readonly vcsTerminology: VcsTerminology;
     readonly sectionMenu: ReturnType<typeof buildReviewSectionMenu>;
     readonly showSectionToolbar: boolean;
     readonly showChangedFilesToggle: boolean;
@@ -115,8 +119,19 @@ function ReviewHeader(
                     id: "sections",
                     inline: true,
                     items: [
-                      sectionAction(props.sectionMenu.branchChanges, "Changes"),
-                      sectionAction(props.sectionMenu.workingTree, "Uncommitted"),
+                      sectionAction(
+                        props.sectionMenu.branchChanges,
+                        props.vcsTerminology.preserveReviewSectionTitles
+                          ? (props.sectionMenu.branchChanges?.title ?? "Changes")
+                          : "Changes",
+                      ),
+                      sectionAction(
+                        props.sectionMenu.workingTree,
+                        props.vcsTerminology.preserveReviewSectionTitles
+                          ? (props.sectionMenu.workingTree?.title ??
+                              props.vcsTerminology.workingTreeNounTitle)
+                          : "Uncommitted",
+                      ),
                       sectionAction(props.sectionMenu.latestTurn, "Latest turn"),
                     ],
                   },
@@ -380,6 +395,14 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const topContentInset = useContentTopInset();
   const bottomContentInset =
     Platform.OS === "ios" ? safeArea.bottom + 8 : Math.max(insets.bottom, 18) + 18;
+  const vcsStatusAtom =
+    selectedThreadCwd === null
+      ? null
+      : vcsEnvironment.status({ environmentId, input: { cwd: selectedThreadCwd } });
+  const vcsKind = useEnvironmentQuerySelector(vcsStatusAtom, selectKind);
+  const vcsTerminology = getVcsTerminology(vcsKind);
+  const vcsUnsupportedReason = useEnvironmentQuerySelector(vcsStatusAtom, selectUnsupportedReason);
+  const vcsActionsSupported = vcsUnsupportedReason === null;
 
   const {
     error,
@@ -389,15 +412,16 @@ export function ReviewSheet(props: ReviewSheetProps) {
     selectSection,
     isSelectedSectionPending,
   } = useReviewSections({
-    enabled: isEnvironmentReady,
+    enabled: isEnvironmentReady && vcsActionsSupported,
     environmentId,
     threadId,
     reviewCache,
+    vcsKind,
   });
   useReviewDiffPrewarming({
     threadKey: reviewCache.threadKey,
-    sections: reviewSections,
-    selectedSectionId: selectedSection?.id ?? null,
+    sections: vcsActionsSupported ? reviewSections : [],
+    selectedSectionId: vcsActionsSupported ? (selectedSection?.id ?? null) : null,
   });
   const {
     headerDiffSummary,
@@ -409,8 +433,8 @@ export function ReviewSheet(props: ReviewSheetProps) {
   } = useReviewDiffData({
     threadKey: reviewCache.threadKey,
     environmentId,
-    cwd: selectedThreadCwd,
-    selectedSection,
+    cwd: vcsActionsSupported ? selectedThreadCwd : null,
+    selectedSection: vcsActionsSupported ? selectedSection : null,
     draftMessage,
     draftContext,
   });
@@ -608,6 +632,16 @@ export function ReviewSheet(props: ReviewSheetProps) {
     .join(" · ");
   const headerTitleText = selectedSection?.title ?? "Review changes";
 
+  if (!vcsActionsSupported) {
+    return (
+      <ScreenContent>
+        <Text accessibilityRole="alert" className="p-4 text-sm text-danger-foreground">
+          {vcsUnsupportedReason}
+        </Text>
+      </ScreenContent>
+    );
+  }
+
   return (
     <>
       {showChangedFilesPane ? (
@@ -622,6 +656,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
         title={headerTitleText}
         subtitle={headerSubtitle}
         androidSubtitle={androidHeaderSubtitle}
+        vcsTerminology={vcsTerminology}
         selectedThreadCwd={selectedThreadCwd}
         sectionMenu={sectionMenu}
         selectedSection={selectedSection}

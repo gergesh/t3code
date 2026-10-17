@@ -86,6 +86,7 @@ type PendingThreadRequests = ReturnType<typeof usePendingThreadRequests>;
 type LocalDispatchState = ReturnType<typeof useLocalDispatchState>;
 
 interface ThreadLifecycleInput {
+  readonly vcsActionsSupported: boolean;
   readonly environmentId: EnvironmentId;
   readonly routeThreadKey: string;
   readonly currentRouteThreadKeyRef: { readonly current: string | null };
@@ -332,7 +333,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     setRevealedBranchMismatchKey(nextRevealedBranchMismatchKey);
   }
   const handleSwitchCheckoutToThread = async () => {
-    if (!canWriteSourceControl) return;
+    if (!canWriteSourceControl || !input.vcsActionsSupported) return;
     if (
       !activeProjectCwd ||
       !activeThread ||

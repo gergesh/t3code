@@ -139,7 +139,7 @@ import {
 } from "../../lib/layout";
 import { editPendingThreadMessage } from "../../state/edit-pending-thread-message";
 import { deviceEnvironment } from "../../state/device";
-import { useEnvironmentQuery } from "../../state/query";
+import { useEnvironmentQuery, useEnvironmentQuerySelector } from "../../state/query";
 import { threadDevicePreviews } from "../devices/threadDevicePreviews";
 import { ThreadBrowserFloat } from "../browser/ThreadBrowserFloat";
 import { useThreadServerBrowserTabs } from "../../state/preview";
@@ -448,6 +448,17 @@ function ThreadDetailBody(
     });
   };
   const insets = useSafeAreaInsets();
+  const vcsEnvironmentId = props.selectedThread.environmentId;
+  const selectedThreadCwd = props.threadCwd;
+  const vcsStatusAtom =
+    vcsEnvironmentId === null || selectedThreadCwd === null
+      ? null
+      : vcsEnvironment.status({
+          environmentId: vcsEnvironmentId,
+          input: { cwd: selectedThreadCwd },
+        });
+  const vcsTerminology = useEnvironmentQuerySelector(vcsStatusAtom, selectTerminology);
+  const vcsUnsupportedReason = useEnvironmentQuerySelector(vcsStatusAtom, selectUnsupportedReason);
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
   const liveKeyboardHeight = useKeyboardState((state) => state.height);
   // Android can lose IME hide callbacks on backgrounding. Quarantine translation on resume unless focused input retained its keyboard.
@@ -796,7 +807,9 @@ function ThreadDetailBody(
       if (props.worktreeSetup) return null;
       return {
         kind: "preparing",
-        label: props.creationState.preparingWorktree ? "Setting up worktree…" : "Starting…",
+        label: props.creationState.preparingWorktree
+          ? `Setting up ${vcsTerminology.workspaceNoun}…`
+          : "Starting…",
       };
     }
     if (props.creationState?.kind === "failed") {
@@ -1426,8 +1439,17 @@ function ThreadDetailBody(
   };
 
   return (
+    <VcsTerminologyContext value={vcsTerminology}>
     <View className="flex-1" onLayout={handleScreenLayout}>
       {!usesNativeWorkspaceColumns ? <NativeLayoutObserver onChange={setScreenMetrics} /> : null}
+      {vcsUnsupportedReason ? (
+        <Text
+          accessibilityRole="alert"
+          className="border-b border-border bg-card px-4 py-3 text-sm text-danger-foreground"
+        >
+          {vcsUnsupportedReason}
+        </Text>
+      ) : null}
       {props.draftMode ? (
         props.draftMode.content(
           navigationHeaderHeight,
@@ -1471,7 +1493,11 @@ function ThreadDetailBody(
                   workspaceRoot={props.threadCwd}
                   feed={props.selectedThreadFeed}
                   pendingHandoff={props.pendingHandoff}
-                  worktreeSetup={props.worktreeSetup}
+                  worktreeSetup={
+                    props.worktreeSetup
+                      ? { ...props.worktreeSetup, vcsTerminology }
+                      : props.worktreeSetup
+                  }
                   setupWorkingStartedAt={props.setupWorkingStartedAt}
                   queuedMessages={props.queuedMessages}
                   dispatchingMessageId={props.dispatchingMessageId}
@@ -1922,5 +1948,6 @@ function ThreadDetailBody(
         </KeyboardStickyView>
       ) : null}
     </View>
+    </VcsTerminologyContext>
   );
 }

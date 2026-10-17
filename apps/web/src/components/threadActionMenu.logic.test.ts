@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { JJ_VCS_TERMINOLOGY } from "@t3tools/shared/vcs";
 
 import { buildThreadActionMenuItems, type ThreadActionMenuState } from "./threadActionMenu.logic";
 
@@ -26,6 +27,19 @@ const baseState: ThreadActionMenuState = {
 };
 
 describe("buildThreadActionMenuItems", () => {
+  it("uses bookmark terminology for jj thread copy actions", () => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      branch: "feature",
+      terminology: JJ_VCS_TERMINOLOGY,
+    });
+    expect(items.find((item) => item.id === "copy")?.children).toContainEqual({
+      id: "copy-branch",
+      label: "Bookmark",
+      icon: "git-branch",
+    });
+  });
+
   it.each([false, true])(
     "disables both lifecycle directions without permission (reversed: %s)",
     (reversed) => {

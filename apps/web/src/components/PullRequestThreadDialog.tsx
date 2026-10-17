@@ -3,6 +3,7 @@ import {
   type EnvironmentId,
   type ThreadId,
 } from "@t3tools/contracts";
+import { vcsOperationErrorMessage } from "@t3tools/client-runtime/errors";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -20,6 +21,11 @@ import { parsePullRequestReference } from "@t3tools/client-runtime/pull-request-
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
 import { useEnvironmentQuery } from "~/state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
+import {
+  resolveVcsTerminology,
+  resolveVcsUnsupportedReason,
+  supportsVcsActions,
+} from "@t3tools/shared/vcs";
 import { vcsEnvironment } from "~/state/vcs";
 import { offHeadPullRequestCheckoutToast } from "./pullRequest/pullRequestCheckoutToast";
 import { Button } from "./ui/button";
@@ -88,6 +94,8 @@ export function PullRequestThreadDialog({
   );
   const sourceControlPresentation = getSourceControlPresentation(gitStatus?.sourceControlProvider);
   const terminology = sourceControlPresentation.terminology;
+  const vcsTerminology = resolveVcsTerminology(gitStatus);
+  const vcsActionsSupported = supportsVcsActions(gitStatus);
   const SourceControlIcon = sourceControlPresentation.Icon;
 
   const parsedReference = parsePullRequestReference(reference);
@@ -122,7 +130,7 @@ export function PullRequestThreadDialog({
   const statusTone = pullRequestStatusTone(resolvedPullRequest?.state);
 
   const handleConfirm = async (mode: "local" | "worktree") => {
-    if (!preparePullRequestThreadAction.isAllowed) return;
+    if (!vcsActionsSupported || !preparePullRequestThreadAction.isAllowed) return;
     if (
       mode === "worktree" &&
       !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)
@@ -150,9 +158,7 @@ export function PullRequestThreadDialog({
       } else {
         const error = squashAtomCommandFailure(result);
         setPrepareErrorMessage(
-          error instanceof Error
-            ? error.message
-            : `Failed to prepare ${terminology.singular} thread.`,
+          vcsOperationErrorMessage(error, `Failed to prepare ${terminology.singular} thread.`),
         );
       }
       return;
@@ -175,15 +181,17 @@ export function PullRequestThreadDialog({
         ? `Use a ${terminology.singular} URL, checkout command, 123, or #123.`
         : null;
   const errorMessage =
+    resolveVcsUnsupportedReason(gitStatus) ??
     validationMessage ??
     prepareErrorMessage ??
     (resolvedPullRequest === null && pullRequestResolution.error
       ? pullRequestResolution.error
-      : preparePullRequestThreadAction.error instanceof Error
-        ? preparePullRequestThreadAction.error.message
-        : preparePullRequestThreadAction.error
-          ? `Failed to prepare ${terminology.singular} thread.`
-          : null);
+      : preparePullRequestThreadAction.error
+        ? vcsOperationErrorMessage(
+            preparePullRequestThreadAction.error,
+            `Failed to prepare ${terminology.singular} thread.`,
+          )
+        : null);
 
   return (
     <Dialog
@@ -282,6 +290,7 @@ export function PullRequestThreadDialog({
             variant="outline"
             onClick={() => handleConfirm("local")}
             disabled={
+              !vcsActionsSupported ||
               !preparePullRequestThreadAction.isAllowed ||
               !cwd ||
               !resolvedPullRequest ||
@@ -296,6 +305,7 @@ export function PullRequestThreadDialog({
             size="sm"
             onClick={() => handleConfirm("worktree")}
             disabled={
+              !vcsActionsSupported ||
               !preparePullRequestThreadAction.isAllowed ||
               !canOperateThread ||
               !cwd ||
@@ -304,7 +314,9 @@ export function PullRequestThreadDialog({
               preparePullRequestThreadAction.isPending
             }
           >
-            {preparingMode === "worktree" ? "Preparing worktree..." : "Worktree"}
+            {preparingMode === "worktree"
+              ? `Preparing ${vcsTerminology.workspaceNoun}...`
+              : vcsTerminology.workspaceNounTitle}
           </Button>
         </DialogFooter>
       </DialogPopup>

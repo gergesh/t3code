@@ -9,6 +9,7 @@ import {
   WorktreeMcpStatusResult,
   ThreadId,
 } from "@t3tools/contracts";
+import { JJ_VCS_TERMINOLOGY } from "@t3tools/shared/vcs";
 import * as Schema from "effect/Schema";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
@@ -25,16 +26,21 @@ const dependencies = [
 
 const WorktreeToolFailure = Schema.Union([WorktreeMcpFailure, OrchestratorMcpFailure]);
 
+const jjWorkspaceDescription = ` In ${JJ_VCS_TERMINOLOGY.systemName} repositories, worktree means ${JJ_VCS_TERMINOLOGY.workspaceNoun} and branch/ref means ${JJ_VCS_TERMINOLOGY.refNoun}; the same operations use that repository's VCS.`;
+
 const WorktreeHandoffTool = Tool.make("t3_worktree_handoff", {
   description:
-    "Move THIS thread into a new git worktree on a new branch. Runs the setup script by default. A separate agent in a worktree: `t3_thread_launch` with `workspaceStrategy`. Call last in your turn. The move ends the live session. `continuationPrompt` resumes work there next turn. Without it, the thread waits. The worktree stays after the thread is deleted. Fails if this thread has a worktree.",
+    "Move THIS thread into a new workspace on a new branch. Runs the setup script by default. A separate agent in a worktree: `t3_thread_launch` with `workspaceStrategy`. Call last in your turn. The move ends the live session. `continuationPrompt` resumes work there next turn. Without it, the thread waits. The worktree stays after the thread is deleted. Fails if this thread has a worktree.",
   parameters: WorktreeMcpHandoffInput,
   success: WorktreeMcpHandoffResult,
   failure: WorktreeToolFailure,
   failureMode: "return",
   dependencies,
 })
-  .annotate(Tool.Title, "Hand off thread to a git worktree")
+  .annotate(
+    Tool.Title,
+    `Hand off thread to a git worktree / ${JJ_VCS_TERMINOLOGY.systemName} ${JJ_VCS_TERMINOLOGY.workspaceNoun}`,
+  )
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, true)
   .annotate(Tool.Idempotent, false)
@@ -60,7 +66,7 @@ const WorktreeStatusTool = Tool.make("t3_worktree_status", {
 
 const WorktreeListTool = Tool.make("t3_worktree_list", {
   description:
-    "List branch refs and checkout paths for a thread's workspace. Omit `threadId` for this thread. Detached worktrees with no branch are left out.",
+    "List branch or bookmark refs and checkout paths for a thread's workspace. Omit `threadId` for this thread. Detached worktrees with no branch are left out.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     threadId: Schema.optional(ThreadId),

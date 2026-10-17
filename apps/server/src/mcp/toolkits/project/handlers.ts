@@ -5,6 +5,7 @@ import {
   OrchestratorMcpFailure,
   ProjectId,
 } from "@t3tools/contracts";
+import { getVcsTerminology } from "@t3tools/shared/vcs";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -28,6 +29,7 @@ import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as VcsDriverRegistry from "../../../vcs/VcsDriverRegistry.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
@@ -59,12 +61,17 @@ const assertProjectWorktree = Effect.fn("mcp.assertProjectWorktree")(function* (
     Effect.orElseSucceed((): ReadonlyArray<string> => []),
     Effect.flatMap((paths) => Effect.forEach(paths, real)),
   );
-  if (!worktrees.includes(yield* real(worktreePath)))
+  if (!worktrees.includes(yield* real(worktreePath))) {
+    const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+    const handle = yield* registry
+      .detect({ cwd: workspaceRoot, jjOnly: true })
+      .pipe(Effect.orElseSucceed(() => null));
+    const terminology = getVcsTerminology(handle?.kind);
     return yield* new OrchestratorMcpFailure({
       code: "invalid_request",
-      message:
-        "worktreePath must be one of the project's git worktrees. t3_worktree_list shows them.",
+      message: `worktreePath must be one of the project's ${terminology.repositoryAdjective} ${terminology.workspaceNounPlural}. t3_worktree_list shows them.`,
     });
+  }
 });
 
 /** A fixed-length id, so a long key fits in the scratch folder name derived from it. */

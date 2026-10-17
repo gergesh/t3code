@@ -2,12 +2,15 @@ import {
   AuthOrchestrationOperateScope,
   CommandId,
   EnvironmentId,
+  GitCommandError,
   MessageId,
+  OrchestrationV2ThreadLaunchError,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { QueuedThreadMessage } from "./thread-outbox-model";
@@ -15,6 +18,7 @@ import type { QueuedThreadMessage } from "./thread-outbox-model";
 const state = vi.hoisted(() => ({
   draftText: "Keep this draft separate",
   cleanups: [] as Array<() => void>,
+  unsupportedReason: null as string | null,
   delivery: null as {
     readonly drain: () => void;
     readonly dispose: () => void;
@@ -104,6 +108,7 @@ vi.mock("./threads", async () => {
   };
 });
 vi.mock("./git", () => ({ gitEnvironment: { preparePullRequestThread: state.checkout } }));
+vi.mock("./vcs", () => ({ readVcsUnsupportedReason: () => state.unsupportedReason }));
 vi.mock("../lib/modelOptions", () => ({ isModelSelectionUnavailable: state.modelUnavailable }));
 vi.mock("../lib/uuid", () => ({ uuidv4: () => "uuid", randomHex: () => "abcd" }));
 vi.mock("../lib/attachmentUpload", () => ({ prepareTurnAttachments: state.prepare }));
@@ -159,6 +164,7 @@ vi.mock("./use-composer-drafts", async () => {
 });
 
 import { appAtomRegistry } from "./atom-registry";
+import { pendingThreadCreationOutcomesAtom } from "./pending-thread-creation";
 import { environmentSession } from "./session";
 import { dispatchingQueuedMessageIdAtom, editingQueuedMessageIdsAtom } from "./use-thread-outbox";
 import { createThreadOutboxDelivery } from "./threadOutboxDelivery";
@@ -209,6 +215,7 @@ beforeEach(() => {
   setOperateGrant("primary", true);
   setOperateGrant("secondary", false);
   state.draftText = "Keep this draft separate";
+  state.unsupportedReason = null;
   state.config.shellThreadFamilies = false;
   state.modelUnavailable.mockReset().mockReturnValue(false);
   state.familyMount.mockReset().mockReturnValue(() => {});
@@ -253,6 +260,87 @@ describe("queued PR checkout", () => {
     worktreePath: "/repo/.t3/worktrees/pr-123",
     isOnPullRequestHead: true,
   };
+
+  it.each(["first-send", "workspace"] as const)(
+    "shows the serialized unsupported reason after a %s refusal without losing the draft",
+    async (stage) => {
+      setOperateGrant("secondary", true);
+      const queued = queuedPullRequest();
+      await state.manager.enqueue(queued);
+      const reason =
+        "T3 Code supports colocated Jujutsu repositories. Run `jj git colocation enable` in this repository, or open its Git checkout instead.";
+      const launchCodec = Schema.toCodecJson(OrchestrationV2ThreadLaunchError);
+      const gitCodec = Schema.toCodecJson(GitCommandError);
+      const error =
+        stage === "first-send"
+          ? Schema.decodeSync(launchCodec)(
+              Schema.encodeSync(launchCodec)(
+                new OrchestrationV2ThreadLaunchError({
+                  commandId: CommandId.make("command"),
+                  projectId: ProjectId.make("project"),
+                  message: reason,
+                }),
+              ),
+            )
+          : Schema.decodeSync(gitCodec)(
+              Schema.encodeSync(gitCodec)(
+                new GitCommandError({
+                  operation: "preparePullRequestThread",
+                  command: "jj",
+                  cwd: "/repo",
+                  reason: "unsupported_repository",
+                  detail: reason,
+                }),
+              ),
+            );
+      const refusal = AsyncResult.failure(Cause.fail(error));
+      state.checkout.mockResolvedValueOnce(
+        stage === "workspace" ? refusal : AsyncResult.success(preparedCheckout),
+      );
+      if (stage === "first-send") state.start.mockResolvedValueOnce(refusal);
+
+      await runDrain();
+
+      expect(Object.values(appAtomRegistry.get(pendingThreadCreationOutcomesAtom))).toContainEqual({
+        kind: "failed",
+        message: queued,
+        reason,
+      });
+      expect(state.draftText).toContain(queued.text);
+      expect(state.draftText).toContain("Keep this draft separate");
+      expect(remaining()).toEqual([]);
+      if (stage === "workspace") expect(state.start).not.toHaveBeenCalled();
+    },
+  );
+
+  it("refuses queued workspace preparation after status becomes unsupported", async () => {
+    setOperateGrant("secondary", true);
+    state.checkout.mockResolvedValue(AsyncResult.success(preparedCheckout));
+    await state.manager.enqueue(queuedPullRequest());
+    state.unsupportedReason = "Install Jujutsu";
+    await runDrain();
+    expect(state.checkout).not.toHaveBeenCalled();
+    expect(state.start).not.toHaveBeenCalled();
+  });
+
+  it("keeps plain local chat available in an unsupported repository", async () => {
+    setOperateGrant("secondary", true);
+    const queued = queuedPullRequest();
+    await state.manager.enqueue({
+      ...queued,
+      creation: {
+        projectId: ProjectId.make("project"),
+        projectCwd: "/repo",
+        workspaceMode: "local",
+        branch: null,
+        worktreePath: null,
+      },
+    });
+    state.unsupportedReason = "Install Jujutsu";
+    await runDrain();
+    expect(state.checkout).not.toHaveBeenCalled();
+    expect(state.start).toHaveBeenCalledOnce();
+  });
 
   it("waits for the provider's PR checkout and launches in that worktree", async () => {
     setOperateGrant("secondary", true);

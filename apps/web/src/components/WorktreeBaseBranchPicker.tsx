@@ -1,4 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
+import { GIT_VCS_TERMINOLOGY } from "@t3tools/shared/vcs";
 import { ChevronDownIcon, GitBranchIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -54,6 +55,7 @@ export function WorktreeBaseBranchPicker({
     resolvedActiveBranch: value || null,
     resolvedActiveBranchIsRemote: selectedRef ? selectedRef.isRemote === true : null,
     startFromOrigin,
+    terminology: GIT_VCS_TERMINOLOGY,
   });
   const branchByName = new Map(branches.refs.map((branch) => [branch.name, branch]));
   const items = [...branchByName.keys()];

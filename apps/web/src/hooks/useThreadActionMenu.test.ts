@@ -5,6 +5,7 @@ import {
   type ContextMenuItem,
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
+import { GIT_VCS_TERMINOLOGY, JJ_VCS_TERMINOLOGY } from "@t3tools/shared/vcs";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { ThreadActionMenuId } from "../components/threadActionMenu.logic";
@@ -27,6 +28,13 @@ const state = vi.hoisted(() => ({
       position: { x: number; y: number },
     ) => Promise<ThreadActionMenuId | null>
   >(),
+  vcsKind: "git" as "git" | "jj",
+  copyOptions: [] as {
+    target?: string;
+    onCopy?: (value: { branch: string }) => void;
+    onError?: (error: Error) => void;
+  }[],
+  toasts: [] as { title: string }[],
 }));
 
 function recordEffect(action: string) {
@@ -96,7 +104,12 @@ vi.mock("../uiStateStore", () => ({
 }));
 vi.mock("../components/ui/toast", () => ({
   stackedThreadToast: (toast: unknown) => toast,
-  toastManager: { add: () => state.completed.resolve() },
+  toastManager: {
+    add: (toast: { title: string }) => {
+      state.toasts.push(toast);
+      state.completed.resolve();
+    },
+  },
 }));
 vi.mock("../components/Sidebar.snooze", () => ({
   resolveSnoozePresets: () => [
@@ -105,7 +118,10 @@ vi.mock("../components/Sidebar.snooze", () => ({
   snoozeWakeDescription: () => "later",
 }));
 vi.mock("./useCopyToClipboard", () => ({
-  useCopyToClipboard: () => ({ copyToClipboard: () => recordEffect("copy") }),
+  useCopyToClipboard: (options: (typeof state.copyOptions)[number]) => {
+    state.copyOptions.push(options);
+    return { copyToClipboard: () => recordEffect("copy") };
+  },
 }));
 vi.mock("./useHandleNewThread", () => ({
   useNewThreadHandler: () => async () => recordEffect("draft"),
@@ -141,6 +157,9 @@ vi.mock("./useThreadActions", () => ({
       ]),
     ),
 }));
+vi.mock("../state/vcs", () => ({
+  useVcsTerminology: () => (state.vcsKind === "jj" ? JJ_VCS_TERMINOLOGY : GIT_VCS_TERMINOLOGY),
+}));
 
 import { useThreadActionMenu } from "./useThreadActionMenu";
 
@@ -163,6 +182,9 @@ beforeEach(() => {
   state.effects = [];
   state.completed = deferred<void>();
   state.show.mockReset().mockResolvedValue(null);
+  state.vcsKind = "git";
+  state.copyOptions = [];
+  state.toasts = [];
 });
 
 describe("thread menu permissions", () => {
@@ -192,5 +214,21 @@ describe("thread menu permissions", () => {
     expect(items[0]?.disabled).not.toBe(true);
     expect(state.effects).toEqual(["find"]);
     expect(onFind).toHaveBeenCalledExactlyOnceWith(target);
+  });
+
+  it.each([
+    ["git", "branch", "Branch"],
+    ["jj", "bookmark", "Bookmark"],
+  ] as const)("uses %s ref terms in header copy menus and feedback", (kind, noun, title) => {
+    state.vcsKind = kind;
+    createMenu().openMenu(position);
+    const copyMenu = state.show.mock.calls[0]![0].find((item) => item.id === "copy");
+    expect(copyMenu?.children?.find((item) => item.id === "copy-branch")?.label).toBe(title);
+    const options = state.copyOptions.find((option) => option.target === `${noun} name`);
+    expect(options).toBeDefined();
+    options?.onCopy?.({ branch: "main" });
+    expect(state.toasts.at(-1)?.title).toBe(`${title} copied`);
+    options?.onError?.(new Error("Copy failed"));
+    expect(state.toasts.at(-1)?.title).toBe(`Failed to copy ${noun}`);
   });
 });

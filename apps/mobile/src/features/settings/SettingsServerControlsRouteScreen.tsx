@@ -43,6 +43,7 @@ import {
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { AutoSettleSettingsRows } from "./ThreadSettingsSections";
 import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
+import { useVcsTerminology } from "../../state/vcs";
 
 type SettingsPage = "threads" | "source-control" | "worktrees" | "maintenance";
 
@@ -179,6 +180,15 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
   const navigation = useNavigation();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const selectedProject = projectGroups.find((group) => group.key === selectedProjectKey);
+  const terminologyProjects = selectedProject?.members.filter((member) =>
+    selectedTargets.some((target) => target.environmentId === member.project.environmentId),
+  );
+  const terminologyProject =
+    terminologyProjects?.length === 1 ? terminologyProjects[0]?.project : undefined;
+  const vcsTerminology = useVcsTerminology(
+    terminologyProject?.environmentId ?? null,
+    terminologyProject?.workspaceRoot ?? null,
+  );
   const writableEnvironments = useEnvironmentsWithScope(selectedTargets, AuthSettingsWriteScope);
   const projectSelected = selectedProjectKey !== null;
   const targets = resolveMobileSettingsTargets(
@@ -497,6 +507,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     instructions: disabledFor("branchNameInstructions"),
                   }}
                   onChange={write}
+                  terminology={vcsTerminology}
                 />
               </>
             ) : null}

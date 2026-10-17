@@ -1,3 +1,4 @@
+import { vcsOperationErrorMessage } from "@t3tools/client-runtime/errors";
 import {
   CommandId,
   type EnvironmentId,
@@ -107,7 +108,7 @@ export async function startFanoutThread(input: {
       stackedThreadToast({
         type: "error",
         title: `Could not start ${input.model}`,
-        description: error instanceof Error ? error.message : "Failed to send message.",
+        description: vcsOperationErrorMessage(error, "Failed to send message."),
         ...(retainedThreadId
           ? {
               timeout: 0,

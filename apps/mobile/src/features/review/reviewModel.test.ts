@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   applyReviewDiffMetadata,
   buildReviewParsedDiff,
+  buildReviewSectionItems,
   resolveReviewSelectedSectionId,
   type ReviewSectionItem,
 } from "./reviewModel";
@@ -303,4 +304,56 @@ describe("applyReviewDiffMetadata", () => {
     expect(result.notice).toContain("Counts include all changes");
     expect(applyReviewDiffMetadata(parsed, null)).toEqual(parsed);
   });
+});
+
+it("names a missing base with the project's ref noun", () => {
+  const [section] = buildReviewSectionItems({
+    checkpoints: [],
+    gitSections: [
+      {
+        id: "branch-range",
+        kind: "branch-range",
+        title: "Bookmark changes",
+        baseRef: null,
+        headRef: null,
+        diff: "",
+        diffHash: "h",
+        truncated: false,
+      },
+    ],
+    turnDiffById: {},
+    loadingGitSections: false,
+    vcsKind: "jj",
+  });
+
+  expect(section?.subtitle).toBe("Base bookmark unavailable");
+});
+
+it("uses jj working copy language while loading and after preview arrives", () => {
+  const input = {
+    checkpoints: [],
+    turnDiffById: {},
+    loadingGitSections: true,
+    vcsKind: "jj" as const,
+  };
+  expect(buildReviewSectionItems({ ...input, gitSections: [] })[0]?.title).toBe(
+    "Against base bookmark",
+  );
+  const items = buildReviewSectionItems({
+    ...input,
+    loadingGitSections: false,
+    gitSections: [
+      {
+        id: "working-tree",
+        kind: "working-tree",
+        title: "Working copy",
+        baseRef: "@-",
+        headRef: "@",
+        diff: "",
+        diffHash: "h",
+        truncated: false,
+      },
+    ],
+  });
+  expect(items[0]?.subtitle).toBe("Working copy changes");
 });

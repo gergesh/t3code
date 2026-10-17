@@ -14,6 +14,11 @@ import {
   requiresDefaultBranchConfirmation,
   resolveQuickAction,
 } from "@t3tools/client-runtime/state/vcs";
+import {
+  resolveVcsTerminology,
+  resolveVcsUnsupportedReason,
+  supportsVcsActions,
+} from "@t3tools/shared/vcs";
 import { useNavigation } from "@react-navigation/native";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 
@@ -113,19 +118,30 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   const threadId = props.threadId;
   const { gitStatus, gitOperationLabel, onPull, onRunAction } = props;
 
-  const currentBranchLabel = gitStatus?.refName ?? props.currentBranch ?? "Detached HEAD";
+  const vcsTerminology = resolveVcsTerminology(gitStatus);
+  const vcsUnsupportedReason = resolveVcsUnsupportedReason(gitStatus);
+  const vcsActionsSupported = supportsVcsActions(gitStatus);
+  const currentBranchLabel = gitStatus?.refName ?? props.currentBranch ?? vcsTerminology.noRefLabel;
   const busy = gitOperationLabel !== null;
   const isRepo = gitStatus?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const isDefaultRef = gitStatus?.isDefaultRef ?? false;
 
   const quickAction = (() => {
-    if (!isRepo) {
+    if (!vcsActionsSupported) {
       return {
-        label: "Git unavailable",
+        label: `${vcsTerminology.systemName} unavailable`,
         disabled: true,
         kind: "show_hint" as const,
-        hint: "This workspace is not a git repository.",
+        hint: vcsUnsupportedReason,
+      };
+    }
+    if (!isRepo) {
+      return {
+        label: `${vcsTerminology.systemName} unavailable`,
+        disabled: true,
+        kind: "show_hint" as const,
+        hint: `This workspace is not a ${vcsTerminology.repositoryAdjective} repository.`,
       };
     }
     const action = resolveQuickAction(gitStatus, busy, isDefaultRef, hasPrimaryRemote);
@@ -138,9 +154,9 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
       : action;
   })();
 
-  const quickActionHint = quickAction.disabled
-    ? (quickAction.hint ?? "This action is unavailable.")
-    : null;
+  const quickActionHint =
+    vcsUnsupportedReason ??
+    (quickAction.disabled ? (quickAction.hint ?? "This action is unavailable.") : null);
 
   const quickActionIcon: QuickActionIcon = (() => {
     if (quickAction.kind === "run_pull") return "arrow.down.circle";
@@ -157,9 +173,13 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
     const { shortLabel, singular } = sourceControlClients.get(
       gitStatus?.sourceControlProvider?.kind,
     ).changeRequest;
+    if (!vcsActionsSupported) return;
     const prUrl = gitStatus?.pr?.state === "open" ? gitStatus.pr.url : null;
     if (!prUrl) {
-      Dialog.alert(`No open ${shortLabel}`, `This branch does not have an open ${singular}.`);
+      Dialog.alert(
+        `No open ${shortLabel}`,
+        `This ${vcsTerminology.refNoun} does not have an open ${singular}.`,
+      );
       return;
     }
     if (!(await openPullRequest(prUrl))) {
@@ -168,7 +188,7 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   };
 
   const runActionWithPrompt = async (input: GitActionRequestInput) => {
-    if (!canWriteSourceControl) return;
+    if (!vcsActionsSupported || !canWriteSourceControl) return;
     const confirmableAction =
       input.action === "push" ||
       input.action === "create_pr" ||
@@ -219,6 +239,7 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   };
 
   const openReview = () => {
+    if (!vcsActionsSupported) return;
     navigation.navigate("ThreadReview", {
       environmentId: EnvironmentId.make(String(environmentId)),
       threadId: ThreadId.make(String(threadId)),
@@ -226,6 +247,7 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   };
 
   const openGitInspector = () => {
+    if (!vcsActionsSupported) return;
     if (props.onOpenGitInspector) {
       props.onOpenGitInspector();
       return;
@@ -239,6 +261,9 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   return {
     currentBranchLabel,
     isRepo,
+    vcsTerminology,
+    vcsActionsSupported,
+    vcsUnsupportedReason,
     openGitInspector,
     openReview,
     quickAction,
@@ -305,7 +330,7 @@ export function threadTerminalMenu(props: ThreadGitControlsProps): AppBarMenu | 
 export function useThreadGitMenuDefinition(props: ThreadGitMenuProps): AppBarMenu | null {
   const model = useThreadGitControlModel(props);
   return {
-    title: "Git controls",
+    title: `${model.vcsTerminology.systemName} controls`,
     icon: "point.topleft.down.curvedto.point.bottomright.up",
     separateBackground: false,
     items: [
@@ -314,7 +339,7 @@ export function useThreadGitMenuDefinition(props: ThreadGitMenuProps): AppBarMen
         title: compactMenuBranchLabel(model.currentBranchLabel),
         icon: "point.topleft.down.curvedto.point.bottomright.up",
         disabled: true,
-        subtitle: compactMenuStatus(props.gitStatus),
+        subtitle: model.vcsUnsupportedReason ?? compactMenuStatus(props.gitStatus),
         onPress: () => {},
       },
       {
@@ -331,11 +356,11 @@ export function useThreadGitMenuDefinition(props: ThreadGitMenuProps): AppBarMen
         id: "git-review",
         title: "Review changes",
         icon: "text.bubble",
-        disabled: !model.isRepo || props.hasThread === false,
+        disabled: !model.vcsActionsSupported || !model.isRepo || props.hasThread === false,
         subtitle:
           props.hasThread === false
             ? "Available after the first message"
-            : "Turn diffs and worktree changes",
+            : `Turn diffs and ${model.vcsTerminology.workspaceNoun} changes`,
         onPress: model.openReview,
       },
       ...(props.onMergeBack
@@ -353,11 +378,11 @@ export function useThreadGitMenuDefinition(props: ThreadGitMenuProps): AppBarMen
         id: "git-more",
         title: "More",
         icon: "ellipsis",
-        disabled: props.hasThread === false,
+        disabled: !model.vcsActionsSupported || props.hasThread === false,
         subtitle:
           props.hasThread === false
             ? "Available after the first message"
-            : "Commit, files, branches",
+            : `Commit, files, ${model.vcsTerminology.refNounPlural}`,
         onPress: model.openGitInspector,
       },
     ],

@@ -3,6 +3,8 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { resolveSendEnvMode } from "@t3tools/shared/projectSettings";
 import type { ComposerDraftWorkspaceSelection } from "../../state/use-composer-drafts";
 
+import { GIT_VCS_TERMINOLOGY, type VcsTerminology } from "@t3tools/shared/vcs";
+
 type WorkspaceMode = "local" | "worktree";
 
 export function resolveNewTaskWorkspaceSelection(input: {
@@ -18,11 +20,15 @@ export function resolveNewTaskWorkspaceSelection(input: {
 export function resolveNewTaskWorkspaceLabel(input: {
   readonly workspaceMode: WorkspaceMode;
   readonly worktreePath: string | null;
-}): "Current checkout" | "Current worktree" | "New worktree" {
+  readonly terminology?: VcsTerminology;
+}): string {
+  const terminology = input.terminology ?? GIT_VCS_TERMINOLOGY;
   if (input.workspaceMode === "worktree") {
-    return "New worktree";
+    return `New ${terminology.workspaceNoun}`;
   }
-  return input.worktreePath ? "Current worktree" : "Current checkout";
+  return input.worktreePath
+    ? `Current ${terminology.workspaceNoun}`
+    : `Current ${terminology.currentRefFallback}`;
 }
 
 export function resolveNewTaskBranchWorktreePath(input: {
@@ -77,13 +83,14 @@ export function resolveNewTaskBranchLabel(input: {
   readonly startFromOrigin: boolean;
   readonly workspaceMode: WorkspaceMode;
   readonly pullRequestReference?: string;
+  readonly terminology?: VcsTerminology;
 }): string {
   if (input.workspaceMode === "worktree" && input.pullRequestReference) {
     const parsed = sourceControlClients.parseChangeRequestUrl(input.pullRequestReference);
     if (parsed) return `From ${parsed.definition.changeRequest.shortLabel} #${parsed.link.number}`;
   }
   if (!input.branchName) {
-    return "Choose branch";
+    return `Choose ${(input.terminology ?? GIT_VCS_TERMINOLOGY).refNoun}`;
   }
 
   if (input.workspaceMode === "local") {

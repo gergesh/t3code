@@ -38,6 +38,7 @@ import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as JjVcsDriver from "../../../vcs/JjVcsDriver.ts";
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
 import * as VcsProcess from "../../../vcs/VcsProcess.ts";
+import * as VcsDriverRegistry from "../../../vcs/VcsDriverRegistry.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as ProjectHandlers from "./handlers.ts";
@@ -164,6 +165,20 @@ const clientLaunchHarness = (input: {
         ),
     }),
     Layer.mock(PeerForwarding.PeerForwarding)({}),
+    Layer.unwrap(
+      Effect.map(JjVcsDriver.JjVcsDriver, (driver) =>
+        Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+          detect: ({ cwd }) =>
+            driver
+              .detectRepository(cwd)
+              .pipe(
+                Effect.map((repository) =>
+                  repository === null ? null : { kind: repository.kind, repository, driver },
+                ),
+              ),
+        }),
+      ),
+    ),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
     Layer.unwrap(
       Effect.map(GitVcsDriver.GitVcsDriver, (git) =>
@@ -186,6 +201,7 @@ const clientLaunchHarness = (input: {
     DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer)),
   ).pipe(
     Layer.provideMerge(GitVcsDriver.layer),
+    Layer.provideMerge(JjVcsDriver.layer),
     Layer.provideMerge(VcsProcess.layer),
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-client-launch-" }).pipe(
@@ -487,6 +503,41 @@ it.effect("checkout listing failures remain neutral and do not launch a thread",
     });
     expect(launched).toHaveLength(0);
   }),
+);
+
+it.effect("an invalid Jujutsu launch names the project's workspaces", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-launch-jj-refusal-" });
+    // Repository detection only needs the marker, not a jj executable.
+    yield* fileSystem.makeDirectory(path.join(root, ".jj"));
+    const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+    const { projectId, dependencies } = clientLaunchHarness({
+      runtimeModeCeiling: "auto",
+      launched,
+      workspaceRoot: root,
+      listWorkspacePaths: () => Effect.succeed([]),
+    });
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
+      ),
+    );
+    const result = yield* toolkit
+      .handle("t3_thread_launch", {
+        title: "Fix",
+        projectId,
+        workspaceStrategy: { type: "existing_worktree", worktreePath: "/outside" },
+      })
+      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+    expect(result.at(-1)?.result).toMatchObject({
+      code: "invalid_request",
+      message:
+        "worktreePath must be one of the project's Jujutsu workspaces. t3_worktree_list shows them.",
+    });
+    expect(launched).toHaveLength(0);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 it.effect("a launch binds only an existing checkout that is one of the project's worktrees", () =>

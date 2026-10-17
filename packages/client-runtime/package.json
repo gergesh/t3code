@@ -219,6 +219,10 @@
       "types": "./src/state/threadHistoryMerge.ts",
       "default": "./src/state/threadHistoryMerge.ts"
     },
+    "./state/orchestration-v2-test-fixtures": {
+      "types": "./src/state/orchestrationV2TestFixtures.ts",
+      "default": "./src/state/orchestrationV2TestFixtures.ts"
+    },
     "./state/orchestration-v2-projection": {
       "types": "./src/state/orchestrationV2Projection.ts",
       "default": "./src/state/orchestrationV2Projection.ts"

@@ -1,5 +1,6 @@
 import { useLegendListRef } from "~/hooks/useLegendListRef";
 import type { VcsRef } from "@t3tools/contracts";
+import { getVcsTerminology, type VcsTerminology } from "@t3tools/shared/vcs";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
 
@@ -37,6 +38,7 @@ export function BranchPicker({
   renderItem,
   getItemType,
   children,
+  terminology = getVcsTerminology("git"),
 }: {
   items: string[];
   filteredItems: string[];
@@ -55,6 +57,7 @@ export function BranchPicker({
   renderItem: (value: string, index: number) => ReactNode;
   getItemType?: ((value: string) => string) | undefined;
   children: ReactNode;
+  terminology?: VcsTerminology;
 }) {
   const highlightedValueRef = useRef<string | null>(null);
   const startFromOriginSwitchId = useId();
@@ -103,7 +106,7 @@ export function BranchPicker({
       {children}
       <ComboboxPopup {...popupProps}>
         <ComboboxSearchInput
-          placeholder="Search refs..."
+          placeholder={`Search ${terminology.genericRefNounPlural}...`}
           value={query}
           onChange={(event) => {
             onQueryChange(event.target.value);
@@ -124,7 +127,7 @@ export function BranchPicker({
           }}
         />
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <ComboboxEmpty>No refs found.</ComboboxEmpty>
+          <ComboboxEmpty>No {terminology.genericRefNounPlural} found.</ComboboxEmpty>
           <div className="relative flex min-h-0 w-full max-h-56 flex-1 flex-col overflow-hidden">
             <ComboboxListVirtualized className="flex size-full min-h-0 min-w-0 flex-col">
               <LegendList<string>
@@ -167,16 +170,14 @@ export function BranchPicker({
                       id={startFromOriginSwitchId}
                       checked={originControl.checked}
                       size="sm"
-                      aria-label="Start worktree from remote"
+                      aria-label={`Start ${terminology.workspaceNoun} from remote`}
                       onCheckedChange={(checked) => originControl.onCheckedChange(Boolean(checked))}
                     />
                   </label>
                 }
               />
               <TooltipPopup side="top" className="max-w-72 whitespace-normal">
-                Uses the latest commit of the base branch’s tracked remote branch, even if its name
-                differs. Otherwise uses the same-named branch on origin. Uses your local branch if
-                that remote branch is missing.
+                {`Uses the latest commit of the base ${terminology.refNoun}’s tracked remote ${terminology.refNoun}, even if its name differs. Otherwise uses the same-named ${terminology.refNoun} on origin. Uses your local ${terminology.refNoun} if that remote ${terminology.refNoun} is missing.`}
               </TooltipPopup>
             </Tooltip>
           ) : null}
@@ -195,6 +196,7 @@ export function BranchPickerRefItem({
   disabled,
   onClick,
   onContextMenu,
+  terminology = getVcsTerminology("git"),
 }: {
   branch: VcsRef;
   projectCwd: string | null;
@@ -203,6 +205,7 @@ export function BranchPickerRefItem({
   disabled?: boolean;
   onClick: ComponentProps<typeof ComboboxItem>["onClick"];
   onContextMenu?: ComponentProps<typeof ComboboxItem>["onContextMenu"];
+  terminology?: VcsTerminology;
 }) {
   const itemValue = refName.name;
   const hasSecondaryWorktree =
@@ -210,7 +213,7 @@ export function BranchPickerRefItem({
   const badge = refName.current
     ? "current"
     : hasSecondaryWorktree
-      ? "worktree"
+      ? terminology.workspaceNoun
       : refName.isRemote
         ? "remote"
         : refName.isDefault

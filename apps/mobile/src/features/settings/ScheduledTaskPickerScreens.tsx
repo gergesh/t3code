@@ -1,3 +1,4 @@
+import { useVcsTerminology } from "../../state/vcs";
 import { useNavigation } from "@react-navigation/native";
 import { isListedThreadLineage } from "@t3tools/contracts";
 import * as Haptics from "expo-haptics";
@@ -134,6 +135,10 @@ export function ScheduledTaskBranchPickerRouteScreen() {
     cwd: project?.workspaceRoot ?? null,
     query: debouncedQuery,
   });
+  const vcsTerminology = useVcsTerminology(
+    project?.environmentId ?? null,
+    project?.workspaceRoot ?? null,
+  );
   const visibleBranches = branches.refs.filter(
     (branch) => !branch.isRemote && branch.name.toLowerCase().includes(query.trim().toLowerCase()),
   );
@@ -142,7 +147,7 @@ export function ScheduledTaskBranchPickerRouteScreen() {
 
   return (
     <BranchPickerScreen
-      title="Base branch"
+      title={`Base ${vcsTerminology.refNoun}`}
       project={project}
       branches={visibleBranches}
       selectedBranchName={editor.draft.baseRef}

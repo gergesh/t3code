@@ -6,6 +6,7 @@ import type {
   ProviderDriverKind,
   ProviderInstanceId,
   OrchestrationV2Subagent,
+  EnvironmentId,
 } from "@t3tools/contracts";
 import {
   resolveSubagentMetadata,
@@ -14,7 +15,7 @@ import {
 import { REASONING_EFFORT_OPTION_IDS } from "@t3tools/client-runtime/state/thread-execution";
 import { getModelSelectionStringOptionValue, resolveSelectableModel } from "@t3tools/shared/model";
 import { getTraitsSpeedDisplay, TraitsSpeedIcon } from "./TraitsSpeed";
-import type { ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
 import {
   BotIcon,
   CheckIcon,
@@ -29,8 +30,10 @@ import { MiddleTruncate } from "../ui/middle-truncate";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { cn } from "~/lib/utils";
 import { deriveProviderInstanceEntries, shouldShowInstanceBadge } from "../../providerInstances";
+import { VcsTerminologyContext } from "../../state/vcs";
 
 export function SubagentTooltipContent(props: {
+  environmentId?: EnvironmentId | undefined;
   title: string;
   model: string | null;
   providerInstanceId: ProviderInstanceId;
@@ -50,6 +53,7 @@ export function SubagentTooltipContent(props: {
   result?: string | null | undefined;
   progress?: string | null | undefined;
 }) {
+  const terminology = useContext(VcsTerminologyContext);
   const childSelection =
     props.modelSelection ??
     (props.origin === "app_owned" ? props.childThread?.modelSelection : undefined);
@@ -57,7 +61,7 @@ export function SubagentTooltipContent(props: {
     modelLabel,
     modelSlug,
     workspace: metadata,
-  } = resolveSubagentMetadata({ ...props, modelSelection: childSelection });
+  } = resolveSubagentMetadata({ ...props, modelSelection: childSelection, terminology });
   const preview = subagentDetailPreview(props);
   const providerModel = props.provider?.models.find((candidate) => candidate.slug === modelSlug);
   const childModel = props.provider
@@ -167,10 +171,10 @@ export function SubagentTooltipContent(props: {
         </span>
         {props.elapsed}
       </div>
-      {metadata.map(({ label, value }) => {
-        const Icon = label === "Branch" ? GitBranchIcon : FolderIcon;
+      {metadata.map(({ kind, label, value }) => {
+        const Icon = kind === "ref" ? GitBranchIcon : FolderIcon;
         return (
-          <div key={label} className="flex min-w-0 items-center gap-2">
+          <div key={kind} className="flex min-w-0 items-center gap-2">
             <Icon aria-hidden className="size-3 shrink-0" />
             <span className="sr-only">{label}</span>
             <MiddleTruncate value={value} className="flex" showTitle={false} />

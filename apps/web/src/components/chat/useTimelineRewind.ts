@@ -34,6 +34,7 @@ import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { rewindToMessage } from "./chatViewSend";
 import { makeThreadErrorSetter } from "../ChatView.logic";
 interface TimelineRewindInput {
+  readonly vcsActionsSupported: boolean;
   readonly environmentId: EnvironmentId;
   readonly routeThreadRef: ScopedThreadRef;
   readonly routeThreadKey: string;
@@ -95,6 +96,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     messageId: MessageId,
     restoreFiles?: boolean,
   ) => {
+    if (restoreFiles === true && !input.vcsActionsSupported) return;
     const localApi = readLocalApi();
     if (
       !localApi ||

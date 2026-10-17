@@ -1,4 +1,5 @@
 import { memo, type MouseEventHandler, type PointerEventHandler, type ReactNode } from "react";
+import { GIT_VCS_TERMINOLOGY } from "@t3tools/shared/vcs";
 import { CheckIcon, ChevronLeftIcon, Minimize2Icon, PlayIcon } from "lucide-react";
 import { CornerUpRight, ListPlus } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -40,6 +41,8 @@ interface ComposerPrimaryActionsProps {
   sendDisabledReason: string | null;
   isEnvironmentUnavailable: boolean;
   isPreparingWorktree: boolean;
+  /** The project's VCS noun for a worktree; Git's is the fallback while status is unknown. */
+  workspaceNoun?: string;
   hasSendableContent: boolean;
   canResume?: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
@@ -93,6 +96,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   sendDisabledReason,
   isEnvironmentUnavailable,
   isPreparingWorktree,
+  workspaceNoun = GIT_VCS_TERMINOLOGY.workspaceNoun,
   hasSendableContent,
   canResume = false,
   preserveComposerFocusOnPointerDown = false,
@@ -236,7 +240,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     ? "Environment disconnected"
     : (sendDisabledReason ??
       (isPreparingWorktree
-        ? "Preparing worktree"
+        ? `Preparing ${workspaceNoun}`
         : isSendBusy
           ? isEditingQueuedMessage
             ? "Updating queued message"

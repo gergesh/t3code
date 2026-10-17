@@ -1,3 +1,6 @@
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { useProject, useThreadShell } from "../../state/entities";
+import { useVcsTerminology, VcsTerminologyContext } from "../../state/vcs";
 import { useAtomValue } from "@effect/atom-react";
 import {
   deriveWorkflowGroups,
@@ -52,6 +55,14 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
   const openInspector = useOpenThreadInspector();
   const insets = useSafeAreaInsets();
   const turn = useThreadTurnSubagents(target);
+  const thread = useThreadShell(scopeThreadRef(target.environmentId, target.threadId));
+  const project = useProject(
+    thread ? scopeProjectRef(target.environmentId, thread.projectId) : null,
+  );
+  const terminology = useVcsTerminology(
+    target.environmentId,
+    thread?.worktreePath ?? project?.workspaceRoot ?? null,
+  );
   const subagents = turn?.subagents ?? [];
   const hasLiveAgent = (turn?.liveCount ?? 0) > 0;
   const workflowGroups = useMemo(
@@ -85,44 +96,46 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
   };
 
   const content = (
-    <ScrollView
-      nestedScrollEnabled
-      className="flex-1"
-      // UIKit must inset content beneath the floating translucent iOS header.
-      contentInsetAdjustmentBehavior="automatic"
-      contentContainerClassName="px-5 pb-6"
-      contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 8 }}
-    >
-      {subagents.length === 0 ? (
-        <Text className="pt-6 text-center text-sm text-foreground-muted">
-          No agents in this turn.
-        </Text>
-      ) : (
-        subagents.map((subagent) => {
-          const group = workflowGroups.get(subagent.id);
-          return group === undefined ? (
-            <View key={subagent.id} className="border-b border-border">
-              <AgentRow
-                subagent={subagent}
+    <VcsTerminologyContext value={terminology}>
+      <ScrollView
+        nestedScrollEnabled
+        className="flex-1"
+        // UIKit must inset content beneath the floating translucent iOS header.
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerClassName="px-5 pb-6"
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 8 }}
+      >
+        {subagents.length === 0 ? (
+          <Text className="pt-6 text-center text-sm text-foreground-muted">
+            No agents in this turn.
+          </Text>
+        ) : (
+          subagents.map((subagent) => {
+            const group = workflowGroups.get(subagent.id);
+            return group === undefined ? (
+              <View key={subagent.id} className="border-b border-border">
+                <AgentRow
+                  subagent={subagent}
+                  environmentId={target.environmentId}
+                  tickSeconds={hasLiveAgent}
+                  onOpen={openChildThread}
+                />
+              </View>
+            ) : (
+              <ThreadWorkflowGroup
+                key={subagent.id}
                 environmentId={target.environmentId}
-                tickSeconds={hasLiveAgent}
-                onOpen={openChildThread}
+                subagent={subagent}
+                group={group}
+                onOpen={(threadId) =>
+                  openChildThread({ environmentId: target.environmentId, threadId })
+                }
               />
-            </View>
-          ) : (
-            <ThreadWorkflowGroup
-              key={subagent.id}
-              environmentId={target.environmentId}
-              subagent={subagent}
-              group={group}
-              onOpen={(threadId) =>
-                openChildThread({ environmentId: target.environmentId, threadId })
-              }
-            />
-          );
-        })
-      )}
-    </ScrollView>
+            );
+          })
+        )}
+      </ScrollView>
+    </VcsTerminologyContext>
   );
 
   return (

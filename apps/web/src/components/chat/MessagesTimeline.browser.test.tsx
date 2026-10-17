@@ -3,6 +3,7 @@ import { HtmlRenderDocument } from "../files/BrowserDocumentFrame";
 import { flushSync } from "react-dom";
 import { AudioPreview } from "../files/AudioPreview";
 import { cdp, page } from "vite-plus/test/browser";
+import { getVcsTerminology } from "@t3tools/shared/vcs";
 import {
   ComposerContextId,
   EnvironmentId,
@@ -206,6 +207,23 @@ function renderTimeline(entries: ReadonlyArray<Entry>, props: Partial<TimelinePr
     <MessagesTimeline {...baseProps()} timelineEntries={entries as Entry[]} {...props} />,
   );
 }
+
+describe("MessagesTimeline checkout terminology", () => {
+  it.each([
+    ["git", "worktree"],
+    ["jj", "workspace"],
+  ] as const)("uses %s setup terminology", async (kind, noun) => {
+    using _vcs = createVcsHarness();
+    vcsState.kind = kind;
+    await using screen = await renderTimeline([], {
+      workspaceRoot: "/checkout",
+      isWorking: true,
+      isPreparingWorktree: true,
+    });
+    expect(screen.text()).toContain(`Setting up ${noun}…`);
+    expect(vcsState.lookup).toHaveBeenCalledWith(ENVIRONMENT_ID, "/checkout");
+  });
+});
 
 async function click(element: HTMLElement) {
   await act(async () => element.click());
@@ -1507,6 +1525,25 @@ describe("compact reasoning math", () => {
     );
   });
 });
+
+const vcsState = vi.hoisted(() => ({ kind: "git" as "git" | "jj", lookup: vi.fn() }));
+vi.mock(import("../../state/vcs"), async (original) => ({
+  ...(await original()),
+  useVcsTerminology: (environmentId, workspaceRoot) => {
+    vcsState.lookup(environmentId, workspaceRoot);
+    return getVcsTerminology(vcsState.kind);
+  },
+}));
+function createVcsHarness(): Disposable {
+  vcsState.kind = "git";
+  vcsState.lookup.mockReset();
+  return {
+    [Symbol.dispose]() {
+      vcsState.kind = "git";
+      vcsState.lookup.mockReset();
+    },
+  };
+}
 
 it("renders automatic compaction as one live divider that finishes with its reason and token delta", async () => {
   setup();

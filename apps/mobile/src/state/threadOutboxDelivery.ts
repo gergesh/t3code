@@ -1,4 +1,5 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { vcsOperationErrorMessage } from "@t3tools/client-runtime/errors";
 import * as Dialog from "../components/ui/Dialog";
 import {
   type EnvironmentProject,
@@ -41,6 +42,7 @@ import {
 } from "./acknowledged-thread-messages";
 import { appAtomRegistry } from "./atom-registry";
 import { restoredNewTaskDraftKey } from "./new-task-draft-key";
+import { readVcsUnsupportedReason } from "./vcs";
 import {
   clearPendingThreadCreationOutcome,
   pendingThreadCreationOutcomesAtom,
@@ -655,7 +657,7 @@ function reportCommandFailure(
   });
   return {
     action,
-    message: error instanceof Error ? error.message : "The message could not be sent.",
+    message: vcsOperationErrorMessage(error, "The message could not be sent."),
   };
 }
 
@@ -1045,6 +1047,16 @@ export function createThreadOutboxDelivery(): {
       currentConfig.providers,
     );
     if (!hasAccess()) return true;
+    const unsupportedReason =
+      creation.workspaceMode === "worktree" || creation.pullRequestReference
+        ? (readVcsUnsupportedReason(queuedMessage.environmentId, projectCwd) ??
+          (creation.worktreePath
+            ? readVcsUnsupportedReason(queuedMessage.environmentId, creation.worktreePath)
+            : null))
+        : null;
+    if (unsupportedReason !== null) {
+      return restoreQueuedMessage(persistedMessage, unsupportedReason);
+    }
     let workspace = creation;
     if (creation.pullRequestReference) {
       const checkout = await runDeliveryCommand(gitEnvironment.preparePullRequestThread, {
@@ -1075,6 +1087,16 @@ export function createThreadOutboxDelivery(): {
         worktreePath: checkout.value.worktreePath,
         startFromOrigin: false,
       };
+    }
+    const workspaceUnsupportedReason =
+      creation.workspaceMode === "worktree" || creation.pullRequestReference
+        ? (readVcsUnsupportedReason(queuedMessage.environmentId, projectCwd) ??
+          (workspace.worktreePath
+            ? readVcsUnsupportedReason(queuedMessage.environmentId, workspace.worktreePath)
+            : null))
+        : null;
+    if (workspaceUnsupportedReason !== null) {
+      return restoreQueuedMessage(persistedMessage, workspaceUnsupportedReason);
     }
     const deliveryResult = await runDeliveryCommand(threadEnvironment.startTurn, {
       environmentId: queuedMessage.environmentId,

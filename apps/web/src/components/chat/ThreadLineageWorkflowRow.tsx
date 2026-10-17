@@ -3,7 +3,12 @@ import {
   type SubagentWorkflowGroup,
   type RuntimeSubagent,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import type { ProviderDriverKind, ProviderInstanceId, ServerProvider } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ServerProvider,
+} from "@t3tools/contracts";
 import { ChevronDownIcon, SquareIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
@@ -51,6 +56,7 @@ function phaseStatusLabel(phase: SubagentWorkflowGroup["phases"][number]) {
 
 function WorkflowMemberRow({
   member,
+  environmentId,
   providerInstanceId,
   provider,
   providers,
@@ -59,6 +65,7 @@ function WorkflowMemberRow({
   onOpen,
 }: {
   member: RuntimeSubagent;
+  environmentId: EnvironmentId;
   providerInstanceId: ProviderInstanceId;
   provider: ServerProvider | undefined;
   providers: ReadonlyArray<ServerProvider> | undefined;
@@ -98,6 +105,7 @@ function WorkflowMemberRow({
         </TooltipTrigger>
         <ThreadHoverCardPopup side="left">
           <SubagentTooltipContent
+            environmentId={environmentId}
             title={member.title}
             model={member.model}
             providerInstanceId={providerInstanceId}
@@ -119,6 +127,7 @@ function WorkflowMemberRow({
 
 export function ThreadLineageWorkflowRow({
   group,
+  environmentId,
   header,
   providerInstanceId,
   provider,
@@ -131,6 +140,7 @@ export function ThreadLineageWorkflowRow({
   stopDisabled,
 }: {
   readonly group: SubagentWorkflowGroup;
+  readonly environmentId: EnvironmentId;
   readonly header: ReactNode;
   readonly providerInstanceId: ProviderInstanceId;
   readonly provider: ServerProvider | undefined;
@@ -230,6 +240,7 @@ export function ThreadLineageWorkflowRow({
                       <WorkflowMemberRow
                         key={member.id}
                         member={member}
+                        environmentId={environmentId}
                         providerInstanceId={providerInstanceId}
                         provider={provider}
                         providers={providers}
@@ -247,6 +258,7 @@ export function ThreadLineageWorkflowRow({
             <WorkflowMemberRow
               key={member.id}
               member={member}
+              environmentId={environmentId}
               providerInstanceId={providerInstanceId}
               provider={provider}
               providers={providers}

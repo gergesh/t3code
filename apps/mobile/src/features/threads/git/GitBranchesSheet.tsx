@@ -1,4 +1,9 @@
 import { sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import {
+  resolveVcsTerminology,
+  resolveVcsUnsupportedReason,
+  supportsVcsActions,
+} from "@t3tools/shared/vcs";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
@@ -29,7 +34,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
-  const { canChangeThreadBranch } = gitActions;
+  const canChangeThreadBranch = gitActions.canChangeThreadBranch;
 
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
@@ -40,7 +45,11 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
       : null,
   );
 
-  const currentBranchLabel = gitStatus.data?.refName ?? selectedThread?.branch ?? "Detached HEAD";
+  const vcsTerminology = resolveVcsTerminology(gitStatus.data);
+  const vcsUnsupportedReason = resolveVcsUnsupportedReason(gitStatus.data);
+  const vcsActionsSupported = supportsVcsActions(gitStatus.data);
+  const noRefLabel = vcsTerminology.noRefLabel;
+  const currentBranchLabel = gitStatus.data?.refName ?? selectedThread?.branch ?? noRefLabel;
   const currentWorktreePath = selectedThreadCwd;
   const availableBranches = gitState.selectedThreadBranches;
   const branchesLoading = gitState.selectedThreadBranchesLoading;
@@ -49,8 +58,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   const [newBranchName, setNewBranchName] = useState("");
   const [worktreeBaseBranchOverride, setWorktreeBaseBranchOverride] = useState<string | null>(null);
   const worktreeBaseBranch =
-    worktreeBaseBranchOverride ??
-    (currentBranchLabel === "Detached HEAD" ? "main" : currentBranchLabel);
+    worktreeBaseBranchOverride ?? (currentBranchLabel === noRefLabel ? "main" : currentBranchLabel);
   const [worktreeBranchName, setWorktreeBranchName] = useState("");
 
   const disabledExistingBranchNames: Array<string> = [];
@@ -82,23 +90,34 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
               : undefined
           }
         >
+          {vcsUnsupportedReason ? (
+            <Text accessibilityRole="alert" className="text-warning-foreground">
+              {vcsUnsupportedReason}
+            </Text>
+          ) : null}
           <View className="bg-card android:gap-3 android:rounded-[20px] android:p-4 ios:gap-2 ios:rounded-[18px] ios:border ios:border-border ios:px-4 ios:py-4">
             <Text className="android:text-foreground android:text-base android:font-t3-medium ios:text-foreground-secondary ios:text-2xs ios:font-t3-bold ios:tracking-[1px] ios:uppercase">
-              New branch
+              {`New ${vcsTerminology.refNoun}`}
             </Text>
             <TextInput
               value={newBranchName}
               onChangeText={setNewBranchName}
               placeholder="feature/mobile-polish"
-              accessibilityLabel="New branch name"
+              accessibilityLabel={`New ${vcsTerminology.refNoun} name`}
               className="android:rounded-xl android:bg-sheet-solid ios:rounded-[18px]"
             />
             <SheetActionButton
               icon="plus"
-              label="Create & checkout"
+              label={vcsTerminology.createAndSwitchLabel}
               tone="primary"
-              disabled={!canChangeThreadBranch || busy || newBranchName.trim().length === 0}
+              disabled={
+                !vcsActionsSupported ||
+                !canChangeThreadBranch ||
+                busy ||
+                newBranchName.trim().length === 0
+              }
               onPress={() => {
+                if (!vcsActionsSupported) return;
                 const branch = sanitizeFeatureBranchName(newBranchName.trim());
                 if (branch.length === 0) return;
                 void gitActions.onCreateSelectedThreadBranch(branch).then((result) => {
@@ -112,39 +131,41 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
 
           <View className="bg-card android:gap-3 android:rounded-[20px] android:p-4 ios:gap-2 ios:rounded-[18px] ios:border ios:border-border ios:px-4 ios:py-4">
             <Text className="android:text-foreground android:text-base android:font-t3-medium ios:text-foreground-secondary ios:text-2xs ios:font-t3-bold ios:tracking-[1px] ios:uppercase">
-              New worktree
+              {`New ${vcsTerminology.workspaceNoun}`}
             </Text>
             {Platform.OS === "android" ? (
-              <Text className="text-foreground-secondary text-sm">Base branch</Text>
+              <Text className="text-foreground-secondary text-sm">{`Base ${vcsTerminology.refNoun}`}</Text>
             ) : null}
             <TextInput
               value={worktreeBaseBranch}
               onChangeText={setWorktreeBaseBranchOverride}
               placeholder="main"
-              accessibilityLabel="Worktree base branch"
+              accessibilityLabel={`${vcsTerminology.workspaceNounTitle} base ${vcsTerminology.refNoun}`}
               className="android:rounded-xl android:bg-sheet-solid ios:rounded-[18px]"
             />
             {Platform.OS === "android" ? (
-              <Text className="text-foreground-secondary text-sm">New branch</Text>
+              <Text className="text-foreground-secondary text-sm">{`New ${vcsTerminology.refNoun}`}</Text>
             ) : null}
             <TextInput
               value={worktreeBranchName}
               onChangeText={setWorktreeBranchName}
               placeholder="feature/mobile-thread"
-              accessibilityLabel="Worktree branch name"
+              accessibilityLabel={`${vcsTerminology.workspaceNounTitle} ${vcsTerminology.refNoun} name`}
               className="android:rounded-xl android:bg-sheet-solid ios:rounded-[18px]"
             />
             <SheetActionButton
               icon="square.split.2x1"
-              label="Create worktree"
+              label={`Create ${vcsTerminology.workspaceNoun}`}
               tone="primary"
               disabled={
+                !vcsActionsSupported ||
                 !canChangeThreadBranch ||
                 busy ||
                 worktreeBaseBranch.trim().length === 0 ||
                 worktreeBranchName.trim().length === 0
               }
               onPress={() => {
+                if (!vcsActionsSupported) return;
                 const baseBranch = worktreeBaseBranch.trim();
                 const newBranch = worktreeBranchName.trim();
                 if (baseBranch.length === 0 || newBranch.length === 0) return;
@@ -161,16 +182,16 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
 
           <View className="gap-2">
             <Text className="text-foreground-secondary android:px-4 android:pb-1 android:pt-3 android:text-sm android:font-t3-medium ios:text-2xs ios:font-t3-bold ios:tracking-[1px] ios:uppercase">
-              Existing branches
+              {`Existing ${vcsTerminology.refNounPlural}`}
             </Text>
             {branchesLoading ? (
               <Text className="text-foreground-secondary text-sm font-medium android:px-4">
-                Loading branches...
+                {`Loading ${vcsTerminology.refNounPlural}...`}
               </Text>
             ) : null}
             {!branchesLoading && availableBranches.length === 0 ? (
               <Text className="text-foreground-secondary text-sm font-medium android:px-4">
-                No local branches found.
+                {`No local ${vcsTerminology.refNounPlural} found.`}
               </Text>
             ) : null}
             {availableBranches.map((branch) => {
@@ -178,10 +199,10 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
               const subtitle = branch.worktreePath
                 ? branch.worktreePath === currentWorktreePath
                   ? "Checked out in this thread"
-                  : "Checked out in another worktree"
+                  : `Checked out in another ${vcsTerminology.workspaceNoun}`
                 : branch.isDefault
-                  ? "Default branch"
-                  : "Local branch";
+                  ? vcsTerminology.defaultRefLabel
+                  : `Local ${vcsTerminology.refNoun}`;
 
               return (
                 <Pressable
@@ -193,9 +214,13 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
                       : "android:bg-card ios:border-border",
                   )}
                   accessibilityRole="button"
-                  accessibilityState={{ selected: branch.current, disabled: busy || disabled }}
-                  disabled={!canChangeThreadBranch || busy || disabled}
+                  accessibilityState={{
+                    selected: branch.current,
+                    disabled: !vcsActionsSupported || !canChangeThreadBranch || busy || disabled,
+                  }}
+                  disabled={!vcsActionsSupported || !canChangeThreadBranch || busy || disabled}
                   onPress={() => {
+                    if (!vcsActionsSupported) return;
                     void gitActions.onCheckoutSelectedThreadBranch(branch.name).then((result) => {
                       if (result === null) return;
                       navigation.goBack();
@@ -215,7 +240,10 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
           </View>
         </ScrollView>
       </ScreenContent>
-      <SheetHeader title="Branches & worktrees" onClose={() => navigation.goBack()} />
+      <SheetHeader
+        title={`${vcsTerminology.refNounPluralTitle} & ${vcsTerminology.workspaceNounPlural}`}
+        onClose={() => navigation.goBack()}
+      />
     </View>
   );
 }

@@ -1,6 +1,8 @@
+import { ProjectId } from "@t3tools/contracts";
+import { JJ_VCS_TERMINOLOGY } from "@t3tools/shared/vcs";
 import { describe, expect, it } from "vite-plus/test";
 
-import { subagentDetailPreview } from "./subagentDisplay.js";
+import { resolveSubagentMetadata, subagentDetailPreview } from "./subagentDisplay.js";
 
 describe("subagentDetailPreview", () => {
   it("prefers progress for live work and results for settled work", () => {
@@ -22,20 +24,46 @@ it.each([279, 280, 281])("preserves the preview boundary at %i characters", (len
 });
 
 it("normalizes Unicode whitespace and ignores a large hidden suffix", () => {
-  const progress = " \u00a0Reading\tfiles\n" + "x".repeat(1_000_000);
+  const progress = "  Reading\tfiles\n" + "x".repeat(1_000_000);
   expect(subagentDetailPreview({ status: "running", progress })).toBe(
     "Reading files " + "x".repeat(266) + "…",
   );
   expect(
-    subagentDetailPreview({ status: "completed", result: "x".repeat(280) + " \n\u2028" }),
+    subagentDetailPreview({ status: "completed", result: "x".repeat(280) + " \n " }),
   ).toBe("x".repeat(280));
   expect(subagentDetailPreview({ status: "completed", result: "x".repeat(279) + " \n y" })).toBe(
     "x".repeat(279) + "…",
   );
   expect(
-    subagentDetailPreview({ status: "running", progress: "\uFEFF\u2029", result: " Done " }),
+    subagentDetailPreview({ status: "running", progress: "﻿ ", result: " Done " }),
   ).toBe("Done");
   expect(subagentDetailPreview({ status: "failed", result: "x".repeat(279) + "😀" })).toBe(
     "x".repeat(279) + "…",
   );
+});
+
+describe("resolveSubagentMetadata", () => {
+  const parentThread = { projectId: ProjectId.make("parent"), worktreePath: null };
+  const parentProject = { workspaceRoot: "/repo" };
+
+  it("uses jj terminology without changing the workspace metadata kinds", () => {
+    const input = {
+      model: null,
+      parentThread,
+      parentProject,
+      terminology: JJ_VCS_TERMINOLOGY,
+    };
+    expect(
+      resolveSubagentMetadata({
+        ...input,
+        childThread: { branch: "fix/agents", worktreePath: "/workspaces/agents" },
+      }).workspace,
+    ).toEqual([{ kind: "ref", label: "Bookmark", value: "fix/agents" }]);
+    expect(
+      resolveSubagentMetadata({
+        ...input,
+        childThread: { branch: null, worktreePath: "/workspaces/agents" },
+      }).workspace,
+    ).toEqual([{ kind: "workspace", label: "Workspace", value: "agents" }]);
+  });
 });
