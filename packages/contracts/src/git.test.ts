@@ -1,3 +1,4 @@
+import { VcsStatusLocalResult } from "./git.ts";
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
@@ -105,4 +106,23 @@ describe("Git file paths", () => {
     expect(decode(input)).toEqual(input);
     expect(encode(input)).toEqual(input);
   });
+});
+
+const decodeVcsStatusLocalResult = Schema.decodeUnknownSync(VcsStatusLocalResult);
+describe("VcsStatusLocalResult", () => {
+  it("restricts non-Git status metadata to Jujutsu", () => {
+    const status = {
+      isRepo: true,
+      hasPrimaryRemote: false,
+      isDefaultRef: false,
+      refName: null,
+      hasWorkingTreeChanges: false,
+      workingTree: { files: [], insertions: 0, deletions: 0 },
+    };
+    expect(decodeVcsStatusLocalResult({ ...status, vcs: { kind: "jj" } }).vcs?.kind).toBe("jj");
+    expect(() => decodeVcsStatusLocalResult({ ...status, vcs: { kind: "unknown" } })).toThrow();
+    expect(() => decodeVcsStatusLocalResult({ ...status, vcs: { kind: "git" } })).toThrow();
+    expect(decodeVcsStatusLocalResult(status).vcs).toBeUndefined();
+  });
+
 });
