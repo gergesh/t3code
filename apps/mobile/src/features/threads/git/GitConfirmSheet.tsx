@@ -8,6 +8,7 @@ import { useGT, useMessages } from "gt-react-native";
 import { useCallback, useMemo } from "react";
 import { View } from "react-native";
 
+import { AppText as Text } from "../../../components/ui/AppText";
 import { SheetHeader } from "../../../components/ui/SheetHeader";
 import { FitSheet } from "../../../components/ui/FitSheet";
 import { SheetIntro } from "../../../components/ui/SheetIntro";
@@ -31,8 +32,9 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
   const messages = useMessages();
   const navigation = useNavigation();
   const gitState = useSelectedThreadGitState();
+  const vcsTerminology = gitState.vcsTerminology;
   const gitActions = useSelectedThreadGitActions();
-  const { canWriteSourceControl, canChangeThreadBranch } = gitActions;
+  const { canWriteSourceControl, canChangeThreadBranch, vcsActionsSupported } = gitActions;
   const { selectedThreadProject } = useThreadSelection();
   const terminology = sourceControlClients.get(
     selectedThreadProject?.repositoryIdentity?.provider,
@@ -60,15 +62,16 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
               branchName,
               includesCommit,
               terminology,
+              vcsTerminology,
             },
             messages,
           )
         : null,
-    [branchName, confirmAction, includesCommit, messages, terminology],
+    [branchName, confirmAction, includesCommit, messages, terminology, vcsTerminology],
   );
 
   const continuePendingAction = async () => {
-    if (!canWriteSourceControl || !confirmAction) return;
+    if (!vcsActionsSupported || !canWriteSourceControl || !confirmAction) return;
     navigation.dispatch(StackActions.replace("Thread", { environmentId, threadId }));
     await gitActions.onRunSelectedThreadGitAction({
       action: confirmAction,
@@ -78,7 +81,7 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
   };
 
   const movePendingActionToFeatureBranch = useCallback(async () => {
-    if (!canChangeThreadBranch || !confirmAction) return;
+    if (!vcsActionsSupported || !canChangeThreadBranch || !confirmAction) return;
     navigation.dispatch(StackActions.replace("Thread", { environmentId, threadId }));
 
     if (includesCommit) {
@@ -106,6 +109,7 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
     await gitActions.onRunSelectedThreadGitAction({ action: confirmAction });
   }, [
     canChangeThreadBranch,
+    vcsActionsSupported,
     confirmAction,
     gitActions,
     gitState.selectedThreadBranches,
@@ -121,9 +125,17 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
       header={<SheetHeader title={gt("Confirm action")} onClose={() => navigation.goBack()} />}
       showsVerticalScrollIndicator={false}
     >
+      {gitActions.vcsUnsupportedReason ? (
+        <Text accessibilityRole="alert" className="p-4 text-sm text-danger-foreground">
+          {gitActions.vcsUnsupportedReason}
+        </Text>
+      ) : null}
       <SheetIntro
         eyebrow={gt("Confirm", { $context: "eyebrow label above a confirmation title" })}
-        title={copy?.title ?? gt("Run action on default branch?")}
+        title={
+          copy?.title ??
+          gt("Run action on default {refNoun}?", { refNoun: vcsTerminology.refNoun })
+        }
         description={copy?.description ?? gt("Choose how to continue.")}
       />
 
@@ -131,13 +143,13 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
         <SheetActionButton
           icon="arrow.right.circle"
           label={copy?.continueLabel ?? gt("Continue")}
-          disabled={!canWriteSourceControl}
+          disabled={!vcsActionsSupported || !canWriteSourceControl}
           onPress={() => void continuePendingAction()}
         />
         <SheetActionButton
           icon="arrow.branch"
-          label={gt("Feature branch & continue")}
-          disabled={!canChangeThreadBranch}
+          label={vcsTerminology.featureCheckoutLabel("mobile")}
+          disabled={!vcsActionsSupported || !canChangeThreadBranch}
           tone="primary"
           onPress={() => void movePendingActionToFeatureBranch()}
         />

@@ -1,5 +1,6 @@
 import { useAtomMount } from "@effect/atom-react";
 import { asLaunchingThread } from "@t3tools/client-runtime/state/thread-inbox";
+import { resolveVcsTerminology, type VcsTerminology } from "@t3tools/shared/vcs";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
@@ -618,6 +619,7 @@ type SidebarThreadRowProps = {
     threadRef: ScopedThreadRef,
     position: { x: number; y: number },
     source: ContextMenuSource,
+    terminology: VcsTerminology,
   ) => void;
   onSettle: (threadRef: ScopedThreadRef) => void;
   onActionSweepStart: (
@@ -895,7 +897,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   };
   const handleContextMenu = (event: ReactMouseEvent) => {
     event.preventDefault();
-    onContextMenu(threadRef, { x: event.clientX, y: event.clientY }, contextMenuSourceOf(event));
+    onContextMenu(
+      threadRef,
+      { x: event.clientX, y: event.clientY },
+      contextMenuSourceOf(event),
+      resolveVcsTerminology(visibleGitStatus),
+    );
   };
   const handleKeyDown = (event: ReactKeyboardEvent) => {
     if (event.target !== event.currentTarget) return;

@@ -74,6 +74,7 @@ import {
   type ModelSelection,
   type PreviewAnnotationPayload,
   ProviderInstanceId,
+  type RunId,
   type ServerProvider,
   type ScopedThreadRef,
   type ThreadId,
@@ -263,7 +264,12 @@ import {
   resolveProviderSkillsForCwd,
   resolveProvidersForCwd,
 } from "@t3tools/client-runtime/providerSkills";
-import { chatGitStatusAtom, NO_CHAT_GIT_STATUS_ATOM, vcsEnvironment } from "../state/vcs";
+import {
+  chatGitStatusAtom,
+  NO_CHAT_GIT_STATUS_ATOM,
+  vcsEnvironment,
+  VcsTerminologyContext,
+} from "../state/vcs";
 import {
   type EnvironmentPresentation,
   useEnvironment,
@@ -271,6 +277,11 @@ import {
   useEnvironments,
   usePrimaryEnvironment,
 } from "../state/environments";
+import {
+  resolveVcsTerminology,
+  resolveVcsUnsupportedReason,
+  supportsVcsActions,
+} from "@t3tools/shared/vcs";
 import {
   resolveThreadDetailRef,
   useEnvironmentSupportsServerBrowser,
@@ -1256,8 +1267,28 @@ export default function ChatView(props: ChatViewProps) {
       console.warn("Failed to link the checked-out pull request to its thread.", error);
     });
   });
+  const gitCwd = activeProject
+    ? projectScriptCwd({
+        project: { cwd: activeProject.workspaceRoot },
+        worktreePath: activeThread?.worktreePath ?? null,
+      })
+    : null;
+  const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
+  const gitStatusAtom =
+    gitStatusCwd === null
+      ? null
+      : vcsEnvironment.status({
+          environmentId,
+          input: { cwd: gitStatusCwd },
+        });
+  const gitStatusQuery = {
+    data: useAtomValue(gitStatusAtom ? chatGitStatusAtom(gitStatusAtom) : NO_CHAT_GIT_STATUS_ATOM),
+    refresh: useEnvironmentQueryRefresh(gitStatusAtom).refresh,
+  };
+  const vcsActionsSupported = supportsVcsActions(gitStatusQuery.data);
   const { handlePreparedPullRequestThreadStable, openPullRequestDialogStable } =
     usePullRequestDraftThread({
+    vcsActionsSupported,
       routeKind,
       draftId,
       settings,
@@ -1272,12 +1303,6 @@ export default function ChatView(props: ChatViewProps) {
     : (primaryEnvironment?.serverConfig ?? null);
   const providerEnvironmentId = (activeThread ? activeEnvironment : primaryEnvironment)
     ?.environmentId;
-  const gitCwd = activeProject
-    ? projectScriptCwd({
-        project: { cwd: activeProject.workspaceRoot },
-        worktreePath: activeThread?.worktreePath ?? null,
-      })
-    : null;
   const providerStatuses = resolveProvidersForCwd(
     (providerEnvironmentId === undefined
       ? undefined
@@ -1624,7 +1649,7 @@ export default function ChatView(props: ChatViewProps) {
     retryableRunIds: retryableWorkspacePreparationRunIds,
     begin: beginWorktreeSetup,
     cancel: cancelWorktreeSetup,
-    retryPreparation: onRetryWorkspacePreparationStable,
+    retryPreparation: retryWorkspacePreparation,
     openSetupTerminal: onOpenWorktreeSetupTerminal,
   } = useWorktreeSetup({
     routeThreadRef,
@@ -1671,18 +1696,6 @@ export default function ChatView(props: ChatViewProps) {
     turnDiffSummaries.at(-1)?.completedAt ?? null,
   );
 
-  const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
-  const gitStatusAtom =
-    gitStatusCwd === null
-      ? null
-      : vcsEnvironment.status({
-          environmentId,
-          input: { cwd: gitStatusCwd },
-        });
-  const gitStatusQuery = {
-    data: useAtomValue(gitStatusAtom ? chatGitStatusAtom(gitStatusAtom) : NO_CHAT_GIT_STATUS_ATOM),
-    refresh: useEnvironmentQueryRefresh(gitStatusAtom).refresh,
-  };
   useWorkspaceMutationRefresh({
     enabled: gitStatusCwd !== null,
     mutationId: workspaceMutationId,
@@ -1775,6 +1788,11 @@ export default function ChatView(props: ChatViewProps) {
     }
   }, [environmentId, gitStatusCwd, liveIsGitRepo]);
   const isGitRepo = liveIsGitRepo ?? recallCheckoutIsRepo(environmentId, gitStatusCwd) ?? true;
+  const vcsTerminology = resolveVcsTerminology(gitStatusQuery.data);
+  const vcsUnsupportedReason = resolveVcsUnsupportedReason(gitStatusQuery.data);
+  const onRetryWorkspacePreparationStable = useStableCallback((runId: RunId) => {
+    if (vcsActionsSupported) retryWorkspacePreparation(runId);
+  });
   // Provider-native subagents cannot take messages; approvals and questions go to the top-level parent.
   const showProviderSubagentBar = isProviderSubagent;
   const composerMounted = !showProviderSubagentBar;
@@ -2055,7 +2073,7 @@ export default function ChatView(props: ChatViewProps) {
     latestRun: activeLatestRun,
     latestRunSettled,
     turnDiffSummaries,
-    isGitRepo: gitStatusQuery.data?.isRepo,
+    isGitRepo: vcsActionsSupported ? gitStatusQuery.data?.isRepo : false,
     linkedPullRequest: linkedThreadPullRequest,
     hasLinkedPullRequestDetail,
     pullRequestsKey: proactivePullRequestsKey,
@@ -2284,6 +2302,12 @@ export default function ChatView(props: ChatViewProps) {
     requestedEnvMode: envMode,
     isGitRepo,
   });
+  const vcsWorkspacePreparationBlocked =
+    !vcsActionsSupported &&
+    sendEnvMode === "worktree" &&
+    !activeThread?.worktreePath &&
+    !sendQueuesBehindSetup &&
+    (!isServerThread || activeMessageCount === 0);
   const localCheckoutBranchMismatch = isServerThread
     ? resolveLocalCheckoutBranchMismatch({
         effectiveEnvMode: envMode,
@@ -2425,6 +2449,7 @@ export default function ChatView(props: ChatViewProps) {
     toggleThreadPanelStable,
     shortcuts: rightPanelShortcuts,
   } = useRightPanelActions({
+    vcsActionsSupported,
     activeThreadRef,
     activeProject,
     activeRightPanelSurface,
@@ -2468,6 +2493,7 @@ export default function ChatView(props: ChatViewProps) {
     threadStatusLine,
     shortcuts: threadLifecycleShortcuts,
   } = useThreadLifecycle({
+    vcsActionsSupported,
     environmentId,
     routeThreadKey,
     currentRouteThreadKeyRef,
@@ -2588,7 +2614,7 @@ export default function ChatView(props: ChatViewProps) {
   const toggleKeepFullHistoryStable = useStableCallback(toggleKeepFullHistory);
   const armFreshSessionStable = useStableCallback(() => armFreshSession(routeThreadKey));
   const handleRestoreThreadBranch = () => {
-    if (!canWriteSourceControl) return;
+    if (!canWriteSourceControl || !vcsActionsSupported) return;
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
       if (activeThreadKey !== null) openBranchRestoreConfirm(activeThreadKey);
       return;
@@ -2719,9 +2745,11 @@ export default function ChatView(props: ChatViewProps) {
       ...systemComposerBannerItems,
       branchMismatchBannerItem(
         {
+          terminology: vcsTerminology,
           mismatchKey: activeBranchMismatchKey,
           mismatch: localCheckoutBranchMismatch,
-          restoreDisabled: !canWriteSourceControl || isRestoringThreadBranch,
+          restoreDisabled:
+            !canWriteSourceControl || !vcsActionsSupported || isRestoringThreadBranch,
           restoring: isRestoringThreadBranch,
           onRestore: handleRestoreThreadBranchStable,
           onDismiss: () => {
@@ -2885,12 +2913,15 @@ export default function ChatView(props: ChatViewProps) {
                     activeThread?.worktreePath ?? null,
                     serverProjection?.runs ?? [],
                   )
-                ? gt("Available once the thread's worktree is set up.")
+                ? gt("Available once the thread's {workspaceNoun} is set up.", {
+                    workspaceNoun: vcsTerminology.workspaceNoun,
+                  })
                 : null;
   const openSideChatStable = useStableCallback(() => void sideChat.open());
   const sendSideChatStable = useStableCallback(sideChat.open);
   const { onConfirmRevertStable, onForkFromRunStable, onRevertTimelineTurnStable } =
     useTimelineRewind({
+      vcsActionsSupported,
       environmentId,
       routeThreadRef,
       routeThreadKey,
@@ -2922,6 +2953,7 @@ export default function ChatView(props: ChatViewProps) {
     onStartFromOriginChange,
     openProviderSetupStable,
   } = useComposerSelection({
+    vcsActionsSupported,
     environmentId,
     composerDraftTarget,
     draftThread,
@@ -2961,6 +2993,8 @@ export default function ChatView(props: ChatViewProps) {
     setThreadError,
   });
   const { onSend } = useComposerSend({
+    vcsWorkspacePreparationBlocked,
+    vcsTerminology,
     environmentId,
     routeThreadKey,
     currentRouteThreadKeyRef,
@@ -3455,6 +3489,7 @@ export default function ChatView(props: ChatViewProps) {
             {isWorkspaceFileDragActive ? <WorkspaceFileDropOverlay /> : null}
             <ChatBannerLane
               environmentId={activeThread.environmentId}
+              vcsUnsupportedReason={vcsUnsupportedReason}
               providerStatus={visibleProviderStatus}
               providerStatusDismissalKey={providerStatusDismissalKey}
               onOpenProviderSetup={openProviderSetupStable}
@@ -3517,8 +3552,12 @@ export default function ChatView(props: ChatViewProps) {
                   }
                   worktreeSetup={worktreeSetup}
                   onCancelWorktreeSetup={onCancelWorktreeSetupStable}
-                  retryableWorkspacePreparationRunIds={retryableWorkspacePreparationRunIds}
-                  onRetryWorkspacePreparation={onRetryWorkspacePreparationStable}
+                  {...(vcsActionsSupported
+                    ? {
+                        retryableWorkspacePreparationRunIds,
+                        onRetryWorkspacePreparation: onRetryWorkspacePreparationStable,
+                      }
+                    : {})}
                   {...(draftId
                     ? { onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocallyStable }
                     : {})}
@@ -3685,6 +3724,7 @@ export default function ChatView(props: ChatViewProps) {
                                 composerRef={composerRef}
                                 composerDraftTarget={composerDraftTarget}
                                 environmentId={environmentId}
+                                workspaceNoun={vcsTerminology.workspaceNoun}
                                 attachmentUploadsCapabilityKnown={attachmentUploadsCapabilityKnown}
                                 supportsAttachmentUploads={supportsAttachmentUploads}
                                 supportsQuestionAttachments={supportsQuestionAttachments}
@@ -3715,19 +3755,23 @@ export default function ChatView(props: ChatViewProps) {
                                 canResume={canResume}
                                 isRevertingCheckpoint={isRevertingCheckpoint}
                                 sendDisabledReason={
-                                  !canOperateThread
-                                    ? gt("This connection cannot change threads.")
-                                    : isEnvironmentChanging
-                                      ? gt("Preparing machine")
-                                      : isRevertingCheckpoint
-                                        ? gt("Rewinding conversation")
-                                        : feedbackUploading
-                                          ? gt("Sending feedback")
-                                          : threadDetailLoading
-                                            ? gt("Messages loading")
-                                            : worktreeSetupBlocksSend
-                                              ? gt("Preparing worktree")
-                                              : projectCloneSendBlockReason
+                                  vcsWorkspacePreparationBlocked
+                                    ? vcsUnsupportedReason
+                                    : !canOperateThread
+                                      ? gt("This connection cannot change threads.")
+                                      : isEnvironmentChanging
+                                        ? gt("Preparing machine")
+                                        : isRevertingCheckpoint
+                                          ? gt("Rewinding conversation")
+                                          : feedbackUploading
+                                            ? gt("Sending feedback")
+                                            : threadDetailLoading
+                                              ? gt("Messages loading")
+                                              : worktreeSetupBlocksSend
+                                                ? gt("Preparing {workspaceNoun}", {
+                                                    workspaceNoun: vcsTerminology.workspaceNoun,
+                                                  })
+                                                : projectCloneSendBlockReason
                                 }
                                 isPreparingWorktree={isPreparingWorktree && !sendQueuesBehindSetup}
                                 bannerItems={
@@ -3860,7 +3904,7 @@ export default function ChatView(props: ChatViewProps) {
                                     : {})}
                                   envLocked={envLocked}
                                   onComposerFocusRequest={scheduleComposerFocusStable}
-                                  {...(canCheckoutPullRequestIntoThread
+                                  {...(canCheckoutPullRequestIntoThread && vcsActionsSupported
                                     ? { onCheckoutPullRequestRequest: openPullRequestDialogStable }
                                     : {})}
                                   {...(canChangeEnvironment
@@ -3930,7 +3974,9 @@ export default function ChatView(props: ChatViewProps) {
                 <BranchRestoreConfirmHost
                   threadKey={activeThreadKey}
                   threadBranch={localCheckoutBranchMismatch?.threadBranch ?? ""}
-                  canWriteSourceControl={canWriteSourceControl}
+                  canWriteSourceControl={canWriteSourceControl && vcsActionsSupported}
+                  refNoun={vcsTerminology.refNoun}
+                  refSwitchChangesDescription={vcsTerminology.refSwitchChangesDescription}
                   onConfirm={handleSwitchCheckoutToThreadStable}
                 />
 
@@ -3987,11 +4033,11 @@ export default function ChatView(props: ChatViewProps) {
                     : {})}
                   startFromOrigin={startFromOrigin}
                   onStartFromOriginChange={onStartFromOriginChange}
-                  {...(canCheckoutPullRequestIntoThread
+                  {...(canCheckoutPullRequestIntoThread && vcsActionsSupported
                     ? { onCheckoutPullRequestRequest: openPullRequestDialogStable }
                     : {})}
                   onComposerFocusRequest={scheduleComposerFocusStable}
-                  {...(isServerThread && isGitRepo
+                  {...(isServerThread && isGitRepo && vcsActionsSupported
                     ? { onOpenChanges: openChangesFromThreadPanelStable }
                     : {})}
                   onRunProjectScript={runProjectScriptStable}
@@ -4011,6 +4057,7 @@ export default function ChatView(props: ChatViewProps) {
                   environmentId={activeThread.environmentId}
                   threadId={activeThread.id}
                   cwd={activeProject?.workspaceRoot ?? null}
+                  vcsActionsSupported={vcsActionsSupported}
                   onPrepared={handlePreparedPullRequestThreadStable}
                 />
               </>
@@ -4086,7 +4133,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
           browserAvailable={canOperatePreview && browserAvailable}
           terminalAvailable={activeProject !== null && canOperateTerminal}
-          diffAvailable={isServerThread && isGitRepo}
+          diffAvailable={isServerThread && isGitRepo && vcsActionsSupported}
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
           pullRequestsAvailable={linkedItemsSurfaceAvailable}
@@ -4102,6 +4149,7 @@ export default function ChatView(props: ChatViewProps) {
         threadKey={routeThreadKey}
         checkpoints={serverProjection?.checkpoints}
         worktreePath={activeThread?.worktreePath ?? null}
+        vcsActionsSupported={vcsActionsSupported}
         onConfirm={onConfirmRevertStable}
       />
       {embedded ? null : <LinkPullRequestDialogHost />}
@@ -4115,7 +4163,7 @@ export default function ChatView(props: ChatViewProps) {
       cwd={activeWorkspaceRoot}
       checkpoints={serverProjection?.checkpoints}
     >
-      {content}
+      <VcsTerminologyContext value={vcsTerminology}>{content}</VcsTerminologyContext>
     </FileMetadataThreadProvider>
   );
 }

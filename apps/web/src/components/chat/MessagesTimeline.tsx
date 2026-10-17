@@ -4,6 +4,7 @@ import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import { AudioPreviewUnmountContext } from "../files/AudioPreview";
+import { useVcsTerminology, VcsTerminologyContext } from "~/state/vcs";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { MarkdownFindContext } from "./markdownFindContext";
 import { useChatCanvas } from "./ChatCanvasContext";
@@ -425,6 +426,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
   historyControls,
 }: MessagesTimelineProps) {
   const gt = useGT();
+  const vcsTerminology = useVcsTerminology(
+    activeThreadEnvironmentId,
+    workspaceRoot ?? markdownCwd ?? null,
+  );
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
   // Find open at the opening is part of the snapshot: opening find later
@@ -1117,6 +1122,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     markdownCwd,
     resolvedTheme,
     workspaceRoot,
+    vcsTerminology,
     skills,
     runs,
     activeThreadEnvironmentId,
@@ -1435,7 +1441,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   }
 
   return (
-    <>
+    <VcsTerminologyContext value={vcsTerminology}>
       {activityAnnouncer}
       <MarkdownFindContext value={findActive}>
         <TimelineRowActivityCtx value={activityState}>
@@ -1520,7 +1526,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
           </TooltipScrollDismissArea>
         </TimelineRowActivityCtx>
       </MarkdownFindContext>
-    </>
+    </VcsTerminologyContext>
   );
 });
 
@@ -1723,6 +1729,7 @@ function WorktreeSetupTimelineRow({
   return (
     <WorktreeSetupCard
       snapshot={row.snapshot}
+      terminology={ctx.vcsTerminology}
       embedded={row.embedded}
       onCancel={row.embedded ? null : ctx.onCancelWorktreeSetup}
       onWorkLocally={

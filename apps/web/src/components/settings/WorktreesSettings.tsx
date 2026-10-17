@@ -1,6 +1,7 @@
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { useGT } from "gt-react";
 
+import { useVcsTerminology } from "../../state/vcs";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { BranchNamingSettings } from "./BranchNamingSettings";
 import { WorktreeSubmodulesRow } from "./ProjectDefaultsSettings";
@@ -59,8 +60,18 @@ function StartFromRemoteRow() {
 export function WorktreesSettingsPanel() {
   const gt = useGT();
   const searchableSetting = useSearchableSetting();
-  const { scope } = useSettingsScope();
+  const { scope, target } = useSettingsScope();
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
+  const checkout =
+    scope.kind === "checkout"
+      ? scope.checkout
+      : scope.kind === "project"
+        ? scope.members.find((member) => member.id === target?.projectId)
+        : null;
+  const vcsTerminology = useVcsTerminology(
+    checkout?.environmentId ?? null,
+    checkout?.workspaceRoot ?? null,
+  );
 
   return (
     <SettingsPageContainer>
@@ -74,8 +85,8 @@ export function WorktreesSettingsPanel() {
           <WorktreeSubmodulesRow />
         </AdvancedSettings>
       </SettingsSection>
-      <SettingsSection id="worktree-branches" title={gt("Branches")}>
-        <BranchNamingSettings />
+      <SettingsSection id="worktree-branches" title={vcsTerminology.refNounPluralTitle}>
+        <BranchNamingSettings terminology={vcsTerminology} />
       </SettingsSection>
       <WorktreeCleanupSection />
     </SettingsPageContainer>

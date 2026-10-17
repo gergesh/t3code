@@ -15,6 +15,7 @@ import {
   CornerUpRightIcon,
   ListPlusIcon,
 } from "lucide-react";
+import { GIT_VCS_TERMINOLOGY } from "@t3tools/shared/vcs";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import type { MessageResolver } from "~/i18n/messages";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
@@ -55,6 +56,8 @@ interface ComposerPrimaryActionsProps {
   sendDisabledReason: string | null;
   isEnvironmentUnavailable: boolean;
   isPreparingWorktree: boolean;
+  /** The project's VCS noun for a worktree; Git's is the fallback while status is unknown. */
+  workspaceNoun?: string;
   hasSendableContent: boolean;
   canResume?: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
@@ -247,6 +250,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   sendDisabledReason,
   isEnvironmentUnavailable,
   isPreparingWorktree,
+  workspaceNoun = GIT_VCS_TERMINOLOGY.workspaceNoun,
   hasSendableContent,
   canResume = false,
   preserveComposerFocusOnPointerDown = false,
@@ -401,7 +405,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     ? gt("Environment disconnected")
     : (sendDisabledReason ??
       (isPreparingWorktree
-        ? gt("Preparing worktree")
+        ? gt("Preparing {workspaceNoun}", { workspaceNoun })
         : isSendBusy
           ? isEditingQueuedMessage
             ? gt("Updating queued message")
