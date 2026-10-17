@@ -1,14 +1,19 @@
 import { act, fakeTimers, render } from "../../../test/render";
 import { RegistryProvider } from "@effect/atom-react";
 import { DEFAULT_SERVER_SETTINGS, type StorageCleanupReport } from "@t3tools/contracts";
+import type { VcsStatusResult } from "@t3tools/contracts";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { type ReactNode } from "react";
 import { expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 
 const state = vi.hoisted(() => ({
   settings: {} as typeof DEFAULT_SERVER_SETTINGS,
   targets: [] as Array<{ environmentId: string; settings: typeof DEFAULT_SERVER_SETTINGS }>,
   run: vi.fn(),
   report: null as StorageCleanupReport | null,
+  checkout: false,
+  status: vi.fn(),
 }));
 
 vi.mock(import("../../state/server"), async (original) => {
@@ -25,6 +30,16 @@ vi.mock(import("../../state/server"), async (original) => {
         ...actual.serverEnvironment.runStorageCleanup,
         permissionAtom: () => allowed,
       },
+    },
+  };
+});
+vi.mock(import("../../state/vcs"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    vcsEnvironment: {
+      ...actual.vcsEnvironment,
+      status: ((...args) => state.status(...args)) as typeof actual.vcsEnvironment.status,
     },
   };
 });
@@ -45,16 +60,24 @@ vi.mock(import("./SettingsScopeContext"), async (original) => ({
             storageCleanup: true,
             storageCleanupRun: true,
             settledWorktreeCleanup: true,
+            projectWorktreeCleanup: true,
           },
         },
       },
     }));
     return {
-      scope: { kind: "all" },
+      scope: state.checkout
+        ? { kind: "checkout", checkout: { environmentId: "env", workspaceRoot: "/repo" } }
+        : { kind: "all" },
       environments,
       connectedEnvironments: environments,
-      targets: state.targets,
-      target: null,
+      targets: state.checkout ? [] : state.targets,
+      target: state.checkout
+        ? {
+            settings: state.settings,
+            sources: { worktreeCleanup: "project" },
+          }
+        : null,
     };
   }) as never,
 }));
@@ -113,6 +136,8 @@ function setup() {
   }));
   state.report = null;
   state.run.mockReset();
+  state.checkout = false;
+  state.status.mockReset();
 }
 
 function setRetentionValues(
@@ -235,3 +260,86 @@ it("settles mixed retention statuses independently across selected machines", as
   await advance(300);
   await expect.element(screen.getByTestId("logs-retention-status")).not.toBeInTheDocument();
 });
+
+it.each(["jj", "git"] as const)(
+  "uses detected %s kind for all seven cleanup descriptions and the workspace section",
+  async (kind) => {
+    setup();
+    state.checkout = true;
+    state.settings = {
+      ...state.settings,
+      worktreeCleanup: { mode: "custom", rules: { ...state.settings.storageCleanup } },
+    };
+    const status: VcsStatusResult = {
+      isRepo: true,
+      hasPrimaryRemote: false,
+      isDefaultRef: false,
+      refName: null,
+      hasWorkingTreeChanges: false,
+      hasUpstream: false,
+      aheadCount: 0,
+      behindCount: 0,
+      workingTree: { files: [], insertions: 0, deletions: 0 },
+      pr: null,
+      vcs: kind === "jj" ? { kind: "jj" } : { kind: "git", notice: "Using Git." },
+    };
+    state.status.mockReturnValue(Atom.make(AsyncResult.success(status)));
+    await using screen = await render(panel());
+    const noun = kind === "jj" ? "workspaces" : "worktrees";
+    await expect
+      .element(
+        page.getByRole("heading", {
+          name: kind === "jj" ? "Workspaces" : "Worktrees",
+          exact: true,
+        }),
+      )
+      .toBeVisible();
+    const titles = Array.from(
+      screen.container.querySelectorAll("h3"),
+      (heading) => heading.textContent,
+    );
+    expect(titles).toContain(`Automatic ${kind === "jj" ? "workspace" : "worktree"} cleanup`);
+    for (const title of [
+      `Delete ${noun} with deleted threads`,
+      `Delete inactive ${noun}`,
+      `Delete settled ${noun}`,
+      `Delete merged ${noun}`,
+      `Delete unchanged ${noun}`,
+    ]) {
+      expect(titles).toContain(title);
+    }
+    const descriptions =
+      kind === "jj"
+        ? [
+            "Use these rules for this project. Changes and unbookmarked commits are kept.",
+            "Remove unused workspaces when active or archived threads are deleted. Working-copy changes, conflicts, and commits not reachable from a bookmark or remote bookmark are kept. Local files follow the keep rule below.",
+            "Remove workspaces after their threads have been inactive for this many days. Changes and thread history are kept.",
+            "Remove workspaces this many days after their thread settles. Set 0 days to remove them at the next cleanup. Changes and thread history are kept.",
+            "Remove workspaces whose pull request is merged and whose changes are included in the default bookmark.",
+            "Remove workspaces with no changes beyond the default bookmark.",
+            "Keeps edits and untracked files. Deletes ignored files, including .env. Conflicts and changes unreachable from bookmarks or remote bookmarks are kept.",
+          ]
+        : [
+            "Use these rules for this project.",
+            "Remove unused worktrees when active or archived threads are deleted. Worktrees with local changes are kept.",
+            "Remove worktrees after their threads have been inactive for this many days. Branches and thread history are kept.",
+            "Remove worktrees this many days after their thread settles. Set 0 days to remove them at the next cleanup. Branches and thread history are kept.",
+            "Remove worktrees whose pull request is merged and whose commits are included in the default branch.",
+            "Remove worktrees with no commits beyond the default branch.",
+            "Keeps edits and untracked files. Deletes ignored files, including .env.",
+          ];
+    for (const description of descriptions) {
+      expect(screen.container.textContent).toContain(description);
+    }
+    if (kind === "git") {
+      expect(screen.container.textContent).not.toContain("bookmark");
+      expect(screen.container.textContent).not.toContain(
+        "Changes and unbookmarked commits are kept.",
+      );
+    }
+    expect(state.status).toHaveBeenCalledWith({
+      environmentId: "env",
+      input: { cwd: "/repo", includeRemote: false },
+    });
+  },
+);

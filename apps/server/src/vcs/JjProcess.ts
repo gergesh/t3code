@@ -25,7 +25,9 @@ function processExitError(
     if (missingRevision) {
       failureKind = "not-found";
     } else if (
-      failureKind === "command-failed" && !readingChange && /there is no jj repo in|no such bookmark/i.test(result.stderr)
+      failureKind === "command-failed" &&
+      !readingChange &&
+      /there is no jj repo in|no such bookmark/i.test(result.stderr)
     ) {
       failureKind = "not-found";
     }
@@ -58,6 +60,8 @@ export interface JjCommandOptions {
   readonly readingChange?: boolean;
   /** Let VcsProcess retry transient checkpoint failures before mapping their diagnostics. */
   readonly retryTransientFailures?: boolean;
+  /** Cleanup must preserve stale files rather than updating the workspace behind the user. */
+  readonly retryStaleWorkspace?: boolean;
   /** Extra `--config KEY=VALUE` pairs, applied to this invocation only. */
   readonly config?: ReadonlyArray<readonly [key: string, value: string]>;
 }
@@ -141,7 +145,11 @@ export const jjCommand = Effect.fn("JjProcess.jjCommand")(function* (
 
   let result = yield* process.run(input);
 
-  if (result.exitCode !== 0 && isStaleWorkspace(result.stderr)) {
+  if (
+    options?.retryStaleWorkspace !== false &&
+    result.exitCode !== 0 &&
+    isStaleWorkspace(result.stderr)
+  ) {
     yield* Effect.logWarning("jj workspace is stale, running `jj workspace update-stale`", {
       cwd,
       operation,
