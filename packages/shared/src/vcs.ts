@@ -29,7 +29,7 @@ export interface VcsTerminology {
   readonly dirtyPushHint: string;
   readonly cleanCommitHint: string;
   readonly noRefHint: (tail: string, surface?: "web" | "mobile") => string;
-  readonly quickNoRefHint: (changeRequest: string, surface?: "web" | "mobile") => string;
+  readonly quickNoRefHint: (changeRequestWithArticle: string, surface?: "web" | "mobile") => string;
   readonly noRefActionsNotice: (changeRequest: string) => string;
   readonly changeOnNewRefLabel: string;
   readonly featureCheckoutLabel: (surface?: "web" | "mobile") => string;
@@ -67,8 +67,8 @@ export const GIT_VCS_TERMINOLOGY: VcsTerminology = {
     surface === "web"
       ? `Detached HEAD: check out a branch before ${tail}.`
       : `Detached HEAD: checkout a branch before ${tail}.`,
-  quickNoRefHint: (changeRequest, surface = "mobile") =>
-    `Create and checkout a ${surface === "web" ? "ref" : "branch"} before pushing or opening a ${changeRequest}.`,
+  quickNoRefHint: (changeRequestWithArticle, surface = "mobile") =>
+    `Create and checkout a ${surface === "web" ? "ref" : "branch"} before pushing or opening ${changeRequestWithArticle}.`,
   noRefActionsNotice: () =>
     "Detached HEAD: create and check out a branch to enable push and pull request actions.",
   changeOnNewRefLabel: "Commit on new branch",
@@ -105,8 +105,8 @@ export const JJ_VCS_TERMINOLOGY: VcsTerminology = {
   dirtyPushHint: "Commit local changes before pushing.",
   cleanCommitHint: "The working copy is clean. Make changes before committing.",
   noRefHint: (tail) => `No bookmark here: create one before ${tail}.`,
-  quickNoRefHint: (changeRequest) =>
-    `No bookmark here: create one before pushing or opening a ${changeRequest}.`,
+  quickNoRefHint: (changeRequestWithArticle) =>
+    `No bookmark here: create one before pushing or opening ${changeRequestWithArticle}.`,
   noRefActionsNotice: (changeRequest) =>
     `No bookmark here: create one before enabling push and ${changeRequest} actions.`,
   changeOnNewRefLabel: "Commit on new bookmark",
@@ -114,8 +114,6 @@ export const JJ_VCS_TERMINOLOGY: VcsTerminology = {
   createAndSwitchLabel: "Create & switch",
   preserveReviewSectionTitles: true,
 };
-
-export const DEFAULT_VCS_TERMINOLOGY = GIT_VCS_TERMINOLOGY;
 
 /** `null`/`undefined`/`"unknown"` resolve to Git terms so a transient status never flips copy. */
 export function getVcsTerminology(kind: VcsDriverKind | null | undefined): VcsTerminology {
@@ -133,7 +131,8 @@ export function resolveVcsTerminology(
 export function resolveVcsUnsupportedReason(
   status: Pick<VcsStatusLocalResult, "vcs"> | null | undefined,
 ): string | null {
-  return status?.vcs?.unsupportedReason ?? null;
+  const vcs = status?.vcs;
+  return vcs && "unsupportedReason" in vcs ? (vcs.unsupportedReason ?? null) : null;
 }
 
 /** Unknown status retains the original controls; only an explicit unsupported reason blocks them. */

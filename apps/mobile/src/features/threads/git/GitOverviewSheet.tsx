@@ -47,6 +47,7 @@ import {
   useLinkedPullRequestLines,
 } from "../LinkedPullRequestList";
 import { useLinkedPullRequestActions } from "../useLinkedPullRequestActions";
+import { VcsFallbackNotice } from "../VcsFallbackNotice";
 
 type GitOverviewSheetProps = StaticScreenProps<{
   readonly environmentId: string;
@@ -293,6 +294,14 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         <RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} />
       }
     >
+      {gitStatus.data?.vcs?.kind === "git" && selectedThreadProject?.workspaceRoot ? (
+        <VcsFallbackNotice
+          environmentId={environmentId}
+          repository={selectedThreadProject.workspaceRoot}
+          notice={gitStatus.data.vcs.notice}
+          reason={vcsUnsupportedReason}
+        />
+      ) : null}
       {vcsUnsupportedReason ? (
         <Text accessibilityRole="alert" className="text-warning-foreground">
           {vcsUnsupportedReason}

@@ -14,6 +14,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
 import { presentThreadShell } from "@t3tools/client-runtime/state/models";
 import { v2ThreadShell } from "@t3tools/client-runtime/state/orchestration-v2-test-fixtures";
+import type { Preferences } from "../persistence/mobile-preferences";
 
 const state = vi.hoisted(() => ({
   status: vi.fn(),
@@ -63,7 +64,19 @@ vi.mock("react-native", () => {
     ActivityIndicator: () => null,
     ScrollView: Surface,
     FlatList: () => null,
-    Pressable: Surface,
+    Pressable: ({
+      children,
+      onPress,
+      accessibilityLabel,
+    }: {
+      children?: ReactNode;
+      onPress?: () => void;
+      accessibilityLabel?: string;
+    }) => (
+      <button type="button" aria-label={accessibilityLabel} onClick={onPress}>
+        {children}
+      </button>
+    ),
     RefreshControl: () => null,
     Platform: { OS: "ios", select: (values: { ios?: unknown }) => values.ios },
     StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
@@ -95,8 +108,24 @@ vi.mock("react-native-safe-area-context", () => ({
 vi.mock("expo-haptics", () => ({ selectionAsync: async () => {} }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: async () => {} }));
 vi.mock("../components/ProviderIcon", () => ({ ProviderIcon: () => null }));
+vi.mock("./preferences", async () => {
+  const { Atom, AsyncResult } = await import("effect/reactivity");
+  let current: Preferences = {};
+  const mobilePreferencesAtom = Atom.make(AsyncResult.success(current));
+  return {
+    mobilePreferencesAtom,
+    updateMobilePreferencesAtom: Atom.writable(
+      () => null,
+      (context, input: { transform: (preferences: Preferences) => Partial<Preferences> }) => {
+        current = { ...current, ...input.transform(current) };
+        context.set(mobilePreferencesAtom, AsyncResult.success(current));
+      },
+    ),
+  };
+});
 vi.mock("react-native-keyboard-controller", () => ({
   KeyboardController: { dismiss: async () => {} },
+  useReanimatedKeyboardAnimation: () => ({ height: { value: 0 } }),
   KeyboardStickyView: ({ children }: { children?: ReactNode }) => <>{children}</>,
   useKeyboardState: (select: (value: { isVisible: boolean; height: number }) => unknown) =>
     select({ isVisible: false, height: 0 }),
@@ -185,10 +214,15 @@ vi.mock("./preview", () => ({ useThreadServerBrowserTabs: () => ({ tabs: [], loa
 vi.mock("./use-composer-drafts", () => ({ getComposerDraftSnapshot: () => ({ text: "" }) }));
 vi.mock("./edit-pending-thread-message", () => ({ editPendingThreadMessage: async () => false }));
 vi.mock("./threads", async () => {
-  const { AsyncResult } = await import("effect/reactivity");
+  const { AsyncResult, Atom } = await import("effect/reactivity");
   return {
+    environmentThreadDetails: { threadAtom: () => Atom.make(null) },
     threadEnvironment: {
-      interruptTurn: { label: "interrupt turn", run: vi.fn(async () => AsyncResult.success(undefined)) },
+      closeGuestShare: { label: "stop guest sharing", run: vi.fn() },
+      interruptTurn: {
+        label: "interrupt turn",
+        run: vi.fn(async () => AsyncResult.success(undefined)),
+      },
       unsnooze: { label: "unsnooze", run: vi.fn(async () => AsyncResult.success(undefined)) },
       unsettle: { label: "unsettle", run: vi.fn(async () => AsyncResult.success(undefined)) },
       visit: {
@@ -275,6 +309,7 @@ vi.mock("../features/review/useNativeReviewDiffBridge", () => ({
 import { ThreadDetailScreen } from "../features/threads/ThreadDetailScreen";
 import type { ThreadDetailScreenProps } from "../features/threads/ThreadDetailScreen";
 import { ReviewSheet } from "../features/review/ReviewSheet";
+import { VcsFallbackNotice } from "../features/threads/VcsFallbackNotice";
 import {
   useVcsActionSupport,
   useVcsTerminology,
@@ -356,6 +391,56 @@ const gitStatus: VcsStatusLocalResult = {
   hasWorkingTreeChanges: false,
   workingTree: { files: [], insertions: 0, deletions: 0 },
 };
+
+it("dismisses mobile fallback per repository and resurfaces a changed notice or reason", async () => {
+  const registry = AtomRegistry.make();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const props = {
+    environmentId: "mobile",
+    repository: "/fallback-test",
+    notice: "Using Git because Jujutsu is unavailable",
+    reason: null as string | null,
+  };
+  const show = async (next: typeof props, key = "initial") => {
+    await act(async () =>
+      root.render(
+        <RegistryContext.Provider value={registry}>
+          <VcsFallbackNotice {...next} key={key} />
+        </RegistryContext.Provider>,
+      ),
+    );
+  };
+  const dismiss = async () => {
+    const button = container.querySelector("button");
+    expect(button).not.toBeNull();
+    await act(async () => button!.click());
+    expect(container.textContent).toBe("");
+  };
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  try {
+    await show(props);
+    expect(container.textContent).toContain(props.notice);
+    await dismiss();
+    await show(props, "remounted");
+    expect(container.textContent).toBe("");
+    await show({ ...props, repository: "/other" });
+    expect(container.textContent).toContain(props.notice);
+    await show({ ...props, notice: "Jujutsu configuration changed" });
+    expect(container.textContent).toContain("configuration changed");
+    await dismiss();
+    await show({
+      ...props,
+      notice: "Jujutsu configuration changed",
+      reason: "Unsupported workspace",
+    });
+    expect(container.textContent).toContain("configuration changed");
+  } finally {
+    await act(async () => root.unmount());
+    registry.dispose();
+    vi.unstubAllGlobals();
+  }
+});
 
 it("does not rerender passive Git hooks on ordinary or waiting local status events", async () => {
   const registry = AtomRegistry.make();
@@ -516,6 +601,13 @@ it.each(["ThreadDetailScreen", "ReviewSheet"] as const)(
         expect(state.reviewSections).toHaveBeenLastCalledWith(
           expect.objectContaining({ vcsKind: null, enabled: true }),
         );
+      }
+      if (screen === "ThreadDetailScreen") {
+        const notice = "Jujutsu could not run: Config error: invalid configuration";
+        await publish(AsyncResult.success({ ...gitStatus, vcs: { kind: "git", notice } }), 1);
+        expect(container.textContent).toContain(notice);
+        await publish(AsyncResult.success(gitStatus), 1);
+        expect(container.textContent).not.toContain(notice);
       }
     } finally {
       await act(() => root.unmount());

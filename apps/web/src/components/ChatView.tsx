@@ -1288,7 +1288,7 @@ export default function ChatView(props: ChatViewProps) {
   const vcsActionsSupported = supportsVcsActions(gitStatusQuery.data);
   const { handlePreparedPullRequestThreadStable, openPullRequestDialogStable } =
     usePullRequestDraftThread({
-    vcsActionsSupported,
+      vcsActionsSupported,
       routeKind,
       draftId,
       settings,
@@ -3489,6 +3489,19 @@ export default function ChatView(props: ChatViewProps) {
             {isWorkspaceFileDragActive ? <WorkspaceFileDropOverlay /> : null}
             <ChatBannerLane
               environmentId={activeThread.environmentId}
+              vcsFallbackNotice={
+                activeProject
+                  ? {
+                      environmentId,
+                      repository: activeProject.workspaceRoot,
+                      notice:
+                        gitStatusQuery.data?.vcs?.kind === "git"
+                          ? (gitStatusQuery.data.vcs.notice ?? null)
+                          : null,
+                      reason: vcsUnsupportedReason,
+                    }
+                  : null
+              }
               vcsUnsupportedReason={vcsUnsupportedReason}
               providerStatus={visibleProviderStatus}
               providerStatusDismissalKey={providerStatusDismissalKey}

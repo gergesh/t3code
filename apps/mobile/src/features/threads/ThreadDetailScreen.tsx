@@ -1,6 +1,15 @@
 import { ChildThreadApprovals } from "./ChildThreadApprovals";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { useOpenThreadInspector } from "./thread-inspector-navigation";
+import { VcsFallbackNotice } from "./VcsFallbackNotice";
+import { AppText as Text } from "../../components/ui/AppText";
+import {
+  selectNotice,
+  selectTerminology,
+  selectUnsupportedReason,
+  vcsEnvironment,
+  VcsTerminologyContext,
+} from "../../state/vcs";
 import { useSidebarWorkspaceTabs } from "../layout/workspace/useSystemWorkspaceTabBar";
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import {
@@ -149,13 +158,6 @@ import { editPendingThreadMessage } from "../../state/edit-pending-thread-messag
 import { environmentCatalog } from "../../connection/catalog";
 import { deviceEnvironment } from "../../state/device";
 import { useEnvironmentQuery, useEnvironmentQuerySelector } from "../../state/query";
-import {
-  selectTerminology,
-  selectUnsupportedReason,
-  vcsEnvironment,
-  VcsTerminologyContext,
-} from "../../state/vcs";
-import { AppText as Text } from "../../components/ui/AppText";
 import { threadDevicePreviews } from "../devices/threadDevicePreviews";
 import { ThreadBrowserFloat } from "../browser/ThreadBrowserFloat";
 import { useThreadServerBrowserTabs } from "../../state/preview";
@@ -478,6 +480,7 @@ function ThreadDetailBody(
         });
   const vcsTerminology = useEnvironmentQuerySelector(vcsStatusAtom, selectTerminology);
   const vcsUnsupportedReason = useEnvironmentQuerySelector(vcsStatusAtom, selectUnsupportedReason);
+  const vcsNotice = useEnvironmentQuerySelector(vcsStatusAtom, selectNotice);
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
   const liveKeyboardHeight = useKeyboardState((state) => state.height);
   // Android can lose IME hide callbacks on backgrounding. Quarantine translation on resume unless focused input retained its keyboard.
@@ -1463,6 +1466,14 @@ function ThreadDetailBody(
     <VcsTerminologyContext value={vcsTerminology}>
     <View className="flex-1" onLayout={handleScreenLayout}>
       {!usesNativeWorkspaceColumns ? <NativeLayoutObserver onChange={setScreenMetrics} /> : null}
+      {vcsNotice && props.projectWorkspaceRoot ? (
+        <VcsFallbackNotice
+          environmentId={props.environmentId}
+          repository={props.projectWorkspaceRoot}
+          notice={vcsNotice}
+          reason={vcsUnsupportedReason}
+        />
+      ) : null}
       {vcsUnsupportedReason ? (
         <Text
           accessibilityRole="alert"

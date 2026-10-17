@@ -210,10 +210,7 @@ export function resolveQuickAction(
       label: commitLabel,
       disabled: true,
       kind: "show_hint",
-      hint: vcs.quickNoRefHint(
-        surface === "web" ? terminology.singular : terminology.shortLabel,
-        surface,
-      ),
+      hint: vcs.quickNoRefHint(changeRequestPhrase(terminology, surface).changeRequest, surface),
     };
   if (gitStatus.hasWorkingTreeChanges) {
     if (isBehind || (!gitStatus.hasUpstream && !hasOriginRemote))

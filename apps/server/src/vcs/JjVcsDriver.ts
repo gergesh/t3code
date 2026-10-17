@@ -86,9 +86,10 @@ type VcsDriverService = VcsDriver.VcsDriver["Service"];
 export interface JjVcsDriverShape extends VcsDriverService {
   readonly capabilities: VcsDriverCapabilities & { readonly kind: "jj" };
   readonly repoPaths: (cwd: string) => Effect.Effect<JjRepo.JjRepoPaths, VcsError>;
+  readonly availability: (cwd: string) => Effect.Effect<JjAvailability.JjAvailability>;
   /** Always implemented here: `false` for a repository jj detects but cannot operate on. */
   readonly checkpointsUsable: (cwd: string) => Effect.Effect<boolean, never>;
-  /** Fails with `VcsUnsupportedOperationError` when jj is missing, old, or non-colocated. */
+  /** Fails with `VcsUnsupportedOperationError` when jj is missing, old, broken, or non-colocated. */
   readonly ensureUsable: (
     operation: string,
     cwd: string,
@@ -304,7 +305,7 @@ const makeRepoCache = <A>(
     timeToLive: Exit.match({ onSuccess: () => timeToLive, onFailure: () => Duration.zero }),
   });
 
-export const makeVcsDriverShape = Effect.gen(function* () {
+const makeVcsDriverShape = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const vcsProcess = yield* VcsProcess.VcsProcess;
@@ -444,11 +445,26 @@ export const makeVcsDriverShape = Effect.gen(function* () {
 
   const ensureUsable: JjVcsDriverShape["ensureUsable"] = Effect.fn("JjVcsDriver.ensureUsable")(
     function* (operation: string, cwd: string) {
-      const paths = yield* repoPaths(cwd);
-      const reason = JjAvailability.jjUnsupportedReason({
-        availability: yield* availability(paths.workspaceRoot),
-        colocated: paths.gitDir !== null,
-      });
+      const paths = yield* repoPaths(cwd).pipe(
+        Effect.mapError(
+          (cause) =>
+            new VcsUnsupportedOperationError({
+              operation,
+              kind: "jj",
+              detail: "detail" in cause ? cause.detail : "This Jujutsu repository cannot be read.",
+            }),
+        ),
+      );
+      const linkedGitWorktree =
+        paths.gitDir === null &&
+        !paths.isSecondaryWorkspace &&
+        (yield* JjRepo.isGitLinkedWorktree(fileSystem, path, paths.workspaceRoot));
+      const reason = linkedGitWorktree
+        ? JjAvailability.JJ_LINKED_GIT_WORKTREE_UNSUPPORTED_REASON
+        : JjAvailability.jjUnsupportedReason({
+            availability: yield* availability(paths.workspaceRoot),
+            colocated: paths.gitDir !== null,
+          });
       if (reason !== null || paths.gitDir === null) {
         return yield* Effect.fail(
           new VcsUnsupportedOperationError({
@@ -948,6 +964,7 @@ export const makeVcsDriverShape = Effect.gen(function* () {
     getDiffFileContents: reviewDiff.getDiffFileContents,
     readBranchChangeTotals: reviewDiff.readBranchChangeTotals,
     repoPaths,
+    availability,
     ensureUsable,
     currentChange,
     changeAt,
