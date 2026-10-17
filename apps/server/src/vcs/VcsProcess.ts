@@ -163,7 +163,7 @@ export const unsetInheritedRepositoryEnv = (
       .map((name) => [name, undefined]),
   );
 
-const classifyNonZeroExit = (
+export const classifyNonZeroExit = (
   stderr: string,
   classifyFailure: VcsProcessInput["classifyFailure"],
 ): VcsProcessExitFailureKind => {
