@@ -20,6 +20,8 @@ const DETECTION_CACHE_TTL = Duration.minutes(5);
 export interface VcsDriverResolveInput {
   readonly cwd: string;
   readonly requestedKind?: VcsDriverKind | "auto";
+  /** Only detect jj candidates; callers retain their original Git path otherwise. */
+  readonly jjOnly?: boolean;
 }
 
 export interface VcsDriverHandle {
@@ -156,6 +158,7 @@ export const make = Effect.gen(function* () {
 
   const detect: VcsDriverRegistry["Service"]["detect"] = Effect.fn("VcsDriverRegistry.detect")(
     function* (input) {
+      if (input.jjOnly) return null;
       const requestedKind = yield* projectConfig.resolveKind(input);
       const key = detectionCacheKey({ cwd: input.cwd, requestedKind });
       const cached = yield* Cache.get(detectionCache, key);
