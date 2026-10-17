@@ -7,9 +7,10 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import { ChildProcessSpawner } from "effect/process";
 
+import * as JjVcsDriver from "./JjVcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
-import * as VcsProjectConfig from "./VcsProjectConfig.ts";
 import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
+import * as VcsProjectConfig from "./VcsProjectConfig.ts";
 import { describeJj, seedJjRepo } from "./testing/JjTestSupport.ts";
 
 const processOutput = (stdout: string): VcsProcess.VcsProcessOutput => ({
@@ -26,36 +27,16 @@ const normalizeGitArgs = (args: ReadonlyArray<string>): ReadonlyArray<string> =>
 const DETECT_COMMAND = "rev-parse --is-inside-work-tree --show-toplevel --git-common-dir";
 
 describe("VcsDriverRegistry", () => {
-  it.effect("returns no jj facade handle without filesystem or process work", () => {
-    const unexpected = () => Effect.die("Dormant jj detection must not perform I/O.");
-    const layer = Layer.effect(VcsDriverRegistry.VcsDriverRegistry, VcsDriverRegistry.make).pipe(
-      Layer.provide(
-        FileSystem.layerNoop({
-          stat: unexpected,
-          exists: unexpected,
-          realPath: unexpected,
-        }),
-      ),
-      Layer.provide(Layer.mock(VcsProjectConfig.VcsProjectConfig)({ resolveKind: unexpected })),
-      Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: unexpected })),
-      Layer.provide(NodeServices.layer),
-    );
-    return Effect.gen(function* () {
-      const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
-      assert.isNull(yield* registry.detect({ cwd: "/unused", jjOnly: true }));
-      const unavailable = yield* registry.get("jj").pipe(Effect.flip);
-      assert.strictEqual(unavailable._tag, "VcsUnsupportedOperationError");
-    }).pipe(Effect.provide(layer));
-  });
-
   const makeDiskBackedLayer = (rootDir: string, calls: string[]) =>
     Layer.effect(VcsDriverRegistry.VcsDriverRegistry, VcsDriverRegistry.make).pipe(
+      Layer.provide(JjVcsDriver.layer),
       Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Layer.provide(
         Layer.mock(VcsProjectConfig.VcsProjectConfig)({
           resolveKind: (input) => Effect.succeed(input.requestedKind ?? "auto"),
         }),
       ),
+      Layer.provide(NodeServices.layer),
       Layer.provide(
         Layer.mock(VcsProcess.VcsProcess)({
           run: (input) =>
@@ -89,20 +70,28 @@ describe("VcsDriverRegistry", () => {
       ),
     );
 
-  describeJj("dormant facade jj detection", () => {
-    it.effect("keeps a real colocated jj repository on Git", () =>
+  it.effect("skips plain Git facade detection without spawning processes", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-vcs-facade-" });
+      yield* fs.makeDirectory(path.join(root, ".git"));
+      const calls: string[] = [];
+      yield* Effect.gen(function* () {
+        const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+        assert.isNull(yield* registry.detect({ cwd: root, jjOnly: true }));
+        assert.isEmpty(calls);
+      }).pipe(Effect.provide(makeDiskBackedLayer(root, calls)));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  describeJj("facade jj detection", () => {
+    it.effect("selects a real jj repository", () =>
       Effect.gen(function* () {
         const { root } = yield* seedJjRepo({ prefix: "t3-vcs-facade-jj-" });
         yield* Effect.gen(function* () {
           const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
-          assert.isNull(yield* registry.detect({ cwd: root, jjOnly: true }));
-          assert.equal((yield* registry.detect({ cwd: root }))?.kind, "git");
-          const unavailable = yield* registry.get("jj").pipe(Effect.flip);
-          assert.equal(unavailable._tag, "VcsUnsupportedOperationError");
-          const explicit = yield* registry
-            .detect({ cwd: root, requestedKind: "jj" })
-            .pipe(Effect.flip);
-          assert.equal(explicit._tag, "VcsUnsupportedOperationError");
+          assert.equal((yield* registry.detect({ cwd: root, jjOnly: true }))?.kind, "jj");
         }).pipe(Effect.provide(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))));
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
     );

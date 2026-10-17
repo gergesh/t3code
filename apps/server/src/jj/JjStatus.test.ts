@@ -447,7 +447,10 @@ describeJj("JjStatus.localStatus", () => {
         const local = yield* status.localStatus({ cwd: root });
 
         assert.equal(local.vcs?.kind, "jj");
-        assert.include(local.vcs?.unsupportedReason ?? "", "colocated Jujutsu repositories");
+        assert.include(
+          local.vcs?.kind === "jj" ? (local.vcs.unsupportedReason ?? "") : "",
+          "colocated Jujutsu repositories",
+        );
         assert.equal(local.refName, null);
         assert.equal(local.hasWorkingTreeChanges, false);
       }),

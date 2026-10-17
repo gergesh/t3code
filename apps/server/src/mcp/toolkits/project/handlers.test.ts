@@ -165,20 +165,7 @@ const clientLaunchHarness = (input: {
         ),
     }),
     Layer.mock(PeerForwarding.PeerForwarding)({}),
-    Layer.unwrap(
-      Effect.map(JjVcsDriver.JjVcsDriver, (driver) =>
-        Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
-          detect: ({ cwd }) =>
-            driver
-              .detectRepository(cwd)
-              .pipe(
-                Effect.map((repository) =>
-                  repository === null ? null : { kind: repository.kind, repository, driver },
-                ),
-              ),
-        }),
-      ),
-    ),
+    VcsDriverRegistry.layer,
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
     Layer.unwrap(
       Effect.map(GitVcsDriver.GitVcsDriver, (git) =>
@@ -201,7 +188,6 @@ const clientLaunchHarness = (input: {
     DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer)),
   ).pipe(
     Layer.provideMerge(GitVcsDriver.layer),
-    Layer.provideMerge(JjVcsDriver.layer),
     Layer.provideMerge(VcsProcess.layer),
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-client-launch-" }).pipe(
@@ -519,6 +505,11 @@ it.effect("an invalid Jujutsu launch names the project's workspaces", () =>
       workspaceRoot: root,
       listWorkspacePaths: () => Effect.succeed([]),
     });
+    const detected = yield* Effect.flatMap(VcsDriverRegistry.VcsDriverRegistry, (registry) =>
+      registry.detect({ cwd: root, jjOnly: true }),
+    ).pipe(Effect.provide(dependencies));
+    expect(detected?.kind).toBe("jj");
+    expect(detected?.repository.rootPath).toBe(root);
     const toolkit = yield* ProjectToolkit.pipe(
       Effect.provide(
         McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),

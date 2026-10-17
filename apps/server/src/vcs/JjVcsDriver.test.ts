@@ -530,11 +530,12 @@ describeJj("JjVcsDriver usability", () => {
           path.join(root, ".jj", "repo", "config.toml"),
           "invalid = [\n",
         );
-        const error = yield* driver.currentChange(root).pipe(Effect.flip);
+        const error = yield* driver.ensureUsable("JjVcsDriver.test", root).pipe(Effect.flip);
         assert.equal(error._tag, "VcsUnsupportedOperationError");
         if (error._tag === "VcsUnsupportedOperationError") {
           assert.include(error.detail, "Config error");
           assert.notInclude(error.detail, "not installed");
+          assert.notInclude(error.detail, "not found on the server’s PATH");
         }
       }),
     ),

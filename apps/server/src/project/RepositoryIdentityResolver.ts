@@ -165,7 +165,7 @@ export function resolveRepositoryRootFromMarkers(cwd: string): string | null {
   if (!statIfExistsSync(cwd)?.isDirectory()) {
     return null;
   }
-  let current = cwd;
+  let current = NodeFS.realpathSync(cwd);
   for (;;) {
     if (statIfExistsSync(NodePath.join(current, ".jj"))?.isDirectory()) {
       const repoPointer = NodePath.join(current, ".jj", "repo");
@@ -173,7 +173,9 @@ export function resolveRepositoryRootFromMarkers(cwd: string): string | null {
         if (statIfExistsSync(repoPointer)?.isDirectory()) {
           return current;
         }
-        return mainWorkspaceRootFromRepoPointer(current, NodeFS.readFileSync(repoPointer, "utf8"));
+        return NodeFS.realpathSync(
+          mainWorkspaceRootFromRepoPointer(current, NodeFS.readFileSync(repoPointer, "utf8")),
+        );
       } catch {
         return current;
       }

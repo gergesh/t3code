@@ -52,14 +52,25 @@ export const isBareGitRepository = Effect.fn("JjRepo.isBareGitRepository")(funct
   );
 });
 
-/**
- * Walks up from `cwd` and stops at the FIRST directory holding `.jj`, `.git`, or a bare Git
- * directory. Pure filesystem, no subprocess. A nearer Git repository outranks a `.jj` further up,
- * so no operation ever reaches across into the outer workspace.
- *
- * `null` when `cwd` itself does not exist. A deleted thread directory must never walk up into an
- * unrelated repository above it, and it is null when neither marker is found up to the filesystem root.
- */
+/** A gitdir file alone can also be a submodule or separate Git directory, not a linked worktree. */
+export const isGitLinkedWorktree = Effect.fn("JjRepo.isGitLinkedWorktree")(function* (
+  fileSystem: FileSystem.FileSystem,
+  path: Path.Path,
+  workspaceRoot: string,
+): Effect.fn.Return<boolean, never> {
+  const pointer = yield* fileSystem
+    .readFileString(path.join(workspaceRoot, ".git"))
+    .pipe(Effect.orElseSucceed(() => ""));
+  const gitDir = /^gitdir:\s*(.+)$/m.exec(pointer)?.[1]?.trim();
+  if (!gitDir) return false;
+  return yield* fileSystem.stat(path.join(path.resolve(workspaceRoot, gitDir), "commondir")).pipe(
+    Effect.map((info) => info.type === "File"),
+    Effect.orElseSucceed(() => false),
+  );
+});
+
+// Stop at the nearest marker: inner Git repositories outrank outer jj workspaces.
+// Missing directories must never walk up into an unrelated repository.
 export const findVcsMarkerRoot = Effect.fn("JjRepo.findVcsMarkerRoot")(function* (
   fileSystem: FileSystem.FileSystem,
   path: Path.Path,

@@ -118,6 +118,63 @@ describeJj("GitWorkflowService real jj currentRefName", () => {
     ),
   );
 
+  it.effect("returns an unsupported reason when a jj workspace repo pointer is unreadable", () =>
+    withJjRepo({ prefix: "t3-jj-unreadable-pointer-", seed: true }, (repo) =>
+      Effect.gen(function* () {
+        const remotes = makeJjRemotes({ driver: repo.driver, process: repo.process });
+        const workspaces = makeJjWorkspaces({
+          driver: repo.driver,
+          process: repo.process,
+          fileSystem: repo.fileSystem,
+          path: repo.path,
+          worktreesDir: repo.path.join(repo.base, "worktrees"),
+          bookmarkTo: remotes.bookmarkTo,
+        });
+        const gitManager = yield* GitManager.GitManager.pipe(
+          Effect.provide(
+            Layer.mock(GitManager.GitManager)({ branchPullRequest: () => Effect.succeed(null) }),
+          ),
+        );
+        const status = yield* makeJjStatus({
+          driver: repo.driver,
+          process: repo.process,
+          gitManager,
+          sourceControlProviders: yield* stubSourceControlProviders,
+        });
+        const workspacePath = repo.path.join(repo.base, "workspace");
+        const workflowLayer = makeLayer({
+          detect: ({ cwd }) =>
+            repo.driver
+              .detectRepository(cwd)
+              .pipe(
+                Effect.map((repository) =>
+                  repository === null ? null : { kind: "jj", repository, driver: repo.driver },
+                ),
+              ),
+          jj: { status: status.status, createWorktree: workspaces.createWorktree },
+        });
+
+        yield* Effect.gen(function* () {
+          const workflow = yield* GitWorkflowService.GitWorkflowService;
+          yield* workflow.createWorktree({
+            cwd: repo.root,
+            refName: "main",
+            newRefName: "topic/unreadable-pointer",
+            path: workspacePath,
+          });
+          yield* repo.fileSystem.remove(repo.path.join(workspacePath, ".jj", "repo"));
+          yield* repo.driver.invalidateRepoCaches(workspacePath);
+          const result = yield* workflow.status({ cwd: workspacePath });
+          assert.isTrue(result.isRepo);
+          assert.deepEqual(result.vcs, {
+            kind: "jj",
+            unsupportedReason: "Could not read the Jujutsu workspace repository pointer.",
+          });
+        }).pipe(Effect.provide(workflowLayer));
+      }),
+    ),
+  );
+
   it.effect.each(["project", "workspace"] as const)(
     "retains %s detection failures after creating a real jj workspace",
     (failureAt) =>
@@ -657,6 +714,51 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
       ),
   );
 
+  it.effect(
+    "preserves Git results and attaches an informational fallback notice to both status shapes",
+    () => {
+      const local = {
+        isRepo: true,
+        hasPrimaryRemote: true,
+        isDefaultRef: true,
+        refName: "main",
+        hasWorkingTreeChanges: false,
+        workingTree: { files: [], insertions: 0, deletions: 0 },
+      };
+      const full = {
+        ...local,
+        hasUpstream: false,
+        aheadCount: 0,
+        behindCount: 0,
+        aheadOfDefaultCount: 0,
+        pr: null,
+      };
+      const vcs = {
+        kind: "git" as const,
+        notice:
+          "Jujutsu was not found on the server’s PATH. Using Git for this colocated repository.",
+      };
+      const detect = vi.fn(() => Effect.succeed({ ...handleFor("git"), notice: vcs.notice }));
+      return Effect.gen(function* () {
+        const workflow = yield* GitWorkflowService.GitWorkflowService;
+        assert.deepStrictEqual(yield* workflow.localStatus({ cwd: "/repo" }), { ...local, vcs });
+        expect(detect).toHaveBeenCalledExactlyOnceWith({ cwd: "/repo" });
+        detect.mockClear();
+        assert.deepStrictEqual(yield* workflow.status({ cwd: "/repo" }), { ...full, vcs });
+        expect(detect).toHaveBeenCalledExactlyOnceWith({ cwd: "/repo" });
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            detect,
+            gitManager: {
+              localStatus: () => Effect.succeed(local),
+              status: () => Effect.succeed(full),
+            },
+          }),
+        ),
+      );
+    },
+  );
   it.effect("does not call either lane's status methods when no repository is detected", () => {
     const localStatus = vi.fn();
     const remoteStatus = vi.fn();

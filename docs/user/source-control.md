@@ -173,9 +173,10 @@ make your first commit before pushing.
 
 ## Create a pull request
 
-Use a thread's Git actions to commit, push, and create a pull request. T3 Code can generate commit
-messages, review titles, and descriptions from your changes. Descriptions also draw on the work in
-the thread, including the checks it ran.
+Use a thread's source control actions to commit, push, and create a pull request. T3 Code can generate
+commit messages, review titles, and descriptions from your changes. Descriptions also draw on the
+work in the thread, including the checks it ran. In a Jujutsu workspace, these actions use jj while
+keeping the same hosting integration and writing settings.
 
 An existing fork PR can appear beside the branch even if you pushed without setting an upstream.
 If its badge is missing because several remotes hold that branch, set the branch's upstream to
@@ -283,6 +284,46 @@ apps connected to that server, but the host's own site will not show them, and t
 
 On mobile, open a changed file and mark it viewed from its header. Viewed files collapse,
 and their marks follow the same rules as on web and desktop.
+
+## Jujutsu repositories
+
+T3 Code supports [Jujutsu](https://jj-vcs.github.io/jj/) repositories colocated with Git. Install Jujutsu 0.46.0 or newer on the machine running the T3 Code server, including the remote machine when using a remote environment. Git is still required for the shared object store and diff rendering.
+
+jj manages changes, bookmarks and workspaces. Hosting integrations use the colocated Git store and the same accounts, tokens and writing settings as Git projects. Adding or cloning a project does not automatically convert a Git repository to jj.
+
+Terms follow the repository: bookmarks instead of branches, workspaces instead of worktrees, changes instead of commits. New isolated thread environments use jj workspaces, with the same submodule initialization settings as Git worktrees. Existing Git worktrees remain Git checkouts.
+
+Checkpoints snapshot the working-copy change without committing it or moving bookmarks. Restoring a turn restores the full saved workspace, not just the files shown in its diff. `jj undo` undoes an ordinary restore; if a restore had to recover a checkpoint jj no longer knew about, find that restore in `jj op log` to undo it.
+
+### Detecting the version control system
+
+T3 Code uses the nearest `.jj` or `.git` marker, resolving symlinks first. When both are at the same root, jj takes precedence. A nearer Git checkout inside a jj repository still uses Git.
+
+If jj is not found on the server’s PATH, is older than 0.46.0, or cannot run, a colocated repository uses Git instead and shows a notice explaining why. Colocated Git has a detached HEAD: commits won't be on a branch; push needs a branch. Detection notices server executable path or modification-time changes automatically and rechecks successful probes at least every five minutes. **Settings → Source Control → Rescan** refreshes immediately. **New project** and cloning still create Git repositories.
+
+An existing `.t3code/vcs.json` preference is honored: `{"vcs":{"kind":"git"}}` selects Git without a notice, `"jj"` selects jj without automatic fallback, and `"unknown"` or an omitted kind uses automatic detection and fallback. Explicit driver requests take precedence. In a colocated repository, jj automatically tracks this file, so the preference will be included in pushes unless you explicitly exclude it.
+
+If you run `jj git init --colocate` inside a Git linked worktree, T3 Code keeps using Git there and shows a notice that jj in linked Git worktrees is unsupported. If the repository explicitly prefers jj, source control actions are refused with that explanation instead.
+
+For a non-colocated jj repository, the unsupported reason explains the colocation requirement first. If jj is also missing, it additionally reports that Jujutsu was not found on the server’s PATH and asks you to install jj and rescan.
+
+### Commit, push and pull
+
+Committing runs `jj commit`, using your typed message first, then an existing change description, and generating one only when both are empty. A new bookmark uses the same selected text. T3 Code selects the workspace's bookmark, or the nearest bookmarked descendant or ancestor of `@` in an ordinary workspace. Editing in the middle of a feature stack pushes its feature bookmark without rewinding the descendant tip or moving `main`. If the agent already committed the work and `@` is empty, T3 Code can advance the bookmark without creating another empty commit.
+
+Pull fetches the remote and refuses when the selected bookmark has unpublished commits. It rebases the existing working-copy change and its unbookmarked descendants onto that bookmark, keeping descriptions and edits, including dirty files. Automatic pull doesn't apply to Jujutsu repositories; use **Pull**.
+
+### What is different under Jujutsu
+
+- **Git hooks do not run** for commits made through T3 Code. Hooks that read the Git index, such as
+  `lint-staged` or a staged-diff format check, see nothing under Jujutsu, so T3 Code skips them
+  rather than reporting a hook run that did nothing. Run them yourself if you depend on them.
+- A change with conflicts cannot be committed or pushed until you resolve it, and its diff shows one side of each
+  conflicted file rather than the markers on disk.
+- Jujutsu refuses to snapshot a new file above `snapshot.max-new-file-size`, 1 MiB by default. That
+  file is outside checkpoints, so reverting a turn leaves it on disk. Raise the limit in your own
+  Jujutsu config if you want those files tracked.
+- A repository without a reachable colocated Git store remains unsupported. Source control actions are disabled with the reason, and checkpoints are skipped. Use a Git-colocated repository.
 
 ## Troubleshooting
 

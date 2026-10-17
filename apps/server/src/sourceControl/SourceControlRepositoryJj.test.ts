@@ -19,15 +19,16 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as JjVcsDriver from "../vcs/JjVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as VcsProjectConfig from "../vcs/VcsProjectConfig.ts";
 import { describeJj, JJ_VERSION, runGit, runJj, withJjRepo } from "../vcs/testing/JjTestSupport.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./SourceControlRepositoryService.ts";
 
 describeJj("public Jujutsu repository publishing", () => {
-  it.effect(
-    `refuses unsupported real jj publishing before allocating a hosted repository (jj ${JJ_VERSION})`,
-    () =>
-      withJjRepo({ prefix: "t3-jj-unsupported-publish-", colocated: false }, (repo) =>
+  it.effect.each([false, true])(
+    `refuses unsupported real jj publishing before allocating a hosted repository (unreadable pointer=%s, jj ${JJ_VERSION})`,
+    (unreadablePointer) =>
+      withJjRepo({ prefix: "t3-jj-unsupported-publish-", colocated: unreadablePointer }, (repo) =>
         Effect.gen(function* () {
           const operationBefore = yield* runJj(repo.root, [
             "--ignore-working-copy",
@@ -40,6 +41,15 @@ describeJj("public Jujutsu repository publishing", () => {
             "id",
           ]);
           const remotesBefore = yield* runJj(repo.root, ["git", "remote", "list"]);
+          const pointer = repo.path.join(repo.root, ".jj", "repo");
+          const held = repo.path.join(repo.root, ".jj", "repo-held");
+          const expectedReason = unreadablePointer
+            ? "Could not read the Jujutsu workspace repository pointer."
+            : "jj git colocation enable";
+          if (unreadablePointer) {
+            yield* repo.fileSystem.rename(pointer, held);
+            yield* repo.fileSystem.symlink("repo", pointer);
+          }
           let created = 0;
           const provider = yield* SourceControlProvider.SourceControlProvider.pipe(
             Effect.provide(
@@ -77,17 +87,19 @@ describeJj("public Jujutsu repository publishing", () => {
             Layer.succeed(VcsProcess.VcsProcess, repo.process),
           ).pipe(Layer.provideMerge(NodeServices.layer));
           const git = GitVcsDriver.layer.pipe(Layer.provideMerge(infrastructure));
-          const registry = Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
-            detect: () => Effect.succeed({ kind: "jj" } as VcsDriverRegistry.VcsDriverHandle),
-          }).pipe(Layer.provideMerge(git));
+          const registry = VcsDriverRegistry.layer.pipe(
+            Layer.provide(VcsProjectConfig.layer),
+            Layer.provideMerge(git),
+          );
           const { service, workflow } = yield* Effect.all({
             service: SourceControlRepositoryService.make,
             workflow: JjWorkflow.JjWorkflow,
           }).pipe(Effect.provide(JjWorkflow.layer.pipe(Layer.provideMerge(registry))));
           const localStatus = yield* workflow.localStatus({ cwd: repo.root });
           const status = yield* workflow.status({ cwd: repo.root });
-          const reason = localStatus.vcs?.unsupportedReason;
-          assert.include(reason, "jj git colocation enable");
+          const reason =
+            localStatus.vcs?.kind === "jj" ? localStatus.vcs.unsupportedReason : undefined;
+          assert.include(reason, expectedReason);
           assert.deepStrictEqual(status.vcs, localStatus.vcs);
           const failure = yield* service
             .publishRepository({
@@ -99,7 +111,11 @@ describeJj("public Jujutsu repository publishing", () => {
             .pipe(Effect.flip);
           assert.instanceOf(failure, SourceControlRepositoryError);
           assert.equal(created, 0);
-          assert.include(failure.detail, "jj git colocation enable");
+          assert.include(failure.detail, expectedReason);
+          if (unreadablePointer) {
+            yield* repo.fileSystem.remove(pointer);
+            yield* repo.fileSystem.rename(held, pointer);
+          }
           assert.equal(yield* runJj(repo.root, ["git", "remote", "list"]), remotesBefore);
           assert.equal(
             yield* runJj(repo.root, [
@@ -176,9 +192,10 @@ describeJj("public Jujutsu repository publishing", () => {
           Layer.succeed(VcsProcess.VcsProcess, repo.process),
         ).pipe(Layer.provideMerge(NodeServices.layer));
         const git = GitVcsDriver.layer.pipe(Layer.provideMerge(infrastructure));
-        const registry = Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
-          detect: () => Effect.succeed({ kind: "jj" } as VcsDriverRegistry.VcsDriverHandle),
-        }).pipe(Layer.provideMerge(git));
+        const registry = VcsDriverRegistry.layer.pipe(
+          Layer.provide(VcsProjectConfig.layer),
+          Layer.provideMerge(git),
+        );
         const service = yield* SourceControlRepositoryService.make.pipe(
           Effect.provide(JjWorkflow.layer.pipe(Layer.provideMerge(registry))),
         );
