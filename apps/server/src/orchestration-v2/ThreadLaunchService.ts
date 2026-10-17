@@ -487,7 +487,7 @@ const make = Effect.gen(function* () {
       .pipe(Effect.orElseSucceed(() => Option.none()));
     if (Option.isNone(project)) return false;
     // Unlike `git.repositoryRoot`, this fails on a repository Git cannot read, which is not "no repository".
-    return yield* checkpointStore.isGitRepository(project.value.workspaceRoot).pipe(
+    return yield* checkpointStore.supportsCheckpoints(project.value.workspaceRoot).pipe(
       Effect.map((isRepository) => !isRepository),
       Effect.orElseSucceed(() => false),
     );
