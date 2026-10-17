@@ -68,7 +68,7 @@ In a colocated repo every jj commit, `@` included, is a real Git object in
 
 - Snapshot and restore are jj only. Git's `HEAD` is not the working-copy change `@`; `git restore` or `git clean` bypasses jj's working-copy state even in a colocated secondary workspace.
 - Checkpoint diffs use Git plumbing between captured trees, including captured merges. Review diffs use Git plumbing for single-parent changes and `jj diff --git` for merged-parent baselines, retaining rename pairs in numstat metadata.
-- Hosting operations and per-thread merge-base config use the main workspace root and its `.git/config`. Local bookmarks are exported as Git branch refs in the colocated store. Background status fetches use Git with noninteractive authentication and write only `refs/t3/remotes/<encoded-remote>/*`, a namespace jj does not import. Fetch disables Git's configured remote-tracking ref mappings as well. Ahead counts use jj's nonempty changes above the Git merge bases; behind counts read the fetched Git objects. A background remote update therefore cannot move a tracked local bookmark or detach the workspace from it.
+- Hosting operations and per-thread merge-base config use the main workspace root and its `.git/config`. Local bookmarks are exported as Git branch refs in the colocated store. Explicit fetch, push and bookmark movement belong to jj, not Git checkout commands. Background status fetches use Git with noninteractive authentication and write only `refs/t3/remotes/<encoded-remote>/*`, a namespace jj does not import. Fetch disables Git's configured remote-tracking ref mappings as well. Ahead counts use jj's nonempty changes above the Git merge bases; behind counts read the fetched Git objects. A background remote update therefore cannot move a tracked local bookmark or detach the workspace from it.
 
 Hence the scope limit: a jj repo with no reachable `.git` is detected as jj and reported unusable,
 never quietly treated as Git. [`JjRepo.resolveJjRepoPaths`](../../apps/server/src/vcs/JjRepo.ts)
@@ -97,3 +97,30 @@ files excluded by snapshot size limits may be lost.
 The registry is the only activation boundary: commits 1–6 register only Git, and activation registers
 jj and adds jj-first detection. Callers use the detected kind rather than a rollout flag. Cleanup
 preserves `.jj` metadata whenever detection does not select jj.
+
+## Commit, push and pull preserve the user's change
+
+Managed workspaces use their own bookmark. Other workspaces first use the nearest eligible
+bookmarked descendant of `@`, then the nearest bookmarked ancestor. Multiple eligible descendant
+branches or names on one change are refused as ambiguous, never silently selected or redirected
+to `main`. Editing `main <- x1(@) <- x2[feat]` therefore commits and pushes `feat`, never `main`;
+bookmark movement retains the descendant tip instead of rewinding it to `@-`. Push-only and
+create-change-request actions refuse if the selected bookmark includes the current `@` anywhere
+in its ancestry: commit the change first. Commit-and-push remains supported mid-stack.
+
+Commit uses the typed message when nonblank, then the existing change description, then generated
+text. The selected text retains its exact trimmed formatting; a new bookmark derives its name from
+that same text. Push-only bookmark names use `@-`'s description, not dirty `@`.
+Conflicted working-copy changes are refused before commit or push. Pull refuses unpublished commits,
+including commits above the bookmark, but not dirty files alone. It rebases with
+`jj rebase -s @ -d <bookmark>` so unbookmarked descendants move with the change.
+Pull creates an empty working-copy child of the updated bookmark when editing its old pushed target,
+so the next edit cannot rewrite published work. An intentionally edited earlier ancestor stays in
+place instead of rebasing onto its own descendant. When a local amend rewrites the remote bookmark's
+target, Pull refuses with push guidance rather than rebasing the change onto its own predecessor.
+
+Publishing adds the remote before pushing. An actual first-push transport failure uses the same
+bounded hosting guidance as Git publishing, including the actual allocated remote name, and
+preserves that guidance through the public repository-service error. Local jj preflight refusals,
+such as an undescribed change, retain their actionable explanation instead. The remote remains
+for retry. Git's error mapper and publishing implementation are unchanged.

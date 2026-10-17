@@ -18,7 +18,9 @@ import {
 
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as JjVcsDriver from "../vcs/JjVcsDriver.ts";
 import type * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
+import * as JjWorkflow from "../jj/JjWorkflow.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./SourceControlRepositoryService.ts";
@@ -66,11 +68,32 @@ function layer(input: {
   readonly git?: Partial<GitVcsDriver.GitVcsDriver["Service"]>;
   readonly fileSystem?: FileSystem.FileSystem;
   readonly detect?: VcsDriverRegistry.VcsDriverRegistry["Service"]["detect"];
+  readonly jj?: Partial<JjWorkflow.JjWorkflow["Service"]>;
 }) {
   const layerService = SourceControlRepositoryService.layer.pipe(
     Layer.provide(
       Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
         detect: input.detect ?? (() => Effect.succeed(null)),
+      }),
+    ),
+    Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)(input.jj ?? {})),
+    Layer.provide(
+      Layer.mock(JjVcsDriver.JjVcsDriver)({
+        ensureUsable: (_operation, cwd) =>
+          Effect.succeed({
+            workspaceRoot: cwd,
+            mainWorkspaceRoot: cwd,
+            gitDir: `${cwd}/.git`,
+            isSecondaryWorkspace: false,
+          }),
+        capabilities: {
+          kind: "jj",
+          supportsWorktrees: true,
+          supportsBookmarks: true,
+          supportsAtomicSnapshot: true,
+          supportsPushDefaultRemote: false,
+          ignoreClassifier: "git-compatible-fallback",
+        },
       }),
     ),
     Layer.provide(
@@ -581,58 +604,61 @@ it.effect("preserves destination probe failures instead of treating them as miss
   );
 });
 
-it.effect("refuses Jujutsu publishing before creating a hosting repository or running Git", () => {
-  const calls: string[] = [];
-  const provider = makeProvider({
-    createRepository: () =>
-      Effect.sync(() => {
-        calls.push("createRepository");
-        return CLONE_URLS;
-      }),
-  });
+it.effect(
+  "publishes a Jujutsu repository through the bookmark push, not Git's detached HEAD",
+  () => {
+    const publishCalls: Array<{ cwd: string; remoteName: string; remoteUrl: string }> = [];
+    const gitPushes: Array<string> = [];
+    const provider = makeProvider({ createRepository: () => Effect.succeed(CLONE_URLS) });
 
-  return Effect.gen(function* () {
-    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
-    const failure = yield* service
-      .publishRepository({
+    return Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const result = yield* service.publishRepository({
         cwd: "/workspace",
         provider: SourceControlProviderKind.make("github"),
         repository: "octocat/t3code",
         visibility: "private",
-      })
-      .pipe(Effect.flip);
-    assert.equal(failure.operation, "publishRepository");
-    assert.include(failure.detail, "Jujutsu");
-    assert.deepStrictEqual(calls, []);
-  }).pipe(
-    Effect.provide(
-      layer({
-        provider,
-        detect: (input) =>
-          Effect.sync(() => {
-            assert.deepStrictEqual(input, { cwd: "/workspace", jjOnly: true });
-            return { kind: "jj" } as unknown as VcsDriverRegistry.VcsDriverHandle;
-          }),
-        git: {
-          execute: () =>
+        remoteName: "upstream",
+        protocol: "ssh",
+      });
+
+      assert.deepStrictEqual(publishCalls, [
+        { cwd: "/workspace", remoteName: "upstream", remoteUrl: CLONE_URLS.sshUrl },
+      ]);
+      assert.deepStrictEqual(gitPushes, []);
+      assert.equal(result.remoteName, "upstream-1");
+    }).pipe(
+      Effect.provide(
+        layer({
+          provider,
+          detect: (input) =>
             Effect.sync(() => {
-              calls.push("execute");
-              return processOutput();
+              assert.deepStrictEqual(input, { cwd: "/workspace", jjOnly: true });
+              return { kind: "jj" } as unknown as VcsDriverRegistry.VcsDriverHandle;
             }),
-          ensureRemote: () =>
-            Effect.sync(() => {
-              calls.push("ensureRemote");
-              return "origin";
-            }),
-          pushCurrentBranch: () =>
-            Effect.sync(() => calls.push("pushCurrentBranch")).pipe(
-              Effect.andThen(Effect.die("Jujutsu publishing must not reach Git")),
-            ),
-        },
-      }),
-    ),
-  );
-});
+          jj: {
+            publishRepository: (input) =>
+              Effect.sync(() => {
+                assert.isFunction(input.pushFailureDetail);
+                publishCalls.push({
+                  cwd: input.cwd,
+                  remoteName: input.remoteName,
+                  remoteUrl: input.remoteUrl,
+                });
+                return { refName: "main", remoteName: "upstream-1", status: "pushed" as const };
+              }),
+          },
+          git: {
+            pushCurrentBranch: (cwd) =>
+              Effect.sync(() => gitPushes.push(cwd)).pipe(
+                Effect.andThen(Effect.die("the jj path must not reach Git's push")),
+              ),
+          },
+        }),
+      ),
+    );
+  },
+);
 
 it.effect("publishes to the remote name returned by ensureRemote", () => {
   const pushCalls: Array<{ cwd: string; remoteName: string | null | undefined }> = [];
