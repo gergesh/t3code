@@ -49,6 +49,7 @@ import {
 import * as CheckoutCloner from "./CheckoutCloner.ts";
 import * as CheckpointUntrackedBlobs from "./checkpointUntrackedBlobs.ts";
 import * as VcsDriver from "./VcsDriver.ts";
+import { chunkPathsForCheckIgnore } from "./VcsPathCodecs.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 
 export interface ExecuteGitInput {
@@ -482,7 +483,6 @@ const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const FLAGGED_INDEX_ENTRIES_MAX_BYTES = 1024 * 1024;
 const CHECKPOINT_RECOVERY_MAX_CANDIDATES = 64;
 const CHECKPOINT_RECOVERY_TIMEOUT = "5 seconds";
-const GIT_CHECK_IGNORE_MAX_STDIN_BYTES = 256 * 1024;
 // Reflog subjects that only point a ref at an existing commit. Anything else counts as creating
 // one, so an unknown subject keeps its commit attributed.
 const REF_MOVE_REFLOG_SUBJECT =
@@ -516,36 +516,6 @@ const nowFreshness = Effect.fn("GitVcsDriver.nowFreshness")(function* () {
     expiresAt: Option.none(),
   };
 });
-
-function chunkPathsForGitCheckIgnore(relativePaths: ReadonlyArray<string>): string[][] {
-  const chunks: string[][] = [];
-  let chunk: string[] = [];
-  let chunkBytes = 0;
-
-  for (const relativePath of relativePaths) {
-    const relativePathBytes = Buffer.byteLength(relativePath) + 1;
-    if (chunk.length > 0 && chunkBytes + relativePathBytes > GIT_CHECK_IGNORE_MAX_STDIN_BYTES) {
-      chunks.push(chunk);
-      chunk = [];
-      chunkBytes = 0;
-    }
-
-    chunk.push(relativePath);
-    chunkBytes += relativePathBytes;
-
-    if (chunkBytes >= GIT_CHECK_IGNORE_MAX_STDIN_BYTES) {
-      chunks.push(chunk);
-      chunk = [];
-      chunkBytes = 0;
-    }
-  }
-
-  if (chunk.length > 0) {
-    chunks.push(chunk);
-  }
-
-  return chunks;
-}
 
 function parseGitRemoteVerboseOutput(
   output: string,
@@ -825,7 +795,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     }
 
     const ignoredPaths = new Set<string>();
-    const chunks = chunkPathsForGitCheckIgnore(relativePaths);
+    const chunks = chunkPathsForCheckIgnore(relativePaths);
 
     for (const chunk of chunks) {
       const result = yield* gitCommand(
