@@ -7,6 +7,7 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import {
   GitCommandError,
+  VcsUnsupportedOperationError,
   type VcsStatusInput,
   type VcsError,
   type VcsStatusLocalResult,
@@ -94,17 +95,12 @@ const EMPTY_LOCAL_STATUS = {
   workingTree: { files: [], insertions: 0, deletions: 0 },
 } as const;
 
-/**
- * The bookmark a workspace is working under: the lexicographically first name on the LAST
- * bookmarked row of `heads(::@ & bookmarks())::@`. Both halves keep the value stable across polls,
- * which is what stops `VcsStatusBroadcaster`'s fingerprint from churning on every tick.
- */
+/** Newest-first segment order makes the first eligible bookmarked row the nearest ancestor. */
 export function refNameFromSegment(
   segment: ReadonlyArray<JjSegmentRow>,
   excludedManagedWorkspaces?: ReadonlySet<string>,
 ): string | null {
-  for (let index = segment.length - 1; index >= 0; index -= 1) {
-    const row = segment[index];
+  for (const row of segment) {
     if (row !== undefined && row.localBookmarks.length > 0) {
       let selected: string | null = null;
       for (const bookmark of row.localBookmarks) {
@@ -117,7 +113,7 @@ export function refNameFromSegment(
   return null;
 }
 
-export function refNameFromWorkspaceSegment(
+function refNameFromWorkspaceSegment(
   segment: ReadonlyArray<JjSegmentRow>,
   workspaceName: string,
 ): string | null {
@@ -133,7 +129,10 @@ export function refNameFromWorkspaceSegment(
 }
 
 export const resolveWorkspaceRefName = Effect.fn("JjStatus.resolveWorkspaceRefName")(function* (
-  driver: Pick<JjVcsDriverShape, "repoPaths" | "listWorkspaces" | "changeAt">,
+  driver: Pick<
+    JjVcsDriverShape,
+    "repoPaths" | "listWorkspaces" | "changeAt" | "listBookmarks" | "countRevset"
+  >,
   cwd: string,
   segment: ReadonlyArray<JjSegmentRow>,
   knownWorkspaces?: ReadonlyArray<JjWorkspace>,
@@ -153,19 +152,44 @@ export const resolveWorkspaceRefName = Effect.fn("JjStatus.resolveWorkspaceRefNa
       otherManagedWorkspaces.add(entry.name);
     }
   }
-  const currentRef = refNameFromSegment(segment.slice(0, 1), otherManagedWorkspaces);
-  if (currentRef !== null) return currentRef;
-  // Editing an ancestor keeps the descendant bookmark as the branch being reviewed.
-  // Prefer the nearest bookmarked descendants before falling back to an ancestor.
-  const descendants =
-    knownDescendants ??
-    (yield* driver
-      .changeAt(cwd, "roots((@:: & bookmarks()) ~ @)")
-      .pipe(Effect.map((descendant) => (descendant === null ? [] : [descendant]))));
-  if (descendants.length > 0) {
-    const descendantRef = refNameFromSegment(descendants.slice(0, 1), otherManagedWorkspaces);
-    if (descendantRef !== null) return descendantRef;
+  // The combined status read excludes @, so an empty descendant set only avoids the full
+  // eligible-root query when @ itself cannot have ambiguous eligible bookmark names.
+  if (knownDescendants !== undefined && knownDescendants.length === 0) {
+    const currentNames =
+      segment[0]?.localBookmarks.filter(
+        (name) => !otherManagedWorkspaces.has(workspaceNameForRef(name)),
+      ) ?? [];
+    if (currentNames.length <= 1) return refNameFromSegment(segment, otherManagedWorkspaces);
   }
+  // Select only eligible local names before finding roots; managed workspaces cannot hide a
+  // farther eligible descendant. Multiple roots or names are ambiguous, never a trunk fallback.
+  let eligibleRevset = "bookmarks()";
+  if (otherManagedWorkspaces.size > 0) {
+    const eligible = (yield* driver.listBookmarks(cwd)).filter(
+      (bookmark) =>
+        bookmark.remote === null && !otherManagedWorkspaces.has(workspaceNameForRef(bookmark.name)),
+    );
+    if (eligible.length === 0) return refNameFromSegment(segment, otherManagedWorkspaces);
+    eligibleRevset = eligible.map((bookmark) => localBookmarkRevset(bookmark.name)).join(" | ");
+  }
+  const revset = `roots(@:: & (${eligibleRevset}))`;
+  const count = yield* driver.countRevset(cwd, revset);
+  const descendant = count === 1 ? yield* driver.changeAt(cwd, revset) : null;
+  const names =
+    descendant?.localBookmarks.filter(
+      (name) => !otherManagedWorkspaces.has(workspaceNameForRef(name)),
+    ) ?? [];
+  if (count > 1 || names.length > 1) {
+    return yield* Effect.fail(
+      new VcsUnsupportedOperationError({
+        operation: "JjStatus.resolveWorkspaceRefName",
+        kind: "jj",
+        detail:
+          "Ambiguous descendant bookmarks. Switch to the intended bookmark before continuing.",
+      }),
+    );
+  }
+  if (names.length === 1) return names[0]!;
   return refNameFromSegment(segment, otherManagedWorkspaces);
 });
 

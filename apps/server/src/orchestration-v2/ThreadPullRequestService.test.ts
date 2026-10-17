@@ -32,6 +32,7 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { EventId } from "@t3tools/contracts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ThreadPullRequestService from "./ThreadPullRequestService.ts";
 
@@ -119,6 +120,9 @@ describe("ThreadPullRequestServiceV2 reads", () => {
         Layer.mock(ProjectStore.ProjectStoreV2)({
           listShells: () => Effect.succeed([project]),
           getShell: () => Effect.succeedSome(project),
+        }),
+        Layer.mock(GitWorkflowService.GitWorkflowService)({
+          providerCwd: (cwd) => Effect.succeed(cwd),
         }),
         Layer.mock(GitManager.GitManager)({
           branchPullRequest: (_input, options) =>
@@ -216,6 +220,9 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             }),
         }),
         Layer.mock(ProjectStore.ProjectStoreV2)({ listShells: () => Effect.succeed([]) }),
+        Layer.mock(GitWorkflowService.GitWorkflowService)({
+          providerCwd: (cwd) => Effect.succeed(cwd),
+        }),
         Layer.mock(GitManager.GitManager)({}),
         Layer.mock(PullRequestService.PullRequestService)({
           notifyLinkedThreadsChanged: Queue.offer(notified, undefined).pipe(Effect.asVoid),
@@ -322,6 +329,9 @@ describe("ThreadPullRequestServiceV2 reads", () => {
         Layer.mock(ProjectStore.ProjectStoreV2)({
           listShells: () => Effect.succeed([project]),
           getShell: () => Effect.succeedSome(project),
+        }),
+        Layer.mock(GitWorkflowService.GitWorkflowService)({
+          providerCwd: (cwd) => Effect.succeed(cwd),
         }),
         Layer.mock(GitManager.GitManager)({
           branchPullRequest: (input, options) =>
@@ -454,6 +464,9 @@ describe("ThreadPullRequestServiceV2 reads", () => {
           Layer.mock(ProjectStore.ProjectStoreV2)({
             listShells: () => Effect.succeed([project]),
             getShell: () => Effect.succeedSome(project),
+          }),
+          Layer.mock(GitWorkflowService.GitWorkflowService)({
+            providerCwd: (cwd) => Effect.succeed(cwd),
           }),
           Layer.mock(GitManager.GitManager)({
             branchPullRequest: (input) =>
@@ -724,6 +737,9 @@ describe("ThreadPullRequestServiceV2 reads", () => {
           listShells: () => Effect.succeed([project]),
           getShell: () => Effect.succeedSome(project),
         }),
+        Layer.mock(GitWorkflowService.GitWorkflowService)({
+          providerCwd: (cwd) => Effect.succeed(cwd),
+        }),
         Layer.mock(GitManager.GitManager)({
           branchPullRequest: (input, options) =>
             Effect.gen(function* () {
@@ -863,6 +879,9 @@ describe("ThreadPullRequestServiceV2 reads", () => {
           Layer.mock(ProjectStore.ProjectStoreV2)({
             listShells: () => Effect.succeed([project]),
             getShell: () => Effect.succeedSome(project),
+          }),
+          Layer.mock(GitWorkflowService.GitWorkflowService)({
+            providerCwd: (cwd) => Effect.succeed(cwd),
           }),
           Layer.mock(GitManager.GitManager)({
             branchPullRequest: () => Effect.succeed(detected),
@@ -1004,6 +1023,9 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             listShells: () => Effect.succeed([project]),
             getShell: () => Effect.succeedSome(project),
           }),
+          Layer.mock(GitWorkflowService.GitWorkflowService)({
+            providerCwd: (cwd) => Effect.succeed(cwd),
+          }),
           Layer.mock(GitManager.GitManager)({
             branchPullRequest: () => Effect.succeed(null),
           }),
@@ -1121,6 +1143,9 @@ describe("ThreadPullRequestServiceV2 reads", () => {
         Layer.mock(ProjectStore.ProjectStoreV2)({
           listShells: () => Effect.succeed([project]),
           getShell: () => Effect.succeedSome(project),
+        }),
+        Layer.mock(GitWorkflowService.GitWorkflowService)({
+          providerCwd: (cwd) => Effect.succeed(cwd),
         }),
         Layer.mock(GitManager.GitManager)({
           branchPullRequest: (_input, options) =>
@@ -1260,6 +1285,9 @@ describe("ThreadPullRequestServiceV2 reads", () => {
           getShell: () => Effect.succeedSome(project),
         }),
         // Only the fresh read disagrees with the remembered detection.
+        Layer.mock(GitWorkflowService.GitWorkflowService)({
+          providerCwd: (cwd) => Effect.succeed(cwd),
+        }),
         Layer.mock(GitManager.GitManager)({
           branchPullRequest: (_input, options) =>
             Effect.succeed(options?.freshGitState === true ? fresh : mergedPullRequest43),
@@ -1317,5 +1345,117 @@ describe("ThreadPullRequestServiceV2 reads", () => {
           : [],
       );
     }),
+  );
+  it.effect.each(["git", "jj"] as const)(
+    "discovers and rechecks PRs using the %s hosting checkout",
+    (kind) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const thread = {
+            ...threadShell("workspace-thread"),
+            branch: "feature",
+            worktreePath: "/workspaces/secondary",
+          };
+          const project: OrchestrationProjectShell = {
+            id: thread.projectId,
+            title: "Project",
+            workspaceRoot: "/workspace/project",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: "2026-08-01T00:00:00.000Z",
+            updatedAt: "2026-08-01T00:00:00.000Z",
+          };
+          const identity = {
+            canonicalKey: "github.com/owner/repo",
+            locator: {
+              source: "git-remote" as const,
+              remoteName: "origin",
+              remoteUrl: "git@github.com:owner/repo.git",
+            },
+            provider: SourceControlProviderKind.make("github"),
+            displayName: "owner/repo",
+            owner: "owner",
+            name: "repo",
+          };
+          const pullRequest: GitManager.GitBranchPullRequest = {
+            number: 42,
+            title: "Pull request",
+            url: "https://github.com/owner/repo/pull/42",
+            baseRef: "main",
+            headRef: "feature",
+            state: "open",
+            repositoryKey: identity.canonicalKey,
+            updatedAt: "2026-08-01T00:00:00.000Z",
+            closedAt: null,
+            mergedAt: null,
+          };
+          const calls: Array<{ cwd: string; branch: string }> = [];
+          const activation = yield* Deferred.make<void>();
+          const synchronized = yield* Deferred.make<void>();
+          const dependencies = Layer.mergeAll(
+            Layer.mock(Orchestrator.OrchestratorV2)({
+              streamDomainEvents: Stream.never,
+              getShellSnapshot: () =>
+                Effect.succeed({
+                  schemaVersion: 2,
+                  snapshotSequence: 1,
+                  threads: [thread],
+                  archivedThreads: [],
+                }),
+              dispatch: () =>
+                Deferred.succeed(synchronized, undefined).pipe(
+                  Effect.as({ sequence: 1, storedEvents: [] }),
+                ),
+            }),
+            Layer.mock(ProjectStore.ProjectStoreV2)({
+              listShells: () => Effect.succeed([project]),
+              getShell: () => Effect.succeed(Option.some(project)),
+            }),
+            Layer.mock(GitManager.GitManager)({
+              branchPullRequest: (input) =>
+                Effect.sync(() => {
+                  calls.push(input);
+                  return pullRequest;
+                }),
+            }),
+            Layer.mock(GitWorkflowService.GitWorkflowService)({
+              providerCwd: (cwd) => {
+                expect(cwd).toBe(thread.worktreePath);
+                return Effect.succeed(kind === "jj" ? project.workspaceRoot : cwd);
+              },
+            }),
+            Layer.mock(BackgroundPolicy.BackgroundPolicy)({
+              hasDemand: () => Effect.succeed(true),
+              shouldRunScopeWork: () => Effect.succeed(true),
+              shouldRunOpportunisticWork: Effect.succeed(true),
+            }),
+            Layer.mock(PullRequestService.PullRequestService)({}),
+            Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
+              resolve: () => Effect.succeed(identity),
+            }),
+            Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
+            Layer.succeed(
+              Crypto.Crypto,
+              Crypto.make({
+                randomBytes: (size) => new Uint8Array(size).fill(1),
+                digest: (_algorithm, data) => Effect.succeed(data),
+              }),
+            ),
+            FileSystem.layerNoop({ exists: () => Effect.succeed(true) }),
+          );
+          yield* Effect.gen(function* () {
+            const service = yield* ThreadPullRequestService.make;
+            yield* service.start();
+            yield* Deferred.succeed(activation, undefined);
+            yield* Deferred.await(synchronized);
+            yield* service.drain;
+            const expected = {
+              cwd: kind === "jj" ? project.workspaceRoot : thread.worktreePath,
+              branch: thread.branch,
+            };
+            expect(calls).toEqual([expected, expected]);
+          }).pipe(Effect.provide(dependencies));
+        }),
+      ),
   );
 });

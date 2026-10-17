@@ -924,6 +924,8 @@ export const makeVcsDriverShape = Effect.gen(function* () {
     currentSegment,
     repoPaths,
     listWorkspaces,
+    listBookmarks,
+    countRevset,
     changeAt,
     listRemoteNames,
     resolveDefaultBookmark,
