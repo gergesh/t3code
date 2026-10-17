@@ -6,11 +6,13 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/process";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 
 import {
   VcsProcessSpawnError,
   VcsProcessTimeoutError,
-  VcsUnsupportedOperationError,
+  VcsProcessOutputLimitError,
 } from "@t3tools/contracts";
 import * as ServerConfig from "../config.ts";
 import * as SourceControlDiscovery from "../sourceControl/SourceControlDiscovery.ts";
@@ -18,7 +20,9 @@ import * as SourceControlProviderRegistry from "../sourceControl/SourceControlPr
 import * as JjAvailability from "./JjAvailability.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
+import type * as VcsDriver from "./VcsDriver.ts";
 
+import { describeJj } from "./testing/JjTestSupport.ts";
 const versionProcess = (stdout: string, calls: { count: number }) =>
   Layer.mock(VcsProcess.VcsProcess)({
     run: () =>
@@ -48,7 +52,9 @@ const missingBinaryProcess = Layer.mock(VcsProcess.VcsProcess)({
 
 const probeOnce = (layer: Layer.Layer<VcsProcess.VcsProcess>) =>
   Effect.gen(function* () {
-    const availability = yield* JjAvailability.makeJjAvailability;
+    const availability = yield* JjAvailability.makeJjAvailability.pipe(
+      Effect.provide(NodeServices.layer),
+    );
     return yield* availability("/repo");
   }).pipe(Effect.provide(layer));
 
@@ -105,7 +111,10 @@ describe("makeJjAvailability", () => {
       }),
     ).pipe(
       Effect.map((availability) => {
-        assert.equal(availability._tag, "broken");
+        assert.deepStrictEqual(availability, {
+          _tag: "broken",
+          detail: "jj could not be executed",
+        });
       }),
     ),
   );
@@ -125,11 +134,38 @@ describe("makeJjAvailability", () => {
       }),
     ).pipe(
       Effect.map((availability) => {
-        assert.equal(availability._tag, "broken");
+        assert.deepStrictEqual(availability, {
+          _tag: "broken",
+          detail: "jj did not respond within 5 seconds",
+        });
       }),
     ),
   );
 
+  it.effect("reports excessive version output without process internals", () =>
+    probeOnce(
+      Layer.mock(VcsProcess.VcsProcess)({
+        run: (input) =>
+          Effect.fail(
+            new VcsProcessOutputLimitError({
+              operation: input.operation,
+              command: input.command,
+              cwd: input.cwd,
+              stream: "stdout",
+              maxBytes: 4_096,
+              observedBytes: 4_097,
+            }),
+          ),
+      }),
+    ).pipe(
+      Effect.map((availability) => {
+        assert.deepStrictEqual(availability, {
+          _tag: "broken",
+          detail: "jj returned too much version output",
+        });
+      }),
+    ),
+  );
   it.effect.each(
     ["", "version wrapper is broken"].map((stderr) => [stderr || "no stderr", stderr] as const),
   )("reports a successful malformed executable as broken (%s)", ([, stderr]) =>
@@ -160,7 +196,9 @@ describe("makeJjAvailability", () => {
     const calls = { count: 0 };
 
     return Effect.gen(function* () {
-      const availability = yield* JjAvailability.makeJjAvailability;
+      const availability = yield* JjAvailability.makeJjAvailability.pipe(
+        Effect.provide(NodeServices.layer),
+      );
       yield* Effect.all([availability("/repo"), availability("/other"), availability("/repo")], {
         concurrency: "unbounded",
       });
@@ -212,7 +250,9 @@ describe("makeJjAvailability", () => {
           ),
       });
       return Effect.gen(function* () {
-        const availability = yield* JjAvailability.makeJjAvailability;
+        const availability = yield* JjAvailability.makeJjAvailability.pipe(
+          Effect.provide(NodeServices.layer),
+        );
         const initial = yield* availability("/repo");
         assert.notEqual(initial._tag, "available");
         const repeated = yield* Effect.all(
@@ -241,7 +281,9 @@ describe("makeJjAvailability", () => {
     const calls = { count: 0 };
     return Effect.gen(function* () {
       const process = yield* VcsProcess.VcsProcess;
-      const availability = yield* JjAvailability.makeJjAvailability;
+      const availability = yield* JjAvailability.makeJjAvailability.pipe(
+        Effect.provide(NodeServices.layer),
+      );
       yield* availability("/repo");
       JjAvailability.invalidateJjAvailability({ ...process });
       yield* availability("/repo");
@@ -255,15 +297,13 @@ describe("makeJjAvailability", () => {
   it.effect("Settings discovery invalidates a missing probe before its TTL expires", () => {
     const calls = { count: 0 };
     return Effect.gen(function* () {
-      const availability = yield* JjAvailability.makeJjAvailability;
+      const availability = yield* JjAvailability.makeJjAvailability.pipe(
+        Effect.provide(NodeServices.layer),
+      );
       assert.deepStrictEqual(yield* availability("/repo"), { _tag: "missing" });
       assert.equal(calls.count, 1);
       const discovery = yield* SourceControlDiscovery.make;
-      const discoveryResult = yield* discovery.discover;
-      assert.equal(
-        discoveryResult.versionControlSystems.find((item) => item.kind === "jj")?.implemented,
-        false,
-      );
+      yield* discovery.discover;
       assert.deepStrictEqual(yield* availability("/repo"), {
         _tag: "available",
         version: "0.46.0",
@@ -273,16 +313,7 @@ describe("makeJjAvailability", () => {
       Effect.provide(
         Layer.mergeAll(
           Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
-            get: (kind) => {
-              assert.equal(kind, "jj");
-              return Effect.fail(
-                new VcsUnsupportedOperationError({
-                  operation: "JjAvailability.test",
-                  kind,
-                  detail: "The jj driver is not registered before activation.",
-                }),
-              );
-            },
+            get: () => Effect.succeed({} as VcsDriver.VcsDriver["Service"]),
           }),
           ServerConfig.layerTest("/repo", {
             prefix: "t3-jj-availability-discovery-",
@@ -321,6 +352,29 @@ describe("makeJjAvailability", () => {
 });
 
 describe("jjUnsupportedReason", () => {
+  it("recommends enabling colocation in an existing Jujutsu repository", () => {
+    const reason = JjAvailability.jjUnsupportedReason({
+      availability: { _tag: "available", version: "0.46.0" },
+      colocated: false,
+    });
+    assert.include(reason, "jj git colocation enable");
+    assert.notInclude(reason, "jj git init");
+  });
+
+  it("prioritizes colocation over a missing binary and describes the server PATH", () => {
+    const reason = JjAvailability.jjUnsupportedReason({
+      availability: { _tag: "missing" },
+      colocated: false,
+    });
+    assert.include(reason, "jj git colocation enable");
+    assert.include(reason, "not found on the server’s PATH");
+    assert.isBelow(reason!.indexOf("colocated"), reason!.indexOf("not found"));
+    assert.include(
+      JjAvailability.jjUnsupportedReason({ availability: { _tag: "missing" }, colocated: true }),
+      "not found on the server’s PATH",
+    );
+  });
+
   it("reports a reason for every unusable repository and stays silent for a usable one", () => {
     const reasonFor = (input: Parameters<typeof JjAvailability.jjUnsupportedReason>[0]) =>
       JjAvailability.jjUnsupportedReason(input) !== null;
@@ -339,4 +393,69 @@ describe("jjUnsupportedReason", () => {
       reasonFor({ availability: { _tag: "available", version: "0.46.0" }, colocated: true }),
     );
   });
+});
+
+describeJj("availability refresh with a real jj binary", () => {
+  it.effect.each(["path", "mtime", "ttl", "removed"] as const)(
+    "notices a previously usable binary becoming unusable (%s)",
+    (change) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const resolve = yield* SpawnExecutableResolution;
+        const binary = resolve("jj", yield* HostProcess.Platform, yield* HostProcess.Environment);
+        assert.isDefined(binary);
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-jj-probe-refresh-" });
+        const executable = path.join(directory, "jj");
+        const alternate = path.join(directory, "other-jj");
+        const broken = path.join(directory, "broken");
+        const script = `#!/bin/sh\nif [ -f '${broken}' ]; then echo 'broken installation' >&2; exit 1; fi\nexec '${binary}' "$@"\n`;
+        yield* fs.writeFileString(executable, script);
+        yield* fs.chmod(executable, 0o755);
+        yield* fs.writeFileString(alternate, script);
+        yield* fs.chmod(alternate, 0o755);
+        const process = yield* VcsProcess.VcsProcess;
+        const environment = { ...(yield* HostProcess.Environment) };
+        let selected = executable;
+        let calls = 0;
+        let resolutions = 0;
+        const availability = yield* JjAvailability.makeJjAvailability.pipe(
+          Effect.provideService(HostProcess.Environment, environment),
+          Effect.provideService(SpawnExecutableResolution, () => {
+            resolutions += 1;
+            return selected;
+          }),
+          Effect.provideService(VcsProcess.VcsProcess, {
+            run: (input) => {
+              calls += 1;
+              return process.run({ ...input, command: selected });
+            },
+          }),
+        );
+        assert.equal((yield* availability(directory))._tag, "available");
+        assert.equal((yield* availability(directory))._tag, "available");
+        assert.equal(calls, 1);
+        assert.equal(resolutions, 1);
+        yield* fs.writeFileString(broken, "broken\n");
+        if (change === "path") {
+          selected = alternate;
+          environment.PATH = directory;
+        }
+        if (change === "mtime") {
+          const future = 4_000_000_000;
+          yield* fs.utimes(executable, future, future);
+        }
+        if (change === "ttl") {
+          assert.equal((yield* availability(directory))._tag, "available");
+          yield* TestClock.adjust("5 minutes");
+        }
+        if (change === "removed") yield* fs.remove(executable);
+        assert.equal(
+          (yield* availability(directory))._tag,
+          change === "removed" ? "missing" : "broken",
+        );
+        assert.equal(calls, 2);
+        assert.equal(resolutions, change === "mtime" ? 1 : 2);
+      }).pipe(Effect.provide(VcsProcess.layer.pipe(Layer.provideMerge(NodeServices.layer)))),
+  );
 });

@@ -159,6 +159,7 @@ export interface Preferences {
   readonly connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
   readonly collapsedProjectGroups?: readonly string[];
   readonly dismissedDatabaseStorageNotices?: readonly string[];
+  readonly dismissedVcsNotices?: Readonly<Record<string, string>>;
   /** Hardware-keyboard Return behavior in the composer. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
   readonly followUpBehavior?: FollowUpBehavior;
@@ -251,6 +252,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
     collapsedProjectGroups?: readonly string[];
     dismissedDatabaseStorageNotices?: readonly string[];
+    dismissedVcsNotices?: Readonly<Record<string, string>>;
     composerEnterBehavior?: ComposerEnterBehavior;
     followUpBehavior?: FollowUpBehavior;
     language?: string;
@@ -360,6 +362,17 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (Array.isArray(parsed.dismissedDatabaseStorageNotices)) {
     preferences.dismissedDatabaseStorageNotices = parsed.dismissedDatabaseStorageNotices.filter(
       (value): value is string => typeof value === "string",
+    );
+  }
+  if (
+    typeof parsed.dismissedVcsNotices === "object" &&
+    parsed.dismissedVcsNotices !== null &&
+    !Array.isArray(parsed.dismissedVcsNotices)
+  ) {
+    preferences.dismissedVcsNotices = Object.fromEntries(
+      Object.entries(parsed.dismissedVcsNotices).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
     );
   }
   if (parsed.composerEnterBehavior === "send" || parsed.composerEnterBehavior === "newline") {

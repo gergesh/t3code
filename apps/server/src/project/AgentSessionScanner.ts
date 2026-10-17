@@ -1974,6 +1974,21 @@ export const make = Effect.gen(function* () {
     cachedCandidates = yield* collectCandidates();
     const { candidates: raw, truncated } = cachedCandidates;
 
+    // Resolve persisted roots too. A project and a transcript can name
+    // different symlinks to the same directory.
+    const importedProjects = yield* projectStore
+      .listShells()
+      .pipe(
+        Effect.mapError(
+          (cause) => new AgentSessionScanError({ operation: "read-projects", cause }),
+        ),
+      );
+    const importedProjectsByRoot = new Map<string, (typeof importedProjects)[number]>();
+    for (const project of importedProjects) {
+      const projectRoot = path.resolve(expandHomePath(project.workspaceRoot, homeDir));
+      importedProjectsByRoot.set(normalizeProjectPathForComparison(projectRoot), project);
+      importedProjectsByRoot.set(yield* directoryIdentity(projectRoot), project);
+    }
     const merged = new Map<
       string,
       {
@@ -1990,11 +2005,34 @@ export const make = Effect.gen(function* () {
         return path.isAbsolute(expanded) ? [path.resolve(expanded)] : [];
       }),
     );
+    // Secondary jj workspaces are offered only once imported, like linked git worktrees.
+    const unimportedJjWorkspaces = new Set<string>();
+    for (const [directory, project] of directoryProjects) {
+      if (project === null) continue;
+      const handle = yield* vcsRegistry
+        .detect({ cwd: directory, jjOnly: true })
+        .pipe(Effect.orElseSucceed(() => null));
+      const jjPaths =
+        handle?.kind === "jj"
+          ? yield* resolveJjRepoPaths(fileSystem, path, handle.repository.rootPath).pipe(
+              Effect.orElseSucceed(() => null),
+            )
+          : null;
+      if (
+        jjPaths !== null &&
+        jjPaths.workspaceRoot !== jjPaths.mainWorkspaceRoot &&
+        !importedProjectsByRoot.has(yield* directoryIdentity(directory))
+      ) {
+        unimportedJjWorkspaces.add(directory);
+      }
+    }
 
     for (const candidate of raw) {
       const expanded = expandHomePath(candidate.cwd.trim(), homeDir);
       if (!path.isAbsolute(expanded)) continue;
-      const project = directoryProjects.get(path.resolve(expanded));
+      const resolved = path.resolve(expanded);
+      if (unimportedJjWorkspaces.has(resolved)) continue;
+      const project = directoryProjects.get(resolved);
       if (project === undefined || project === null) continue;
 
       const existing = merged.get(project.key);
@@ -2016,21 +2054,6 @@ export const make = Effect.gen(function* () {
         existing.lastActiveAtMs === null || candidate.lastActiveAtMs === null
           ? (existing.lastActiveAtMs ?? candidate.lastActiveAtMs)
           : Math.max(existing.lastActiveAtMs, candidate.lastActiveAtMs);
-    }
-
-    // Resolve persisted roots too; transcripts may use different symlinks to the same directory.
-    const importedProjects = yield* projectStore
-      .listShells()
-      .pipe(
-        Effect.mapError(
-          (cause) => new AgentSessionScanError({ operation: "read-projects", cause }),
-        ),
-      );
-    const importedProjectsByRoot = new Map<string, (typeof importedProjects)[number]>();
-    for (const project of importedProjects) {
-      const projectRoot = path.resolve(expandHomePath(project.workspaceRoot, homeDir));
-      importedProjectsByRoot.set(normalizeProjectPathForComparison(projectRoot), project);
-      importedProjectsByRoot.set(yield* directoryIdentity(projectRoot), project);
     }
 
     const candidates: Array<AgentSessionProjectCandidate> = [];

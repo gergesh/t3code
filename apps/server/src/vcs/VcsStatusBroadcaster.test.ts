@@ -31,7 +31,6 @@ import { applyGitStatusStreamEvent } from "@t3tools/shared/git";
 import * as VcsAutomaticFetchInterval from "./VcsAutomaticFetchInterval.ts";
 import * as VcsStatusBroadcaster from "./VcsStatusBroadcaster.ts";
 import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
-import * as JjVcsDriver from "./JjVcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
@@ -1092,7 +1091,10 @@ describe("VcsStatusBroadcaster", () => {
       const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-jj-no-auto-pull-" });
       // Detection only needs the marker; no jj process or initialized repository is required.
       yield* fileSystem.makeDirectory(path.join(root, ".jj"));
-      const driver = yield* JjVcsDriver.JjVcsDriver;
+      const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+      const detected = yield* registry.detect({ cwd: root, jjOnly: true });
+      assert.equal(detected?.kind, "jj");
+      assert.equal(detected?.repository.rootPath, root);
       let localStatusCalls = 0;
       let localInvalidationCalls = 0;
       let pullCalls = 0;
@@ -1103,19 +1105,6 @@ describe("VcsStatusBroadcaster", () => {
       };
       const remoteStatus = { ...baseRemoteStatus, behindCount: 2 };
       const layerTest = VcsStatusBroadcaster.layer.pipe(
-        Layer.provide(
-          // Keep repository detection real while isolating the broadcaster's workflow calls.
-          Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
-            detect: ({ cwd }) =>
-              driver
-                .detectRepository(cwd)
-                .pipe(
-                  Effect.map((repository) =>
-                    repository === null ? null : { kind: repository.kind, repository, driver },
-                  ),
-                ),
-          }),
-        ),
         Layer.provideMerge(NodeServices.layer),
         Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
@@ -1156,7 +1145,7 @@ describe("VcsStatusBroadcaster", () => {
     }).pipe(
       Effect.scoped,
       Effect.provide(
-        JjVcsDriver.layer.pipe(
+        VcsDriverRegistry.layer.pipe(
           Layer.provideMerge(VcsProcess.layer),
           Layer.provideMerge(NodeServices.layer),
         ),
