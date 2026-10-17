@@ -19,6 +19,7 @@ import {
   withJjRepo,
 } from "../vcs/testing/JjTestSupport.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import { makeJjRemotes } from "./JjRemotes.ts";
 import {
   makeJjStatus,
   refNameFromSegment,
@@ -122,9 +123,51 @@ describeJj("JjStatus.localStatus", () => {
         );
         assert.equal(descendants[0]?.commitId, firstDescendant?.commitId);
         const segment = yield* repo.driver.currentSegment(repo.root);
-        const refsRefName = yield* resolveWorkspaceRefName(repo.driver, repo.root, segment);
+        const refsError = yield* resolveWorkspaceRefName(repo.driver, repo.root, segment).pipe(
+          Effect.flip,
+        );
+        assert.equal(refsError._tag, "VcsUnsupportedOperationError");
+        if (refsError._tag !== "VcsUnsupportedOperationError") {
+          assert.fail("Expected the refs resolver to reject ambiguous descendants");
+        }
+        assert.equal(
+          refsError.detail,
+          "Ambiguous descendant bookmarks. Switch to the intended bookmark before continuing.",
+        );
         const status = yield* makeStatus(repo.driver, repo.process);
-        assert.equal((yield* status.localStatus({ cwd: repo.root })).refName, refsRefName);
+        const statusError = yield* status.localStatus({ cwd: repo.root }).pipe(Effect.flip);
+        assert.equal(statusError._tag, "GitCommandError");
+        assert.equal(statusError.reason, "unsupported_repository");
+        assert.equal(statusError.detail, refsError.detail);
+      }),
+    ),
+  );
+
+  it.effect("agrees with the refs resolver when the current change has ambiguous bookmarks", () =>
+    withJjRepo({ prefix: "t3-jj-status-current-names-", seed: true }, (repo) =>
+      Effect.gen(function* () {
+        yield* runJj(repo.root, ["new", "main", "-m", "shared current change"]);
+        yield* runJj(repo.root, ["bookmark", "create", "alpha", "beta", "-r", "@"]);
+        const combined = yield* repo.driver.currentSegment(repo.root, { includeDescendants: true });
+        assert.isEmpty(combined.filter((row) => row.descendant));
+        const segment = combined.filter((row) => !row.descendant);
+        assert.sameMembers([...segment[0]!.localBookmarks], ["alpha", "beta"]);
+        const refsError = yield* resolveWorkspaceRefName(repo.driver, repo.root, segment).pipe(
+          Effect.flip,
+        );
+        assert.equal(refsError._tag, "VcsUnsupportedOperationError");
+        if (refsError._tag !== "VcsUnsupportedOperationError") {
+          assert.fail("Expected the refs resolver to reject ambiguous current bookmarks");
+        }
+        assert.equal(
+          refsError.detail,
+          "Ambiguous descendant bookmarks. Switch to the intended bookmark before continuing.",
+        );
+        const status = yield* makeStatus(repo.driver, repo.process);
+        const statusError = yield* status.localStatus({ cwd: repo.root }).pipe(Effect.flip);
+        assert.equal(statusError._tag, "GitCommandError");
+        assert.equal(statusError.reason, "unsupported_repository");
+        assert.equal(statusError.detail, refsError.detail);
       }),
     ),
   );
@@ -738,6 +781,117 @@ describeJj("JjStatus.remoteStatus", () => {
       Effect.gen(function* () {
         assert.isNull(yield* status.remoteStatus({ cwd: root }));
         assert.isNull(yield* status.remoteStatus({ cwd: root }, { refreshUpstream: true }));
+      }),
+    ),
+  );
+
+  it.effect.each([
+    ["reports behind after a peer push without moving main and can still pull", false],
+    [
+      "preserves a managed thread bookmark after remote advancement and can still pull and push",
+      true,
+    ],
+  ] as const)("%s", ([, managed]) =>
+    withJjRepo({ prefix: "t3-jj-status-peer-", withRemote: true }, (repo) =>
+      Effect.gen(function* () {
+        const name = managed ? "t3code/thread" : "main";
+        const cwd = managed ? repo.path.join(repo.base, "thread") : repo.root;
+        if (managed) {
+          yield* runJj(repo.root, ["bookmark", "create", name, "-r", "main"]);
+          yield* runJj(repo.root, ["git", "push", "--bookmark", name, "--remote", "origin"]);
+          yield* runJj(repo.root, [
+            "workspace",
+            "add",
+            "--colocate",
+            "--name",
+            workspaceNameForRef(name),
+            "-r",
+            name,
+            cwd,
+          ]);
+        }
+        const status = yield* makeStatus(repo.driver, repo.process);
+        const remotes = makeJjRemotes({ driver: repo.driver, process: repo.process });
+        const mainBefore = (yield* repo.driver.changeAt(repo.root, "main"))?.commitId;
+        const localBefore = (yield* repo.driver.changeAt(cwd, `bookmarks(exact:"${name}")`))
+          ?.commitId;
+        const workingCopyBefore = (yield* repo.driver.changeAt(cwd, "@"))?.commitId;
+        const bookmarksBefore = yield* repo.driver.listBookmarks(cwd);
+        const trackingBefore = (yield* runGit(cwd, [
+          "rev-parse",
+          `refs/remotes/origin/${name}`,
+        ])).trim();
+        const initial = yield* status.remoteStatus({ cwd });
+        assert.equal(initial?.behindCount, 0);
+        assert.equal(initial?.hasUpstream, true);
+
+        const peer = repo.path.join(repo.base, "peer");
+        yield* repo.fileSystem.makeDirectory(peer, { recursive: true });
+        yield* runJj(peer, ["git", "clone", "--colocate", repo.remotePath, peer]);
+        if (managed) {
+          yield* runJj(peer, ["bookmark", "track", `${name}@origin`]);
+        }
+        yield* runJj(peer, ["new", `remote_bookmarks(exact:"${name}", exact:"origin")`]);
+        yield* repo.fileSystem.writeFileString(repo.path.join(peer, "peer.txt"), "peer\n");
+        yield* runJj(peer, ["commit", "-m", "peer advances remote"]);
+        yield* runJj(peer, ["bookmark", "set", name, "-r", "@-"]);
+        yield* runJj(peer, ["git", "push", "--bookmark", name, "--remote", "origin"]);
+        const peerHead = (yield* repo.driver.changeAt(peer, `bookmarks(exact:"${name}")`))
+          ?.commitId;
+
+        const refreshed = yield* status.remoteStatus({ cwd }, { refreshUpstream: true });
+        assert.equal(
+          (yield* runGit(cwd, ["rev-parse", `refs/remotes/origin/${name}`])).trim(),
+          trackingBefore,
+        );
+        assert.equal(refreshed?.hasUpstream, true);
+        assert.equal(refreshed?.aheadCount, 0);
+        assert.equal(refreshed?.behindCount, 1);
+        const local = yield* status.localStatus({ cwd });
+        assert.equal(local.refName, name);
+        assert.equal(local.isDefaultRef, !managed);
+        assert.equal((yield* repo.driver.changeAt(repo.root, "main"))?.commitId, mainBefore);
+        assert.equal(
+          (yield* repo.driver.changeAt(cwd, `bookmarks(exact:"${name}")`))?.commitId,
+          localBefore,
+        );
+        assert.equal((yield* repo.driver.changeAt(cwd, "@"))?.commitId, workingCopyBefore);
+        assert.deepStrictEqual(yield* repo.driver.listBookmarks(cwd), bookmarksBefore);
+        assert.equal(
+          (yield* runGit(cwd, ["rev-parse", `refs/t3/remotes/origin/${name}`])).trim(),
+          peerHead,
+        );
+
+        const pulled = yield* remotes.pullCurrentBranch(cwd);
+        assert.equal(pulled.status, "pulled");
+        assert.equal(pulled.refName, name);
+        assert.isTrue(yield* repo.fileSystem.exists(repo.path.join(cwd, "peer.txt")));
+        const afterPull = yield* status.remoteStatus({ cwd });
+        assert.equal(afterPull?.aheadCount, 0);
+        assert.equal(afterPull?.behindCount, 0);
+        if (managed) {
+          yield* repo.fileSystem.writeFileString(repo.path.join(cwd, "thread.txt"), "thread\n");
+          yield* runJj(cwd, ["commit", "-m", "thread work after refresh"]);
+          yield* runJj(cwd, ["bookmark", "set", name, "-r", "@-"]);
+          const ahead = yield* status.remoteStatus({ cwd });
+          assert.equal(ahead?.aheadCount, 1);
+          const pushed = yield* remotes.pushBookmark({
+            cwd,
+            name,
+            remoteName: "origin",
+            operation: "test",
+          });
+          assert.equal(pushed.status, "pushed");
+          const afterPush = yield* status.remoteStatus({ cwd });
+          assert.equal(afterPush?.aheadCount, 0);
+          assert.equal(afterPush?.behindCount, 0);
+          assert.equal((yield* status.localStatus({ cwd })).refName, name);
+          assert.equal(
+            (yield* runGit(repo.remotePath, ["rev-parse", `refs/heads/${name}`])).trim(),
+            (yield* repo.driver.changeAt(cwd, "@-"))?.commitId,
+          );
+          assert.equal((yield* repo.driver.changeAt(repo.root, "main"))?.commitId, mainBefore);
+        }
       }),
     ),
   );
