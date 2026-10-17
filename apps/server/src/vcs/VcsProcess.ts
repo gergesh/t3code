@@ -73,6 +73,11 @@ export const GIT_INDEX_LOCKED_DETAIL =
   "Git's index is locked. Wait for other Git operations to finish, then try again.";
 
 export const CHECKPOINT_CAPTURE_OPERATION = "GitVcsDriver.checkpoints.captureCheckpoint";
+export const JJ_CHECKPOINT_CAPTURE_OPERATION = "JjVcsDriver.checkpoints.captureCheckpoint";
+const CHECKPOINT_CAPTURE_OPERATIONS: Record<string, true> = {
+  [CHECKPOINT_CAPTURE_OPERATION]: true,
+  [JJ_CHECKPOINT_CAPTURE_OPERATION]: true,
+};
 
 // Caller operations are diagnostic strings; only known labels may become metric attributes.
 const gitMetricOperations = new Set([
@@ -284,7 +289,7 @@ export const make = Effect.gen(function* () {
 
     if (
       hostPlatform === "darwin" &&
-      input.operation === CHECKPOINT_CAPTURE_OPERATION &&
+      CHECKPOINT_CAPTURE_OPERATIONS[input.operation] === true &&
       !input.allowNonZeroExit &&
       result.code !== null &&
       result.code !== 0 &&
@@ -354,7 +359,7 @@ export const make = Effect.gen(function* () {
     const bounded = vcsProcesses.withPermits(1)(runUnbounded(input));
     if (
       input.command === "git" &&
-      input.operation === CHECKPOINT_CAPTURE_OPERATION &&
+      CHECKPOINT_CAPTURE_OPERATIONS[input.operation] === true &&
       input.onStdoutChunk === undefined
     ) {
       return yield* bounded.pipe(

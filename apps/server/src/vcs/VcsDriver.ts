@@ -6,6 +6,10 @@ import type {
   VcsInitInput,
   VcsListRemotesResult,
   VcsListWorkspaceFilesResult,
+  ReviewDiffFileContentsInput,
+  ReviewDiffFileContentsResult,
+  ReviewDiffPreviewInput,
+  ReviewDiffPreviewResult,
   VcsRepositoryIdentity,
 } from "@t3tools/contracts";
 import { CheckpointRef } from "@t3tools/contracts";
@@ -85,5 +89,21 @@ export class VcsDriver extends Context.Service<
       relativePaths: ReadonlyArray<string>,
     ) => Effect.Effect<ReadonlyArray<string>, VcsError>;
     readonly initRepository: (input: VcsInitInput) => Effect.Effect<void, VcsError>;
+    readonly getDiffPreview?: (
+      input: ReviewDiffPreviewInput,
+    ) => Effect.Effect<ReviewDiffPreviewResult, VcsError>;
+    /**
+     * Expand unchanged context in a review diff. Optional for the same reason as `getDiffPreview`:
+     * the Git driver reaches its implementation through the legacy `GitVcsDriver` service instead.
+     */
+    readonly getDiffFileContents?: (
+      input: ReviewDiffFileContentsInput,
+    ) => Effect.Effect<ReviewDiffFileContentsResult, VcsError>;
+    /**
+     * Whether `checkpoints` can actually run against THIS repository, as opposed to whether this
+     * driver implements checkpointing at all. A driver that is always usable once detected omits
+     * it; absent means yes. Never fails: a probe error reads as `false`.
+     */
+    readonly checkpointsUsable?: (cwd: string) => Effect.Effect<boolean, never>;
   }
 >()("t3/vcs/VcsDriver") {}
