@@ -103,6 +103,7 @@ pair starts a new scope; reads never survive a mutation or leak into another ref
 existing call order and options. Optional branch totals alone are absent for unrelated histories:
 only after a failed triple-dot diff does a successful no-common-ancestor diagnostic establish this.
 Broken commands, missing objects, timeouts and other genuine failures still surface.
+Only repositories detected as jj allocate refresh scope state; Git retains its original effects.
 The refs snapshot cache includes repository generation and operation-head identities, so external
 `jj` operations invalidate it immediately. Each bookmark mutation invalidates once. T3 workspace
 creation, removal and pruning also advance the repository generation, including when a later
@@ -110,10 +111,9 @@ configuration step fails. Fresh workspaces leave `@`'s description empty so user
 can always be preserved and cleanup can dispose of empty, undescribed changes. Force removal deletes
 the workspace directory. Only snapshotted changes are retained in Jujutsu history; ignored files and
 files excluded by snapshot size limits may be lost.
-
-The registry is the only activation boundary: commits 1–6 register only Git, and activation registers
-jj and adds jj-first detection. Callers use the detected kind rather than a rollout flag. Cleanup
-preserves `.jj` metadata whenever detection does not select jj.
+`VcsDriverRegistry` selects jj for detected colocated repositories when jj is available and the
+repository preference permits it, with the Git fallback described above. Callers select behavior
+from the detected kind, while cleanup preserves `.jj` metadata whenever detection does not select jj.
 
 ## Commit, push and pull preserve the user's change
 
@@ -190,3 +190,15 @@ Checkpoints are the exception. `checkpointsUsable` answers `false` there so
 [`CheckpointStore.supportsCheckpoints`](../../apps/server/src/checkpointing/CheckpointStore.ts) skips
 capture silently, same as a directory with no repo, instead of writing a failed-capture activity into
 every turn.
+
+## Workspace cleanup
+
+An existing Git worktree (`.git` file, no `.jj`) keeps resolving as Git even when its project becomes colocated. Workspace removal dispatches from the target path first, with the project kind as a fallback when that path is missing or unclassifiable. Pruning routes by project kind. Idle jj workspaces use the shared cleanup rules; a tree-empty working-copy change is disposable only when its description is empty. Background fetch writes only `refs/t3/remotes`, never moving or conflicting tracked local bookmarks; subsequent candidates use those same refreshed refs. Cleanup snapshots tracked changes without auto-tracking new files, then separately inspects untracked and policy-relevant ignored files, including oversized files. Any `.jj` marker is preserved whenever detection does not select jj. Under the workspace lease, removal repeats the idle inspection, renames the workspace into a same-parent holding directory, and verifies its disk against a private Git index and its jj working-copy identity before forgetting it. Tracked edits are restored rather than snapshotted onto a stranded change. Successful removal forgets the workspace, prunes colocated Git registrations, invalidates caches and deletes the checked holding directory. Restoration failures preserve the holding directory instead of deleting unchecked files. Open terminals and live provider sessions remain blockers because existing open file descriptors can write even after a rename.
+
+Cleanup's holding interval and repo-wide jj pruning share a semaphore, so a normal resume cannot mistake a temporarily moved workspace for a missing one. Rename and rollback installation are interruption-masked. Ambiguous forget failures recheck registration before restoring; recovery failures are ordinary per-entry failures carrying the preserved directory, not sweep-killing defects.
+
+Cleanup never runs stale-workspace recovery: stale candidates are kept as `"workspace is stale"`
+without rewriting their files. The open-thread status poller's stale recovery is unchanged.
+With `keepWhen: "tracked-changes"`, ignored and untracked files are cleared in the holding directory
+only after final tracked-edit and description checks pass; refused removal preserves those files.
+`uncommitted-changes` keeps its existing file-preservation behavior.

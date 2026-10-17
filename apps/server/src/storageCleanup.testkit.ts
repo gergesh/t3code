@@ -146,8 +146,6 @@ export const cleanupFixture = (
         "--colocate",
         "--name",
         workspaceNameForRef("feature"),
-        "-m",
-        "t3:feature",
         "-r",
         "feature",
         worktree,
@@ -171,7 +169,7 @@ export const cleanupFixture = (
     let outboxStatus: string | null = null;
     let scheduledThreadIds: string[] = [];
     let fullStatusCalls = 0;
-    let gitInspections = 0;
+    let gitExecuteCalls = 0;
     let snapshotReads = 0;
     let terminalListener: ((event: TerminalMetadataStreamEvent) => Effect.Effect<void>) | undefined;
     let events: Stream.Stream<OrchestrationV2DomainEvent> = Stream.empty;
@@ -181,7 +179,7 @@ export const cleanupFixture = (
         ...git,
         execute: (input) =>
           Effect.gen(function* () {
-            gitInspections++;
+            gitExecuteCalls++;
             // Before Git's own clean check: inside `git worktree remove`, or on
             // Windows the same status check the removal makes before deleting.
             if (
@@ -372,6 +370,9 @@ export const cleanupFixture = (
           },
         };
       },
+      setDeletedThreads: (next: OrchestrationV2ThreadShell[]) => {
+        deletedThreads = next;
+      },
       setThreads: (next: typeof threads) => {
         threads = next;
       },
@@ -416,8 +417,9 @@ export const cleanupFixture = (
             ...paths,
           },
         }) ?? Effect.void,
-      gitInspections: () => gitInspections,
+      gitInspections: () => gitExecuteCalls,
       fullStatusCalls: () => fullStatusCalls,
+      gitExecuteCalls: () => gitExecuteCalls,
       snapshotReads: () => snapshotReads,
       sessionLiveChecks: () => sessionLiveChecks,
       activate: (domainEvents: Stream.Stream<OrchestrationV2DomainEvent>) => {
