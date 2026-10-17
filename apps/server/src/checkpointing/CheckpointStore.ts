@@ -47,7 +47,7 @@ export interface DeleteCheckpointRefsInput {
 export class CheckpointStore extends Context.Service<
   CheckpointStore,
   {
-    readonly isGitRepository: (cwd: string) => Effect.Effect<boolean, CheckpointStoreError>;
+    readonly supportsCheckpoints: (cwd: string) => Effect.Effect<boolean, CheckpointStoreError>;
 
     readonly captureCheckpoint: (
       input: CaptureCheckpointInput,
@@ -88,9 +88,15 @@ export const make = Effect.gen(function* () {
   });
 
   // The registry reads an unreadable repository as none; ask Git again so that fails here.
-  const isGitRepository: CheckpointStore["Service"]["isGitRepository"] = Effect.fn(
-    "CheckpointStore.isGitRepository",
-  )(function* (cwd) {
+  const supportsCheckpoints: CheckpointStore["Service"]["supportsCheckpoints"] = Effect.fn(
+    "CheckpointStore.supportsCheckpoints",
+  )(function* (cwd: string) {
+    const jj = yield* vcsRegistry.detect({ cwd, jjOnly: true });
+    if (jj?.kind === "jj") {
+      if (!jj.driver.checkpoints) return false;
+      const usable = jj.driver.checkpointsUsable;
+      return usable ? yield* usable(cwd) : true;
+    }
     if ((yield* vcsRegistry.detect({ cwd, requestedKind: "git" })) !== null) return true;
     const git = yield* vcsRegistry.get("git");
     return (yield* git.detectRepository(cwd)) !== null;
@@ -139,7 +145,7 @@ export const make = Effect.gen(function* () {
   });
 
   return CheckpointStore.of({
-    isGitRepository,
+    supportsCheckpoints,
     captureCheckpoint,
     hasCheckpointRef,
     restoreCheckpoint,

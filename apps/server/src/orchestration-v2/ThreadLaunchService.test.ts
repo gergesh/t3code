@@ -144,7 +144,7 @@ interface HarnessOptions {
     command: Parameters<ThreadManagement.ThreadManagementService["Service"]["dispatch"]>[0],
     dispatch: ThreadManagement.ThreadManagementService["Service"]["dispatch"],
   ) => ReturnType<ThreadManagement.ThreadManagementService["Service"]["dispatch"]>;
-  readonly isGitRepository?: CheckpointStore.CheckpointStore["Service"]["isGitRepository"];
+  readonly isGitRepository?: CheckpointStore.CheckpointStore["Service"]["supportsCheckpoints"];
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -196,7 +196,7 @@ function makeHarness(options: HarnessOptions = {}) {
     Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({ get: () => Effect.succeed(null) }),
     Layer.mock(TerminalManager.TerminalManager)({ close: closeTerminal }),
     Layer.mock(CheckpointStore.CheckpointStore)({
-      isGitRepository: options.isGitRepository ?? (() => Effect.succeed(true)),
+      supportsCheckpoints: options.isGitRepository ?? (() => Effect.succeed(true)),
     }),
     Layer.succeed(ProjectService.ProjectService, {
       create: () => Effect.die("unused"),
