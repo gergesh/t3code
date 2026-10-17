@@ -1,6 +1,7 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { m } from "../i18n/messages";
+import { vcsEnvironment } from "../state/vcs";
 import { attachSidebarTree } from "../lib/sidebarTree";
 import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
@@ -13,8 +14,10 @@ import { discardComposerDraft } from "../lib/discardComposerDraft";
 import { requestCustomSnooze } from "./CustomSnoozeDialog";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import * as Schema from "effect/Schema";
+import { resolveVcsTerminology, type VcsTerminology } from "@t3tools/shared/vcs";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import {
   DndContext,
   useSensor,
@@ -162,7 +165,6 @@ import { useOlderSettledShelf, useOlderSettledShelfGrowth } from "../state/older
 import { useThreadSearch } from "../state/queries";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
-import { appAtomRegistry } from "../rpc/atomRegistry";
 import { canShareWithGuestAtom } from "./chat/guestShareAvailability";
 import { openGuestShareDialog } from "./chat/guestShareDialogState";
 import {
@@ -2602,12 +2604,25 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         const workspacePath =
           session.worktreePath ??
           projectByKey.get(`${session.environmentId}:${session.projectId}`)?.workspaceRoot;
+        const vcsStatus = workspacePath
+          ? Option.getOrNull(
+              AsyncResult.value(
+                appAtomRegistry.get(
+                  vcsEnvironment.status({
+                    environmentId: session.environmentId,
+                    input: { cwd: workspacePath, includeRemote: false },
+                  }),
+                ),
+              ),
+            )
+          : null;
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildDraftActionMenuItems({
               hasPath: Boolean(workspacePath),
               hasBranch: Boolean(session.branch),
               hasProject: projectGroup != null,
+              terminology: resolveVcsTerminology(vcsStatus),
             }),
             position,
             source,
@@ -2644,6 +2659,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       threadRef: ScopedThreadRef,
       position: { x: number; y: number },
       source: ContextMenuSource,
+      terminology: VcsTerminology,
       fromSearch = false,
     ) => {
       void (async () => {
@@ -2706,6 +2722,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       isActive: projectScopeKeys.includes(threadProjectGroup.projectKey),
                     }
                   : null,
+              terminology,
               isPinned,
               isSettled,
               autoSettleEnabled: thread.autoSettleDisabledAt == null,
@@ -2946,7 +2963,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   );
   const handleSearchResultContextMenu = useStableCallback(
     (threadRef: ScopedThreadRef, position: { x: number; y: number }, source: ContextMenuSource) =>
-      handleThreadContextMenu(threadRef, position, source, true),
+      handleThreadContextMenu(threadRef, position, source, resolveVcsTerminology(null), true),
   );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window keydown for thread navigation shortcuts using the current thread list

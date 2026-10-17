@@ -18,6 +18,7 @@ import { dismissThreadErrorBannerForSession, ThreadErrorBanner } from "./ThreadE
  */
 export function ChatBannerLane(props: {
   environmentId: EnvironmentId;
+  vcsUnsupportedReason: string | null;
   providerStatus: ServerProvider | null;
   providerStatusDismissalKey: string | null;
   onOpenProviderSetup: (instanceId: ProviderInstanceId) => void;
@@ -43,6 +44,7 @@ export function ChatBannerLane(props: {
   } = props;
   return (
     <div className="chat-banner-lane pointer-events-none absolute top-0 z-30 flex flex-col">
+      {props.vcsUnsupportedReason ? <div role="alert" className="pointer-events-auto border-b border-warning/20 bg-background px-4 py-2 text-xs text-warning">{props.vcsUnsupportedReason}</div> : null}
       <ProviderStatusBanner
         environmentId={props.environmentId}
         status={providerStatus}

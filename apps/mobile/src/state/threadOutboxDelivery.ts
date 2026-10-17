@@ -1,6 +1,6 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { changeRequestTermKind } from "../lib/changeRequestTerm";
-import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import { errorDisplayMessage, vcsOperationErrorMessage } from "@t3tools/client-runtime/errors";
 import * as Dialog from "../components/ui/Dialog";
 import {
   type EnvironmentProject,
@@ -52,6 +52,7 @@ import {
 } from "./acknowledged-thread-messages";
 import { appAtomRegistry } from "./atom-registry";
 import { restoredNewTaskDraftKey } from "./new-task-draft-key";
+import { readVcsUnsupportedReason } from "./vcs";
 import {
   clearPendingThreadCreationOutcome,
   pendingThreadCreationOutcomesAtom,
@@ -728,6 +729,15 @@ const deliveryCommand = <W, A, E>(
     }),
   );
 
+/** The server's unsupported-VCS reason wins; other errors keep their translated text. */
+function queuedMessageErrorText(error: unknown): string {
+  const fallback = m(msg("The message could not be sent."));
+  const vcsMessage = vcsOperationErrorMessage(error, fallback);
+  return error instanceof Error && vcsMessage !== error.message
+    ? vcsMessage
+    : (errorDisplayMessage(error, m) ?? fallback);
+}
+
 function reportCommandFailure(
   queuedMessage: QueuedThreadMessage,
   commandResult: AtomCommandResult<unknown, unknown>,
@@ -750,7 +760,7 @@ function reportCommandFailure(
   });
   return {
     action,
-    message: errorDisplayMessage(error, m) ?? m(msg("The message could not be sent.")),
+    message: queuedMessageErrorText(error),
   };
 }
 
@@ -1139,6 +1149,16 @@ export function createThreadOutboxDelivery(): {
       currentConfig.providers,
     );
     if (!hasAccess()) return;
+    const unsupportedReason =
+      creation.workspaceMode === "worktree" || creation.pullRequestReference
+        ? (readVcsUnsupportedReason(queuedMessage.environmentId, projectCwd) ??
+          (creation.worktreePath
+            ? readVcsUnsupportedReason(queuedMessage.environmentId, creation.worktreePath)
+            : null))
+        : null;
+    if (unsupportedReason !== null) {
+      return yield* restoreQueuedMessage(persistedMessage, unsupportedReason);
+    }
     let workspace = creation;
     const launched = launchedCreations.get(persistedMessage.messageId);
     if (launched?.revision === deliveryRevision) {
@@ -1179,6 +1199,16 @@ export function createThreadOutboxDelivery(): {
         worktreePath: checkout.value.worktreePath,
         startFromOrigin: false,
       };
+    }
+    const workspaceUnsupportedReason =
+      creation.workspaceMode === "worktree" || creation.pullRequestReference
+        ? (readVcsUnsupportedReason(queuedMessage.environmentId, projectCwd) ??
+          (workspace.worktreePath
+            ? readVcsUnsupportedReason(queuedMessage.environmentId, workspace.worktreePath)
+            : null))
+        : null;
+    if (workspaceUnsupportedReason !== null) {
+      return yield* restoreQueuedMessage(persistedMessage, workspaceUnsupportedReason);
     }
     launchedCreations.set(persistedMessage.messageId, { revision: deliveryRevision, workspace });
     const deliveryResult = yield* deliveryCommand(threadEnvironment.startTurn, {

@@ -1,4 +1,5 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
+import { GIT_VCS_TERMINOLOGY, type VcsTerminology } from "@t3tools/shared/vcs";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 import { msg } from "gt-react";
 
@@ -44,6 +45,7 @@ export function buildDraftActionMenuItems(
     readonly hasPath: boolean;
     readonly hasBranch: boolean;
     readonly hasProject: boolean;
+    readonly terminology?: VcsTerminology;
   },
   resolve: MessageResolver = m,
 ): ReadonlyArray<ContextMenuItem<DraftActionMenuId>> {
@@ -67,7 +69,7 @@ export function buildDraftActionMenuItems(
           ? [
               {
                 id: "copy-branch" as const,
-                label: resolve(msg("Branch", { $context: "copy the git branch name" })),
+                label: (options.terminology ?? GIT_VCS_TERMINOLOGY).refNounTitle,
                 icon: "git-branch",
               },
             ]
@@ -103,6 +105,7 @@ export interface ThreadActionMenuState {
     readonly label: string;
     readonly isActive: boolean;
   } | null;
+  readonly terminology?: VcsTerminology;
   readonly isPinned: boolean;
   readonly isSettled: boolean;
   readonly autoSettleEnabled: boolean;
@@ -280,7 +283,7 @@ export function buildThreadActionMenuItems(
           ? [
               {
                 id: "copy-branch" as const,
-                label: resolve(msg("Branch", { $context: "copy the git branch name" })),
+                label: (state.terminology ?? GIT_VCS_TERMINOLOGY).refNounTitle,
                 icon: "git-branch",
               },
             ]

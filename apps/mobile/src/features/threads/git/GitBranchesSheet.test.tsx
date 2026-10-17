@@ -8,15 +8,26 @@ type InputProps = {
   onChangeText: (value: string) => void;
 };
 type ActionProps = { label: string; disabled: boolean; onPress: () => void };
+type VcsState = { kind: "git" | "jj"; unsupportedReason?: string };
+type BranchState = {
+  name: string;
+  current: boolean;
+  isDefault: boolean;
+  worktreePath: string | null;
+};
 const state = vi.hoisted(() => ({
   refName: null as string | null,
   branch: null as string | null,
+  vcs: null as VcsState | null,
+  branches: [] as BranchState[],
+  title: null as string | null,
   inputs: new Map<string, InputProps>(),
   actions: new Map<string, ActionProps>(),
   worktrees: [] as Array<{ baseBranch: string; newBranch: string }>,
   focused: true,
   goBackCalls: 0,
   gitResult: Promise.resolve<object | null>(null),
+  mutations: 0,
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -26,9 +37,20 @@ vi.mock("@react-navigation/native", () => ({
     isFocused: () => state.focused,
   }),
 }));
-vi.mock("../../../components/ui/SheetHeader", () => ({ SheetHeader: () => null }));
+vi.mock("../../../components/ui/AppText", () => ({ AppText: () => null }));
+vi.mock("../../../components/ui/SheetHeader", () => ({
+  SheetHeader: (props: { title: string }) => {
+    state.title = props.title;
+    return null;
+  },
+}));
 vi.mock("../../../components/ui/FitSheet", () => ({
-  FitSheet: ({ children }: { children: ReactNode }) => children,
+  FitSheet: ({ header, children }: { header: ReactNode; children: ReactNode }) => (
+    <>
+      {header}
+      {children}
+    </>
+  ),
 }));
 vi.mock("../../../native/StackHeader", () => ({ NativeStackScreenOptions: () => null }));
 vi.mock("../../../components/ui/FormSection", () => ({
@@ -49,7 +71,10 @@ vi.mock("../../../components/ui/ListChoiceRow", () => ({
 }));
 vi.mock("../../../state/query", () => ({
   useEnvironmentQuery: () => ({
-    data: state.refName === null ? undefined : { refName: state.refName },
+    data:
+      state.refName === null && state.vcs === null
+        ? undefined
+        : { refName: state.refName, vcs: state.vcs },
   }),
 }));
 vi.mock("../../../state/use-thread-selection", () => ({
@@ -65,7 +90,7 @@ vi.mock("../../../state/use-selected-thread-worktree", () => ({
 }));
 vi.mock("../../../state/use-selected-thread-git-state", () => ({
   useSelectedThreadGitState: () => ({
-    selectedThreadBranches: [{ name: "release/stable", worktreePath: null }],
+    selectedThreadBranches: state.branches,
     selectedThreadBranchesLoading: false,
     gitOperationLabel: null,
   }),
@@ -73,8 +98,14 @@ vi.mock("../../../state/use-selected-thread-git-state", () => ({
 vi.mock("../../../state/use-selected-thread-git-actions", () => ({
   useSelectedThreadGitActions: () => ({
     canChangeThreadBranch: true,
-    onCreateSelectedThreadBranch: () => state.gitResult,
-    onCheckoutSelectedThreadBranch: () => state.gitResult,
+    onCreateSelectedThreadBranch: () => {
+      state.mutations++;
+      return state.gitResult;
+    },
+    onCheckoutSelectedThreadBranch: () => {
+      state.mutations++;
+      return state.gitResult;
+    },
     onCreateSelectedThreadWorktree: (input: { baseBranch: string; newBranch: string }) => {
       state.worktrees.push(input);
       return state.gitResult;
@@ -91,16 +122,28 @@ vi.mock("./gitSheetComponents", () => ({
 
 import { GitBranchesSheet } from "./GitBranchesSheet";
 
-function setup(branch: string | null = null) {
+function setup(
+  options: {
+    readonly branch?: string | null;
+    readonly vcs?: VcsState | null;
+    readonly branches?: BranchState[];
+  } = {},
+) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   state.refName = null;
-  state.branch = branch;
+  state.branch = options.branch ?? null;
+  state.vcs = options.vcs ?? null;
+  state.branches = options.branches ?? [
+    { name: "release/stable", current: false, isDefault: false, worktreePath: null },
+  ];
+  state.title = null;
   state.inputs.clear();
   state.actions.clear();
   state.worktrees = [];
   state.gitResult = Promise.resolve(null);
   state.focused = true;
   state.goBackCalls = 0;
+  state.mutations = 0;
   const root = createRoot(document.createElement("div"));
   const render = () =>
     act(() => {
@@ -128,7 +171,7 @@ function setup(branch: string | null = null) {
 it.each([null, "stale-branch"])(
   "uses the loaded checkout branch when thread metadata is %s",
   (branch) => {
-    using screen = setup(branch);
+    using screen = setup({ branch });
     screen.edit("Worktree branch name", "feature/new-worktree");
     state.refName = "release/stable";
     screen.render();
@@ -171,3 +214,32 @@ it.each(["Create worktree", "Create & checkout", "release/stable"])(
     expect(state.goBackCalls).toBe(0);
   },
 );
+
+it("disables and refuses unsupported repository actions without navigation", async () => {
+  using screen = setup({
+    vcs: { kind: "jj", unsupportedReason: "Install Jujutsu" },
+    branches: [{ name: "main", current: false, isDefault: true, worktreePath: null }],
+  });
+  screen.edit("New bookmark name", "feature/bookmark");
+  screen.edit("Workspace base bookmark", "main");
+  screen.edit("Workspace bookmark name", "feature/workspace");
+  for (const action of [
+    state.actions.get("Create & switch")!,
+    state.actions.get("Create workspace")!,
+    state.actions.get("main")!,
+  ]) {
+    expect(action.disabled).toBe(true);
+    await act(async () => action.onPress());
+  }
+  expect(state.mutations).toBe(0);
+  expect(state.worktrees).toEqual([]);
+  expect(state.goBackCalls).toBe(0);
+});
+
+it.each([
+  ["git", "Branches & worktrees"],
+  ["jj", "Bookmarks & workspaces"],
+] as const)("titles the %s sheet in its own terms", (kind, title) => {
+  using _screen = setup({ vcs: { kind } });
+  expect(state.title).toBe(title);
+});

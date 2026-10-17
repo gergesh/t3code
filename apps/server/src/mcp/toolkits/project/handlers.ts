@@ -10,6 +10,7 @@ import {
   type ServerProvider,
   T3_PROJECT_FILE_NAME,
 } from "@t3tools/contracts";
+import { getVcsTerminology } from "@t3tools/shared/vcs";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -40,6 +41,7 @@ import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as VcsDriverRegistry from "../../../vcs/VcsDriverRegistry.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestrationMcp from "../../OrchestratorMcpService.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
@@ -100,12 +102,17 @@ const assertProjectWorktree = Effect.fn("mcp.assertProjectWorktree")(function* (
     Effect.orElseSucceed((): ReadonlyArray<string> => []),
     Effect.flatMap((paths) => Effect.forEach(paths, real)),
   );
-  if (!worktrees.includes(yield* real(worktreePath)))
+  if (!worktrees.includes(yield* real(worktreePath))) {
+    const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+    const handle = yield* registry
+      .detect({ cwd: workspaceRoot, jjOnly: true })
+      .pipe(Effect.orElseSucceed(() => null));
+    const terminology = getVcsTerminology(handle?.kind);
     return yield* new OrchestratorMcpFailure({
       code: "invalid_request",
-      message:
-        "worktreePath must be one of the project's git worktrees. t3_worktree_list shows them.",
+      message: `worktreePath must be one of the project's ${terminology.repositoryAdjective} ${terminology.workspaceNounPlural}. t3_worktree_list shows them.`,
     });
+  }
 });
 
 /** The composer falls back to the project's t3.json when no setting picks the mode. */

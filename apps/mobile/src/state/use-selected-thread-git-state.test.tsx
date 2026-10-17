@@ -27,6 +27,7 @@ vi.mock("./sourceControl", () => ({
   sourceControlEnvironment: { discovery: () => null },
 }));
 vi.mock("./query", () => ({ useEnvironmentQuery: () => ({ data: null }) }));
+vi.mock("./vcs", () => ({ vcsEnvironment: { status: (input: unknown) => input } }));
 vi.mock("./queries", () => ({
   useBranches: ({ cwd }: { cwd: string }) => ({
     data: {

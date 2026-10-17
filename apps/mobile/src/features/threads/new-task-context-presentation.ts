@@ -7,6 +7,8 @@ import { msg } from "gt-react-native";
 import { m, type MessageResolver } from "../../i18n/messages";
 import type { ComposerDraftWorkspaceSelection } from "../../state/use-composer-drafts";
 
+import { GIT_VCS_TERMINOLOGY, type VcsTerminology } from "@t3tools/shared/vcs";
+
 type WorkspaceMode = "local" | "worktree";
 
 export function resolveNewTaskWorkspaceSelection(input: {
@@ -35,13 +37,21 @@ export function resolveNewTaskWorkspaceLabel(
   input: {
     readonly workspaceMode: WorkspaceMode;
     readonly worktreePath: string | null;
+    readonly terminology?: VcsTerminology;
   },
   resolve: MessageResolver = m,
 ): string {
+  const terminology = input.terminology ?? GIT_VCS_TERMINOLOGY;
   if (input.workspaceMode === "worktree") {
-    return resolve(msg("New worktree"));
+    return resolve(msg("New {workspaceNoun}", { workspaceNoun: terminology.workspaceNoun }));
   }
-  return input.worktreePath ? resolve(msg("Current worktree")) : resolve(msg("Current checkout"));
+  return input.worktreePath
+    ? resolve(msg("Current {workspaceNoun}", { workspaceNoun: terminology.workspaceNoun }))
+    : resolve(
+        msg("Current {currentRefFallback}", {
+          currentRefFallback: terminology.currentRefFallback,
+        }),
+      );
 }
 
 export function resolveNewTaskBranchWorktreePath(input: {
@@ -97,6 +107,7 @@ export function resolveNewTaskBranchLabel(
     readonly startFromOrigin: boolean;
     readonly workspaceMode: WorkspaceMode;
     readonly pullRequestReference?: string;
+    readonly terminology?: VcsTerminology;
   },
   resolve: MessageResolver = m,
 ): string {
@@ -114,7 +125,9 @@ export function resolveNewTaskBranchLabel(
       );
   }
   if (!input.branchName) {
-    return resolve(msg("Choose branch"));
+    return resolve(
+      msg("Choose {refNoun}", { refNoun: (input.terminology ?? GIT_VCS_TERMINOLOGY).refNoun }),
+    );
   }
 
   if (input.workspaceMode === "local") {

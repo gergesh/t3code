@@ -40,6 +40,7 @@ import { useRefreshBranchesOnFocus } from "./use-refresh-branches-on-focus";
 import { useSearchToolbarInset } from "../../components/ui/useBarInset";
 import type { AppBarSearch } from "../../components/ui/AppBar";
 import { branchBadgeLabel, useNewTaskFlow } from "./new-task-flow-provider";
+import { useVcsActionSupport, useVcsTerminology } from "../../state/vcs";
 import { checkoutNewTaskBranch } from "./checkout-new-task-branch";
 import { filterNewTaskBranches } from "./new-task-context-presentation";
 import { useDebouncedValue, usePaginatedBranches } from "../../state/queries";
@@ -153,6 +154,7 @@ function ToggleRow(props: {
   readonly title: string;
   readonly value: boolean;
   readonly onValueChange: (value: boolean) => void;
+  readonly disabled?: boolean;
 }) {
   return (
     <View className="min-h-14 flex-row items-center gap-3 bg-grouped-card px-4 py-3">
@@ -167,6 +169,7 @@ function ToggleRow(props: {
       </Text>
       <ThemedSwitch
         accessibilityLabel={props.title}
+        disabled={props.disabled}
         onValueChange={props.onValueChange}
         value={props.value}
       />
@@ -260,6 +263,7 @@ export function NewTaskBranchPickerRouteScreen() {
   };
 
   const selectBranch = async (branch: VcsRef) => {
+    if (!flow.canUseVcsActions(flow.workspaceMode === "local" ? branch.worktreePath : null)) return;
     const needsCheckout = shouldCheckoutNewTaskBranch({
       branchIsCurrent: branch.current,
       branchWorktreePath: branch.worktreePath,
@@ -295,8 +299,11 @@ export function NewTaskBranchPickerRouteScreen() {
       if (navigation.isFocused() && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         Dialog.alert(
-          gt("Could not switch branch"),
-          errorDisplayMessage(error, m) ?? gt("The branch could not be checked out."),
+          gt("Could not switch {refNoun}", { refNoun: flow.vcsTerminology.refNoun }),
+          errorDisplayMessage(error, m) ??
+            gt("The {refNoun} could not be checked out.", {
+              refNoun: flow.vcsTerminology.refNoun,
+            }),
         );
       }
       return;
@@ -314,7 +321,11 @@ export function NewTaskBranchPickerRouteScreen() {
 
   return (
     <BranchPickerScreen
-      title={flow.workspaceMode === "worktree" ? gt("Base branch") : gt("Branch")}
+      title={
+        flow.workspaceMode === "worktree"
+          ? gt("Base {refNoun}", { refNoun: flow.vcsTerminology.refNoun })
+          : flow.vcsTerminology.refNounTitle
+      }
       project={flow.selectedProject}
       branches={filterNewTaskBranches(branchState.refs, branchQuery)}
       selectedBranchName={
@@ -331,7 +342,7 @@ export function NewTaskBranchPickerRouteScreen() {
       hasMore={branchState.data?.nextCursor !== null && branchState.data?.nextCursor !== undefined}
       onRefresh={refreshBranches}
       onLoadMore={branchState.loadNext}
-      selectionDisabled={switchingBranchName !== null}
+      selectionDisabled={switchingBranchName !== null || !flow.vcsActionsSupported}
       onSelect={selectBranch}
       worktree={
         flow.workspaceMode === "worktree"
@@ -468,11 +479,19 @@ export function BranchPickerScreen(props: {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   useRefreshBranchesOnFocus(props.project?.environmentId, props.project?.workspaceRoot);
+  const vcsTerminology = useVcsTerminology(
+    props.project?.environmentId ?? null,
+    props.project?.workspaceRoot ?? null,
+  );
+  const vcsActionSupport = useVcsActionSupport(
+    props.project?.environmentId ?? null,
+    props.project?.workspaceRoot ?? null,
+  );
   const search: AppBarSearch = {
     value: props.query,
     onChangeText: props.onQueryChange,
-    placeholder: gt("Find a branch"),
-    clearAccessibilityLabel: gt("Clear branch search"),
+    placeholder: gt("Find a {refNoun}", { refNoun: vcsTerminology.refNoun }),
+    clearAccessibilityLabel: gt("Clear {refNoun} search", { refNoun: vcsTerminology.refNoun }),
     mode: "inline",
     compactToolbar: true,
   };
@@ -495,12 +514,15 @@ export function BranchPickerScreen(props: {
   const renderBranch = ({ item, index }: { readonly item: VcsRef; readonly index: number }) => (
     <SelectionRow
       icon="arrow.triangle.branch"
-      disabled={props.selectionDisabled ?? false}
+      disabled={Boolean(props.selectionDisabled) || !vcsActionSupport.supported}
       isFirst={index === 0}
       isLast={index === props.branches.length - 1}
       onPress={() => props.onSelect(item)}
       selected={selectedBranchName === item.name}
-      subtitle={branchBadgeLabel({ branch: item, project: props.project }, m)?.toUpperCase()}
+      subtitle={branchBadgeLabel(
+        { branch: item, project: props.project, terminology: vcsTerminology },
+        m,
+      )?.toUpperCase()}
       title={item.name}
     />
   );
@@ -513,6 +535,7 @@ export function BranchPickerScreen(props: {
       )}
     >
       <ToggleRow
+        disabled={props.selectionDisabled || !vcsActionSupport.supported}
         onValueChange={props.worktree.onChangeStartFromOrigin}
         title={gt("Start from remote")}
         value={props.worktree.startFromOrigin}
@@ -539,12 +562,16 @@ export function BranchPickerScreen(props: {
           {props.loading ? <AppActivityIndicator /> : null}
           <Text className="text-center text-sm text-foreground-muted">
             {props.loading
-              ? gt("Loading branches…")
+              ? gt("Loading {refNounPlural}…", { refNounPlural: vcsTerminology.refNounPlural })
               : props.error
                 ? props.error
                 : props.query
-                  ? gt("No matching branches")
-                  : gt("No branches available")}
+                  ? gt("No matching {refNounPlural}", {
+                      refNounPlural: vcsTerminology.refNounPlural,
+                    })
+                  : gt("No {refNounPlural} available", {
+                      refNounPlural: vcsTerminology.refNounPlural,
+                    })}
           </Text>
           {!props.loading && props.error ? (
             <View className="self-center">
@@ -591,6 +618,11 @@ export function BranchPickerScreen(props: {
         onBack={() => navigation.goBack()}
         search={search}
       />
+      {vcsActionSupport.unsupportedReason !== null ? (
+        <Text accessibilityRole="alert" className="px-4 py-2 text-sm text-foreground-muted">
+          {vcsActionSupport.unsupportedReason}
+        </Text>
+      ) : null}
       <ScreenContent>{branchContent}</ScreenContent>
     </View>
   );

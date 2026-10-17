@@ -1,5 +1,6 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useGT, useMessages } from "gt-react";
+import { GIT_VCS_TERMINOLOGY } from "@t3tools/shared/vcs";
 import { ChevronDownIcon, GitBranchIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -65,6 +66,7 @@ export function WorktreeBaseBranchPicker({
       resolvedActiveBranch: value || null,
       resolvedActiveBranchIsRemote: selectedRef ? selectedRef.isRemote === true : null,
       startFromOrigin,
+      terminology: GIT_VCS_TERMINOLOGY,
     },
     messages,
   );
