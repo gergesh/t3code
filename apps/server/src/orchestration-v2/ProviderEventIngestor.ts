@@ -31,7 +31,7 @@ import {
   ProviderTurnAnalytics,
   type ProviderTurnAnalyticsContext,
 } from "../telemetry/ProviderUsageAnalytics.ts";
-import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -239,7 +239,7 @@ export const layer: Layer.Layer<
   ProviderEventIngestorV2,
   never,
   | EventSink.EventSinkV2
-  | GitVcsDriver.GitVcsDriver
+  | GitWorkflowService.GitWorkflowService
   | IdAllocator.IdAllocatorV2
   | ProjectionStore.ProjectionStoreV2
   | ThreadCommandExecutor.ThreadCommandExecutor
@@ -248,7 +248,7 @@ export const layer: Layer.Layer<
   ProviderEventIngestorV2,
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
-    const git = yield* GitVcsDriver.GitVcsDriver;
+    const workflow = yield* GitWorkflowService.GitWorkflowService;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
@@ -779,7 +779,7 @@ export const layer: Layer.Layer<
                     return storedEvents;
                   // Git renames before scanning committed threads. If that scan missed this
                   // creation, HEAD already has the new name, even if the parent moved away.
-                  const branch = yield* git.resolveBranchName(child.worktreePath, "HEAD");
+                  const branch = yield* workflow.currentRefName(child.worktreePath);
                   if (branch === null || branch === child.branch) return storedEvents;
                   const now = yield* DateTime.now;
                   const event = yield* makeDomainEvent(input, {

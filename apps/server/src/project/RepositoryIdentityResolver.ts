@@ -1,3 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off - synchronous marker discovery keeps the resolver layer platform-independent.
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+
 import type { RepositoryIdentity, SourceControlProviderError } from "@t3tools/contracts";
 import { repositoryPathFromRemoteUrl } from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as Cache from "effect/Cache";
@@ -10,6 +14,9 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
+import { mainWorkspaceRootFromRepoPointer } from "../vcs/JjRepo.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import { explicitBareRepositoryEnv } from "../vcs/VcsProcess.ts";
@@ -137,6 +144,56 @@ class RepositoryIdentityCacheKey extends Data.Class<{
   readonly isBare: boolean;
 }> {}
 
+function statIfExistsSync(candidate: string): NodeFS.Stats | null {
+  try {
+    return NodeFS.statSync(candidate);
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "ENOTDIR")
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+// Non-colocated secondary workspaces need jj's repo pointer instead of Git discovery.
+export function resolveRepositoryRootFromMarkers(cwd: string): string | null {
+  if (!statIfExistsSync(cwd)?.isDirectory()) {
+    return null;
+  }
+  let current = cwd;
+  for (;;) {
+    if (statIfExistsSync(NodePath.join(current, ".jj"))?.isDirectory()) {
+      const repoPointer = NodePath.join(current, ".jj", "repo");
+      try {
+        if (statIfExistsSync(repoPointer)?.isDirectory()) {
+          return current;
+        }
+        return mainWorkspaceRootFromRepoPointer(current, NodeFS.readFileSync(repoPointer, "utf8"));
+      } catch {
+        return current;
+      }
+    }
+    if (
+      NodeFS.existsSync(NodePath.join(current, ".git")) ||
+      (statIfExistsSync(NodePath.join(current, "HEAD"))?.isFile() &&
+        statIfExistsSync(NodePath.join(current, "objects"))?.isDirectory() &&
+        statIfExistsSync(NodePath.join(current, "refs"))?.isDirectory())
+    ) {
+      return null;
+    }
+    const parent = NodePath.dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
 const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.resolveCacheKey")(
   function* (cwd: string) {
     const processRunner = yield* ProcessRunner.ProcessRunner;
@@ -151,6 +208,20 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
       Effect.orElseSucceed(() => true),
     );
     if (!isFolder) return null;
+
+    const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+    const detected = yield* registry
+      .detect({ cwd, jjOnly: true })
+      .pipe(Effect.orElseSucceed(() => null));
+    const markerRoot =
+      detected?.kind === "jj"
+        ? yield* Effect.try(() => resolveRepositoryRootFromMarkers(cwd)).pipe(
+            Effect.orElseSucceed(() => null),
+          )
+        : null;
+    if (markerRoot !== null) {
+      return new RepositoryIdentityCacheKey({ rootPath: markerRoot, isBare: false });
+    }
 
     // git is always a real executable; cmd shell mode would split spaced paths on re-tokenization.
     const topLevelResult = yield* processRunner
@@ -256,6 +327,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const cacheCapacity = options.cacheCapacity ?? DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY;
   const refine = options.refine ?? Effect.succeed;
   const timeToLive = (exit: Exit.Exit<unknown>) =>
@@ -271,6 +343,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
+        Effect.provideService(VcsDriverRegistry.VcsDriverRegistry, vcsRegistry),
       ),
     { capacity: cacheCapacity, timeToLive },
   );
@@ -305,4 +378,5 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
 
 export const layer = Layer.effect(RepositoryIdentityResolver, make()).pipe(
   Layer.provide(ProcessRunner.layer),
+  Layer.provide(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
 );

@@ -59,6 +59,8 @@ export interface JjSegmentRow {
   readonly commitId: string;
   readonly empty: boolean;
   readonly localBookmarks: ReadonlyArray<string>;
+  /** Only populated by the combined status read; descendants are not part of the segment. */
+  readonly descendant?: boolean;
 }
 
 export interface JjBookmark {
@@ -96,8 +98,11 @@ export interface JjVcsDriverShape extends VcsDriverService {
   readonly readBranchChangeTotals: JjReviewDiffOps["readBranchChangeTotals"];
   /** Any revset, `--limit 1`. `null` when it resolves to nothing, and when it resolves to root. */
   readonly changeAt: (cwd: string, revset: string) => Effect.Effect<JjChange | null, VcsError>;
-  /** `heads(::@ & bookmarks())::@`, newest first. Empty when `@` has no bookmarked ancestor. */
-  readonly currentSegment: (cwd: string) => Effect.Effect<ReadonlyArray<JjSegmentRow>, VcsError>;
+  /** `heads(::@ & bookmarks())::@`, newest first; optionally includes marked nearest descendants. */
+  readonly currentSegment: (
+    cwd: string,
+    options?: { readonly includeDescendants?: boolean },
+  ) => Effect.Effect<ReadonlyArray<JjSegmentRow>, VcsError>;
   readonly listBookmarks: (cwd: string) => Effect.Effect<ReadonlyArray<JjBookmark>, VcsError>;
   readonly listWorkspaces: (cwd: string) => Effect.Effect<ReadonlyArray<JjWorkspace>, VcsError>;
   /** Commits in a revset, capped; used for ahead/behind. */
@@ -107,6 +112,8 @@ export interface JjVcsDriverShape extends VcsDriverService {
   readonly resolvePrimaryRemoteName: (cwd: string) => Effect.Effect<string | null, VcsError>;
   /** Filesystem-only repository generation key, shared by repository metadata and ref caches. */
   readonly repoMetadataKey: (paths: JjRepo.JjRepoPaths) => Effect.Effect<string>;
+  /** Filesystem operation-head identity for live bookmark/workspace snapshots. */
+  readonly repoOperationKey: (paths: JjRepo.JjRepoPaths) => Effect.Effect<string, VcsError>;
   /** Drops this repo's cached default bookmark and remote names. */
   readonly invalidateRepoCaches: (cwd: string) => Effect.Effect<void, never>;
 }
@@ -141,10 +148,13 @@ const CHANGE_TEMPLATE =
   ' ",\\"added\\":" ++ json(f.lines_added()) ++' +
   ' ",\\"removed\\":" ++ json(f.lines_removed()) ++ "}").join(",") ++ "]" ++ "}\\n"';
 
-const SEGMENT_TEMPLATE =
+const SEGMENT_FIELDS_TEMPLATE =
   '"{\\"commit_id\\":" ++ json(self.commit_id()) ++' +
   ' ",\\"empty\\":" ++ json(self.empty()) ++' +
-  ' ",\\"local_bookmarks\\":" ++ json(self.local_bookmarks().map(|b| b.name())) ++ "}\\n"';
+  ' ",\\"local_bookmarks\\":" ++ json(self.local_bookmarks().map(|b| b.name()))';
+const SEGMENT_TEMPLATE = SEGMENT_FIELDS_TEMPLATE + ' ++ "}\\n"';
+const SEGMENT_WITH_DESCENDANTS_TEMPLATE =
+  SEGMENT_FIELDS_TEMPLATE + ' ++ ",\\"descendant\\":" ++ json(!self.contained_in("::@")) ++ "}\\n"';
 
 const BOOKMARK_TEMPLATE =
   '"{" ++ "\\"name\\":" ++ json(self.name()) ++' +
@@ -186,6 +196,7 @@ const JjSegmentRowSchema = Schema.Struct({
   commit_id: Schema.String,
   empty: Schema.Boolean,
   local_bookmarks: Schema.Array(Schema.String),
+  descendant: Schema.optional(Schema.Boolean),
 });
 
 const JjBookmarkRow = Schema.Struct({
@@ -268,14 +279,19 @@ function toJjChange(row: typeof JjChangeRow.Type): JjChange {
   };
 }
 
+/** Remote names are rendered as jj symbols, so option-like names arrive quoted. */
 function parseRemoteListLine(line: string): { name: string; url: string } | null {
-  const separatorIndex = line.search(/\s/);
-  if (separatorIndex <= 0) {
+  const match = /^("(?:[^"\\]|\\.)*"|\S+)\s+(.+)$/.exec(line);
+  if (match === null) return null;
+  const symbol = match[1]!;
+  const url = match[2]!.trim();
+  try {
+    // Git remote names cannot contain the control characters whose jj escapes differ from JSON.
+    const name: string = symbol.startsWith('"') ? JSON.parse(symbol) : symbol;
+    return url.length > 0 ? { name, url } : null;
+  } catch {
     return null;
   }
-  const name = line.slice(0, separatorIndex);
-  const url = line.slice(separatorIndex + 1).trim();
-  return url.length > 0 ? { name, url } : null;
 }
 
 const makeRepoCache = <A>(
@@ -298,7 +314,7 @@ export const makeVcsDriverShape = Effect.gen(function* () {
 
   const capabilities = {
     kind: "jj",
-    supportsWorktrees: false,
+    supportsWorktrees: true,
     supportsBookmarks: true,
     supportsAtomicSnapshot: true,
     supportsPushDefaultRemote: false,
@@ -374,6 +390,21 @@ export const makeVcsDriverShape = Effect.gen(function* () {
     return generation;
   };
 
+  const repoOperationKey: JjVcsDriverShape["repoOperationKey"] = (paths) =>
+    fileSystem
+      .readDirectory(path.join(paths.mainWorkspaceRoot, ".jj", "repo", "op_heads", "heads"))
+      .pipe(
+        Effect.map((heads) => heads.toSorted().join("\0")),
+        Effect.mapError(
+          (cause) =>
+            new VcsRepositoryDetectionError({
+              operation: "JjVcsDriver.repoOperationKey",
+              cwd: paths.workspaceRoot,
+              detail: "Could not read Jujutsu operation heads.",
+              cause,
+            }),
+        ),
+      );
   const repoMetadataKey = Effect.fn("JjVcsDriver.repoMetadataKey")(function* (
     paths: JjRepo.JjRepoPaths,
   ) {
@@ -504,13 +535,22 @@ export const makeVcsDriverShape = Effect.gen(function* () {
 
   const currentSegment: JjVcsDriverShape["currentSegment"] = Effect.fn(
     "JjVcsDriver.currentSegment",
-  )(function* (cwd: string) {
+  )(function* (cwd: string, options?: { readonly includeDescendants?: boolean }) {
     const operation = "JjVcsDriver.currentSegment";
     yield* ensureUsable(operation, cwd);
     const result = yield* jjLog(
       operation,
       cwd,
-      ["log", "-r", "heads(::@ & bookmarks())::@", "--no-graph", "-T", SEGMENT_TEMPLATE],
+      [
+        "log",
+        "-r",
+        options?.includeDescendants
+          ? "(heads(::@ & bookmarks())::@) | roots((@:: & bookmarks()) ~ @)"
+          : "heads(::@ & bookmarks())::@",
+        "--no-graph",
+        "-T",
+        options?.includeDescendants ? SEGMENT_WITH_DESCENDANTS_TEMPLATE : SEGMENT_TEMPLATE,
+      ],
       {
         ignoreWorkingCopy: true,
         readingChange: true,
@@ -538,6 +578,7 @@ export const makeVcsDriverShape = Effect.gen(function* () {
       commitId: row.commit_id,
       empty: row.empty,
       localBookmarks: row.local_bookmarks,
+      ...(row.descendant === undefined ? {} : { descendant: row.descendant }),
     }));
   });
 
@@ -891,6 +932,7 @@ export const makeVcsDriverShape = Effect.gen(function* () {
   return {
     capabilities,
     repoMetadataKey,
+    repoOperationKey,
     execute,
     checkpoints: makeJjCheckpointOps({ random, process: vcsProcess, ensureGitDir, currentChange }),
     checkpointsUsable,

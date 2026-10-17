@@ -200,13 +200,25 @@ describeJj("JjVcsDriver primary remotes", () => {
     { label: "upstream", names: ["upstream"] },
     { label: "backup, upstream", names: ["backup", "upstream"] },
     { label: "backup, origin", names: ["backup", "origin"] },
+    { label: "--all", names: ["--all"] },
   ])("agrees on the primary remote for $label", ({ names }) =>
     withRepo(({ driver, root }) =>
       Effect.gen(function* () {
         for (const name of names) {
-          yield* runJj(root, ["git", "remote", "add", name, `https://example.com/${name}.git`]);
+          yield* runJj(root, [
+            "git",
+            "remote",
+            "add",
+            "--",
+            name,
+            `https://example.com/${name}.git`,
+          ]);
         }
         const result = yield* driver.listRemotes(root);
+        assert.deepEqual(
+          result.remotes.map((remote) => remote.name),
+          names,
+        );
         const primary = yield* driver.resolvePrimaryRemoteName(root);
         assert.deepEqual(
           result.remotes.filter((remote) => remote.isPrimary).map((remote) => remote.name),

@@ -40,6 +40,9 @@ import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { resolvePiSessionsDir } from "@t3tools/provider-pi/server/usage";
 import * as ServerSettings from "../serverSettings.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
+import { resolveJjRepoPaths } from "../vcs/JjRepo.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 import {
   createTranscriptJsonReader,
   createTranscriptJsonSelector,
@@ -782,6 +785,7 @@ function sameTranscriptIdentity(left: TranscriptIdentity, right: TranscriptIdent
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const processRunner = yield* ProcessRunner.ProcessRunner;
+  const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   // Concurrent client imports must not hold multiple selected-history budgets.
   const importReadLock = yield* Semaphore.make(1);
   const path = yield* Path.Path;
@@ -899,8 +903,26 @@ export const make = Effect.gen(function* () {
     for (const directory of directories) {
       const gitPath = path.join(directory, ".git");
       const gitStats = yield* statOption(gitPath);
-      if (Option.isNone(gitStats)) identities.set(directory, { _tag: "NotGit" });
-      else if (gitStats.value.type === "Directory") {
+      if (Option.isNone(gitStats)) {
+        const handle = yield* vcsRegistry
+          .detect({ cwd: directory, jjOnly: true })
+          .pipe(Effect.orElseSucceed(() => null));
+        // A registered secondary Jujutsu workspace can borrow its main repository's remote.
+        const jjPaths =
+          handle?.kind === "jj"
+            ? yield* resolveJjRepoPaths(fileSystem, path, directory).pipe(
+                Effect.orElseSucceed(() => null),
+              )
+            : null;
+        if (jjPaths === null) identities.set(directory, { _tag: "NotGit" });
+        else {
+          repositories.push({
+            directory,
+            gitDir: path.join(jjPaths.mainWorkspaceRoot, ".git"),
+            linkedWorktree: false,
+          });
+        }
+      } else if (gitStats.value.type === "Directory") {
         repositories.push({ directory, gitDir: gitPath, linkedWorktree: false });
       } else pointers.push({ directory, gitPath });
     }
@@ -1947,4 +1969,5 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(AgentSessionScanner, make).pipe(
   Layer.provide(ProcessRunner.layer),
+  Layer.provide(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
 );

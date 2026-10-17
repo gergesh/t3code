@@ -22,7 +22,7 @@ import type {
   VcsStatusStreamEvent,
   VcsStatusSubscriptionInput,
 } from "@t3tools/contracts";
-import { DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL } from "@t3tools/contracts";
+import { DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL, GitManagerError } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { mergeGitStatusParts } from "@t3tools/shared/git";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
@@ -32,6 +32,8 @@ import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { withStatusRefreshReads as scopeStatusRefreshReads } from "../jj/JjStatus.ts";
+import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
 
 const VCS_STATUS_REFRESH_FAILURE_BASE_DELAY = Duration.seconds(30);
 const VCS_STATUS_REFRESH_FAILURE_MAX_DELAY = Duration.minutes(15);
@@ -250,6 +252,27 @@ export const make = Effect.gen(function* () {
   const automaticFetchInterval = yield* VcsAutomaticFetchInterval;
   const autoPullPolicy = yield* VcsAutoPullPolicy;
   const workflow = yield* GitWorkflowService.GitWorkflowService;
+  const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+  const detectStatusRepository = (cwd: string) =>
+    registry.detect({ cwd, jjOnly: true }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitManagerError({
+            operation: "VcsStatusBroadcaster.detect",
+            cwd,
+            detail: "Could not detect the repository for status refresh.",
+            cause,
+          }),
+      ),
+    );
+  const withStatusRefreshReads =
+    (cwd: string) =>
+    <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      detectStatusRepository(cwd).pipe(
+        Effect.flatMap((handle) =>
+          handle?.kind === "jj" ? scopeStatusRefreshReads(effect) : effect,
+        ),
+      );
   const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
   const fs = yield* FileSystem.FileSystem;
   const changesPubSub = yield* Effect.acquireRelease(
@@ -399,7 +422,7 @@ export const make = Effect.gen(function* () {
         yield* updateCachedRemoteStatus(cwd, remote);
         const parts = yield* getStatusParts(cwd);
         return mergeGitStatusParts(parts.local, parts.remote);
-      }),
+      }).pipe(withStatusRefreshReads(cwd)),
     );
   });
 
@@ -475,10 +498,15 @@ export const make = Effect.gen(function* () {
         return null;
       }
 
+      if ((yield* detectStatusRepository(cwd))?.kind === "jj") {
+        return null;
+      }
+
       yield* workflow.invalidateLocalStatus(cwd);
       const local = yield* workflow.localStatus({ cwd });
       if (
         !local.isRepo ||
+        local.vcs?.kind === "jj" ||
         !local.isDefaultRef ||
         local.hasWorkingTreeChanges ||
         local.refName !== remoteRead?.branch
@@ -488,9 +516,11 @@ export const make = Effect.gen(function* () {
       pullAttempted = true;
       yield* workflow.pullCurrentBranch(cwd);
       yield* workflow.invalidateStatus(cwd);
-      yield* refreshLocalStatusCore(cwd);
-      const refreshedRemote = yield* readRemoteStatus(cwd, { refreshUpstream: false });
-      yield* updateCachedRemoteStatus(cwd, refreshedRemote, { publish: true });
+      yield* Effect.gen(function* () {
+        yield* refreshLocalStatusCore(cwd);
+        const refreshedRemote = yield* readRemoteStatus(cwd, { refreshUpstream: false });
+        yield* updateCachedRemoteStatus(cwd, refreshedRemote, { publish: true });
+      }).pipe(withStatusRefreshReads(cwd));
       return yield* getStatusParts(cwd);
     }).pipe(
       Effect.catch((error) =>
@@ -529,7 +559,7 @@ export const make = Effect.gen(function* () {
         // Base refs and merge bases can move without changing divergence counts.
         yield* refreshLocalStatusCore(cwd);
         return yield* updateCachedRemoteStatus(cwd, remoteRead, { publish: true });
-      }),
+      }).pipe(withStatusRefreshReads(cwd)),
     );
   });
 
@@ -558,7 +588,7 @@ export const make = Effect.gen(function* () {
         yield* updateCachedRemoteStatus(cwd, remoteRead, { publish: true });
         const parts = yield* getStatusParts(cwd);
         return mergeGitStatusParts(parts.local, parts.remote);
-      }),
+      }).pipe(withStatusRefreshReads(cwd)),
     );
   });
 

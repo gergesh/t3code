@@ -48,6 +48,8 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import { isFilesystemRoot, managedWorktreesDirectories } from "./worktreesDirectory.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import { removeLinkedWorktree } from "./vcs/worktreeRemoval.ts";
+import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
+import * as VcsProcess from "./vcs/VcsProcess.ts";
 import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -85,6 +87,7 @@ const ORPHAN_WORKTREE_GRACE_MS = 60 * 60 * 1_000;
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const REPORT_ENTRY_LIMIT = 200;
 const isGitCommandError = Schema.is(GitCommandError);
+const cleanupDetectionLayer = VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer));
 
 function cleanupFailureReason(error: { readonly message: string }) {
   return isGitCommandError(error)
@@ -519,6 +522,17 @@ const make = Effect.gen(function* () {
         if (modified !== null && modified.getTime() > now - ORPHAN_WORKTREE_GRACE_MS) return;
         const gitPath = path.join(worktreePath, ".git");
         const linked = (yield* fs.exists(gitPath)) && (yield* fs.stat(gitPath)).type === "File";
+        const jjPath = path.join(worktreePath, ".jj");
+        const jjRepository = path.join(jjPath, "repo");
+        // Detection is the jj switch; Git folders must not pay for marker probes.
+        const hasJjRepository =
+          !linked &&
+          (yield* Effect.flatMap(VcsDriverRegistry.VcsDriverRegistry, (registry) =>
+            registry.detect({ cwd: worktreePath, jjOnly: true }),
+          ).pipe(Effect.provide(cleanupDetectionLayer)))?.kind === "jj" &&
+          (yield* fs.exists(jjRepository));
+        const jjWorkspace = hasJjRepository && (yield* fs.stat(jjRepository)).type === "File";
+        if (hasJjRepository && !jjWorkspace) return;
         reported.add(key);
         const remaining = measurementDeadline - (yield* Clock.currentTimeMillis);
         if (!orphanSizes.has(key) && (firstMeasurement || remaining > 0)) {
@@ -532,9 +546,10 @@ const make = Effect.gen(function* () {
         entries.push({
           kind: "worktree",
           outcome: "kept",
-          reason: linked
-            ? "No thread uses this worktree"
-            : "No thread uses this folder, and it isn't a git worktree",
+          reason:
+            linked || jjWorkspace
+              ? "No thread uses this worktree"
+              : "No thread uses this folder, and it isn't a git worktree",
           path: worktreePath,
           projectPath: null,
           threadId: null,
@@ -573,6 +588,15 @@ const make = Effect.gen(function* () {
           const gitPath = path.join(projectDirectory, ".git");
           if (yield* fs.exists(gitPath)) {
             if ((yield* fs.stat(gitPath)).type === "File") yield* report(projectDirectory);
+            return;
+          }
+          if (
+            (yield* Effect.flatMap(VcsDriverRegistry.VcsDriverRegistry, (registry) =>
+              registry.detect({ cwd: projectDirectory, jjOnly: true }),
+            ).pipe(Effect.provide(cleanupDetectionLayer)))?.kind === "jj" &&
+            (yield* fs.exists(path.join(projectDirectory, ".jj")))
+          ) {
+            yield* report(projectDirectory);
             return;
           }
           for (const worktreePath of yield* directories(projectDirectory, root)) {
@@ -846,6 +870,15 @@ const make = Effect.gen(function* () {
         return "worktree is a symbolic link";
       if (!roots.some((root) => inside(root, realPath)))
         return "outside the managed worktree folder";
+      // Git cleanup cannot prove that jj changes are disposable.
+      if (yield* fs.exists(path.join(worktreePath, ".jj"))) {
+        const detected = yield* Effect.flatMap(VcsDriverRegistry.VcsDriverRegistry, (registry) =>
+          registry.detect({ cwd: worktreePath, jjOnly: true }),
+        ).pipe(Effect.provide(cleanupDetectionLayer));
+        if (detected?.kind !== "jj")
+          return "Jujutsu metadata is present; automatic Jujutsu cleanup is disabled";
+        return "Jujutsu workspace";
+      }
       if ((yield* fs.stat(path.join(worktreePath, ".git"))).type !== "File")
         return "not a linked worktree";
       return null;

@@ -9,6 +9,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import * as ServerConfig from "../config.ts";
+import * as JjAvailability from "../vcs/JjAvailability.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import {
   detailFromCause,
@@ -56,7 +58,7 @@ const VCS_PROBES: ReadonlyArray<VcsProbe> = [
     label: "Jujutsu",
     executable: "jj",
     versionArgs: ["--version"],
-    implemented: false,
+    implemented: true,
     installHint: "Install Jujutsu with `brew install jj` or from https://github.com/jj-vcs/jj.",
   },
 ];
@@ -73,6 +75,7 @@ export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const process = yield* VcsProcess.VcsProcess;
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
+  const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
 
   const probe = <Kind extends VcsDriverKind>(
     input: VcsProbe & { readonly kind: Kind },
@@ -121,13 +124,27 @@ export const make = Effect.gen(function* () {
             } satisfies DiscoveryProbeResult<Kind>;
           }),
         ),
+        Effect.onExit(() =>
+          input.kind === "jj"
+            ? Effect.sync(() => JjAvailability.invalidateJjAvailability(process))
+            : Effect.void,
+        ),
       );
   };
 
   return SourceControlDiscovery.of({
     discover: Effect.all({
       versionControlSystems: Effect.all(
-        VCS_PROBES.map((entry) => probe(entry)) as ReadonlyArray<Effect.Effect<VcsDiscoveryItem>>,
+        VCS_PROBES.map((entry) =>
+          entry.kind === "jj"
+            ? registry.get("jj").pipe(
+                Effect.matchEffect({
+                  onFailure: () => probe({ ...entry, implemented: false }),
+                  onSuccess: () => probe({ ...entry, implemented: true }),
+                }),
+              )
+            : probe(entry),
+        ) as ReadonlyArray<Effect.Effect<VcsDiscoveryItem>>,
         { concurrency: "unbounded" },
       ),
       sourceControlProviders: sourceControlProviders.discover,

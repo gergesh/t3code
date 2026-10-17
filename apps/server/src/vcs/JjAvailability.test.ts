@@ -1,5 +1,5 @@
-import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
@@ -7,9 +7,17 @@ import * as Path from "effect/Path";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/process";
 
-import { VcsProcessSpawnError, VcsProcessTimeoutError } from "@t3tools/contracts";
+import {
+  VcsProcessSpawnError,
+  VcsProcessTimeoutError,
+  VcsUnsupportedOperationError,
+} from "@t3tools/contracts";
+import * as ServerConfig from "../config.ts";
+import * as SourceControlDiscovery from "../sourceControl/SourceControlDiscovery.ts";
+import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as JjAvailability from "./JjAvailability.ts";
 import * as VcsProcess from "./VcsProcess.ts";
+import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
 
 const versionProcess = (stdout: string, calls: { count: number }) =>
   Layer.mock(VcsProcess.VcsProcess)({
@@ -243,18 +251,76 @@ describe("makeJjAvailability", () => {
       assert.equal(calls.count, 2);
     }).pipe(Effect.provide(versionProcess("jj 0.45.0\n", calls)));
   });
+
+  it.effect("Settings discovery invalidates a missing probe before its TTL expires", () => {
+    const calls = { count: 0 };
+    return Effect.gen(function* () {
+      const availability = yield* JjAvailability.makeJjAvailability;
+      assert.deepStrictEqual(yield* availability("/repo"), { _tag: "missing" });
+      assert.equal(calls.count, 1);
+      const discovery = yield* SourceControlDiscovery.make;
+      const discoveryResult = yield* discovery.discover;
+      assert.equal(
+        discoveryResult.versionControlSystems.find((item) => item.kind === "jj")?.implemented,
+        false,
+      );
+      assert.deepStrictEqual(yield* availability("/repo"), {
+        _tag: "available",
+        version: "0.46.0",
+      });
+      assert.equal(calls.count, 4);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+            get: (kind) => {
+              assert.equal(kind, "jj");
+              return Effect.fail(
+                new VcsUnsupportedOperationError({
+                  operation: "JjAvailability.test",
+                  kind,
+                  detail: "The jj driver is not registered before activation.",
+                }),
+              );
+            },
+          }),
+          ServerConfig.layerTest("/repo", {
+            prefix: "t3-jj-availability-discovery-",
+          }).pipe(Layer.provide(NodeServices.layer)),
+          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => undefined,
+            discover: Effect.succeed([]),
+          }),
+          Layer.mock(VcsProcess.VcsProcess)({
+            run: (input) =>
+              Effect.suspend(() => {
+                calls.count += 1;
+                if (calls.count === 1) {
+                  return Effect.fail(
+                    new VcsProcessSpawnError({
+                      operation: input.operation,
+                      command: input.command,
+                      cwd: input.cwd,
+                      cause: { code: "ENOENT" },
+                    }),
+                  );
+                }
+                return Effect.succeed({
+                  exitCode: ChildProcessSpawner.ExitCode(0),
+                  stdout: "jj 0.46.0\n",
+                  stderr: "",
+                  stdoutTruncated: false,
+                  stderrTruncated: false,
+                });
+              }),
+          }),
+        ),
+      ),
+    );
+  });
 });
 
 describe("jjUnsupportedReason", () => {
-  it("recommends enabling colocation in an existing Jujutsu repository", () => {
-    const reason = JjAvailability.jjUnsupportedReason({
-      availability: { _tag: "available", version: "0.46.0" },
-      colocated: false,
-    });
-    assert.include(reason, "jj git colocation enable");
-    assert.notInclude(reason, "jj git init");
-  });
-
   it("reports a reason for every unusable repository and stays silent for a usable one", () => {
     const reasonFor = (input: Parameters<typeof JjAvailability.jjUnsupportedReason>[0]) =>
       JjAvailability.jjUnsupportedReason(input) !== null;

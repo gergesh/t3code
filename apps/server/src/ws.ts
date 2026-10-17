@@ -124,6 +124,7 @@ import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManag
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
+import { jjUnsupportedDetail } from "./jj/JjFailure.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
@@ -756,6 +757,14 @@ function shouldUseBoundedThreadSnapshot(input: {
 }): boolean {
   return input.acceptBoundedSnapshot === true;
 }
+
+export const threadLaunchErrorForWire = (cause: ThreadLaunchService.ThreadLaunchError) =>
+  new OrchestrationV2ThreadLaunchError({
+    commandId: cause.commandId,
+    projectId: cause.projectId,
+    message: jjUnsupportedDetail(cause) ?? "Failed to launch thread",
+    cause,
+  });
 
 // Keep telemetry per socket; several client types can connect simultaneously.
 function readClientAnalyticsProps(request: HttpServerRequest.HttpServerRequest) {
@@ -2309,13 +2318,7 @@ export const layerWsRpc = (
                         message: cause.message,
                         cause,
                       }),
-                    ThreadLaunchError: (cause) =>
-                      new OrchestrationV2ThreadLaunchError({
-                        commandId: input.commandId,
-                        projectId: input.projectId,
-                        message: "Failed to launch thread",
-                        cause,
-                      }),
+                    ThreadLaunchError: threadLaunchErrorForWire,
                     ServerRuntimeStartupError: (cause) =>
                       new OrchestrationV2ThreadLaunchError({
                         commandId: input.commandId,
@@ -3630,7 +3633,7 @@ export const layer = Layer.unwrap(
                     SourceControlProviderRegistry.layer.pipe(
                       Layer.provide(SourceControlBuiltInDrivers.layer),
                       Layer.provideMerge(GitVcsDriver.layer),
-                      Layer.provide(
+                      Layer.provideMerge(
                         VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer)),
                       ),
                     ),
