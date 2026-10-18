@@ -520,6 +520,26 @@ describeJj("JjVcsDriver reads", () => {
       }),
     ),
   );
+
+  it.effect("lists a repository whose workspace roots were never recorded", () =>
+    withRepo(({ driver, fileSystem, path, base, root }) =>
+      Effect.gen(function* () {
+        const workspacesDir = path.join(base, "workspaces");
+        yield* fileSystem.makeDirectory(workspacesDir, { recursive: true });
+        yield* runJj(root, [
+          "workspace",
+          "add",
+          "--name",
+          "t3-old",
+          path.join(workspacesDir, "old"),
+        ]);
+        // Without the root index, jj reports every workspace with an empty root.
+        yield* fileSystem.remove(path.join(root, ".jj", "repo", "workspace_store", "index"));
+
+        assert.deepStrictEqual(yield* driver.listWorkspaces(root), [{ name: "default", root }]);
+      }),
+    ),
+  );
 });
 
 describeJj("JjVcsDriver usability", () => {

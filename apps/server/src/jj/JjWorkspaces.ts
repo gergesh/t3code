@@ -579,9 +579,7 @@ export const makeJjWorkspaces = (deps: JjWorkspaceOpsDeps): JjWorkspaceOps => {
         .exists(matched.root)
         .pipe(Effect.orElseSucceed(() => false));
       if (!directoryExists) {
-        yield* forgetWorkspace(operation, paths, matched.name).pipe(
-          Effect.ignore,
-        );
+        yield* forgetWorkspace(operation, paths, matched.name).pipe(Effect.ignore);
         yield* driver.invalidateRepoCaches(paths.mainWorkspaceRoot);
         yield* pruneGitWorktrees(operation, paths.gitDir, paths.mainWorkspaceRoot).pipe(
           workspacePruneLock.withPermit,
@@ -661,9 +659,7 @@ export const makeJjWorkspaces = (deps: JjWorkspaceOpsDeps): JjWorkspaceOps => {
         if (present) {
           continue;
         }
-        yield* forgetWorkspace(operation, paths, workspace.name).pipe(
-          Effect.ignore,
-        );
+        yield* forgetWorkspace(operation, paths, workspace.name).pipe(Effect.ignore);
         yield* driver.invalidateRepoCaches(paths.mainWorkspaceRoot);
       }
 

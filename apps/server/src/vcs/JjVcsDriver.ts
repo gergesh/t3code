@@ -219,7 +219,7 @@ const JjBookmarkRow = Schema.Struct({
 
 const JjWorkspaceRow = Schema.Struct({
   name: Schema.String,
-  root: Schema.String.check(Schema.isNonEmpty()),
+  root: Schema.String,
 });
 
 const decodeChangeRow = Schema.decodeUnknownEffect(Schema.fromJsonString(JjChangeRow));
@@ -657,7 +657,20 @@ const makeVcsDriverShape = Effect.gen(function* () {
       (line) => decodeWorkspaceRow(line).pipe(decodeFailure(operation, "jj workspace list", cwd)),
     );
 
-    return yield* Effect.forEach(rows, (row) =>
+    // A repository from an older jj lists workspaces it never recorded with an empty root. The
+    // original workspace is the one holding `.jj/repo`; any other unrecorded workspace cannot be
+    // matched to a checkout and is left out.
+    const mainWorkspaceRoot = rows.some((row) => row.root === "")
+      ? (yield* repoPaths(cwd)).mainWorkspaceRoot
+      : null;
+    const known = rows.flatMap((row) => {
+      if (row.root !== "") return [row];
+      return row.name === "default" && mainWorkspaceRoot !== null
+        ? [{ name: row.name, root: mainWorkspaceRoot }]
+        : [];
+    });
+
+    return yield* Effect.forEach(known, (row) =>
       Effect.gen(function* () {
         const root = yield* fileSystem
           .realPath(row.root)
