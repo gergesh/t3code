@@ -54,7 +54,6 @@ export function useThreadListV2(input: {
   readonly settlementEnvironmentIds: ReadonlySet<EnvironmentId>;
   readonly snoozeEnvironmentIds: ReadonlySet<EnvironmentId>;
   readonly pinReorderEnvironmentIds: ReadonlySet<EnvironmentId>;
-  readonly activeReorderEnvironmentIds: ReadonlySet<EnvironmentId>;
   readonly queuedThreadKeys: ReadonlySet<string>;
   readonly settledLimit: number;
   readonly now: string;
@@ -80,40 +79,34 @@ export function useThreadListV2(input: {
     () => observeInbox(workingShelfEnabled ? threads : null, inboxVersion),
     [threads, workingShelfEnabled, inboxVersion],
   );
-  // Compute move availability per section; per-row planning is quadratic.
-  const moveAvailability = useMemo(() => {
-    const sectionAvailability = (section: "pinned" | "active") =>
+  // Up/down menu availability for every pinned card; per-row planning is quadratic.
+  const moveAvailability = useMemo(
+    () =>
       computeThreadMoveAvailability({
         allThreads: threads,
-        section,
+        section: "pinned",
         pendingOrder: input.pendingOrder,
-        reorderableEnvironmentIds:
-          section === "pinned" ? input.pinReorderEnvironmentIds : input.activeReorderEnvironmentIds,
+        reorderableEnvironmentIds: input.pinReorderEnvironmentIds,
         ordered: getThreadListV2OrderedSection({
           threads,
-          section,
+          section: "pinned",
           pendingOrder: input.pendingOrder,
           now: layoutTime,
           settlementEnvironmentIds: input.settlementEnvironmentIds,
           snoozeEnvironmentIds: input.snoozeEnvironmentIds,
           queuedThreadKeys: input.queuedThreadKeys,
         }),
-      });
-    return new Map([
-      ...sectionAvailability("pinned"),
-      ...(workingShelfEnabled ? [] : sectionAvailability("active")),
-    ]);
-  }, [
-    threads,
-    input.pendingOrder,
-    input.pinReorderEnvironmentIds,
-    input.activeReorderEnvironmentIds,
-    layoutTime,
-    input.settlementEnvironmentIds,
-    input.snoozeEnvironmentIds,
-    input.queuedThreadKeys,
-    workingShelfEnabled,
-  ]);
+      }),
+    [
+      threads,
+      input.pendingOrder,
+      input.pinReorderEnvironmentIds,
+      layoutTime,
+      input.settlementEnvironmentIds,
+      input.snoozeEnvironmentIds,
+      input.queuedThreadKeys,
+    ],
+  );
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const scopes = useMemo(
     () =>

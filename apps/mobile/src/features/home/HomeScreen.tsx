@@ -453,7 +453,6 @@ export function HomeScreen(props: HomeScreenProps) {
     pinningEnvironmentIds,
     autoSettleOptOutEnvironmentIds,
     pinReorderEnvironmentIds,
-    activeReorderEnvironmentIds,
     titleRegenerationEnvironmentIds,
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
@@ -473,7 +472,6 @@ export function HomeScreen(props: HomeScreenProps) {
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
     pinReorderEnvironmentIds,
-    activeReorderEnvironmentIds,
     queuedThreadKeys,
     settledLimit: settledVisibleCount,
     now,
@@ -623,11 +621,7 @@ export function HomeScreen(props: HomeScreenProps) {
         snoozePresets={snoozePresetsByEnvironmentId.get(thread.environmentId)}
         pinningSupported={pinningEnvironmentIds.has(thread.environmentId)}
         autoSettleOptOutSupported={autoSettleOptOutEnvironmentIds.has(thread.environmentId)}
-        reorderSupported={
-          item.item.pinned
-            ? pinReorderEnvironmentIds.has(thread.environmentId)
-            : !workingShelfEnabled && activeReorderEnvironmentIds.has(thread.environmentId)
-        }
+        reorderSupported={item.item.pinned && pinReorderEnvironmentIds.has(thread.environmentId)}
         canMoveUp={item.canMoveUp}
         canMoveDown={item.canMoveDown}
         onSnoozeThread={handleSnoozeThread}

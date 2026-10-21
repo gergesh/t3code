@@ -271,8 +271,6 @@ type SidebarThreadDropPlan =
     }
   | {
       readonly kind: "move-active";
-      readonly order: readonly string[] | null;
-      readonly assignments: ReadonlyArray<{ readonly id: string; readonly orderKey: string }>;
       readonly unpin: boolean;
       readonly unsettle: boolean;
       readonly unsnooze: boolean;
@@ -342,6 +340,30 @@ export function resolveSidebarReorderableThreadKeys(input: {
   return { draggableThreadKeys, activeReorderableThreadKeys };
 }
 
+function planWritablePinnedReorder(
+  order: readonly string[],
+  keysById: ReadonlyMap<string, string | null | undefined>,
+  writable: ReadonlySet<string>,
+  movedId: string,
+) {
+  if (!writable.has(movedId)) return null;
+  const assignments = planPinnedReorder({
+    orderedIds: order.filter((key) => writable.has(key) || keysById.get(key) != null),
+    keysById,
+    movedId,
+  });
+  if (assignments.some(({ id }) => !writable.has(id))) return null;
+  // Keyless Pinned rows sort after keyed rows, so a row placed past a frozen keyless one
+  // cannot persist that position.
+  const assignedIds = new Set(assignments.map(({ id }) => id));
+  let hasFrozenKeylessBefore = false;
+  for (const id of order) {
+    if (assignedIds.has(id) && hasFrozenKeylessBefore) return null;
+    hasFrozenKeylessBefore ||= !writable.has(id) && keysById.get(id) == null;
+  }
+  return assignments;
+}
+
 export function planSidebarThreadDrop(input: {
   readonly activeKey: string;
   readonly activeSection: SidebarSection;
@@ -352,10 +374,6 @@ export function planSidebarThreadDrop(input: {
   readonly pinnedOrder: readonly string[];
   readonly pinnedKeysById: ReadonlyMap<string, string | null | undefined>;
   readonly reorderableKeys?: ReadonlySet<string>;
-  readonly activeOrder: readonly string[];
-  readonly activeKeysById: ReadonlyMap<string, string | null | undefined>;
-  readonly activeReorderableKeys?: ReadonlySet<string>;
-  readonly activeTimeOrdered?: boolean;
 }): SidebarThreadDropPlan {
   const {
     activeKey,
@@ -366,82 +384,22 @@ export function planSidebarThreadDrop(input: {
     pinnedOrder,
     pinnedKeysById,
     reorderableKeys,
-    activeOrder,
-    activeKeysById,
-    activeReorderableKeys,
   } = input;
   if (activeSection === "working") return { kind: "none" };
   if (input.supportsSettlement === false && (target.section === "settled" || activeSettled)) {
     return { kind: "none" };
   }
-  const arrange = (
-    order: readonly string[],
-    keysById: ReadonlyMap<string, string | null | undefined>,
-    writable: ReadonlySet<string> | undefined,
-  ) => {
-    if (!writable) return planPinnedReorder({ orderedIds: order, keysById, movedId: activeKey });
-    if (!writable.has(activeKey)) return null;
-    const assignments = planPinnedReorder({
-      orderedIds: order.filter((key) => writable.has(key) || keysById.get(key) != null),
-      keysById,
-      movedId: activeKey,
-    });
-    if (assignments.some(({ id }) => !writable.has(id))) return null;
-
-    // Keyless Active rows sort before keyed rows; keyless Pinned rows sort after them.
-    // Materializing any row across a frozen keyless boundary cannot persist that position.
-    const assignedIds = new Set(assignments.map(({ id }) => id));
-    let hasFrozenKeylessBefore = false;
-    let hasAssignedBefore = false;
-    for (const id of order) {
-      const isFrozenKeyless = !writable.has(id) && keysById.get(id) == null;
-      const isAssigned = assignedIds.has(id);
-      if (
-        (target.section === "active" && isFrozenKeyless && hasAssignedBefore) ||
-        (target.section === "pinned" && isAssigned && hasFrozenKeylessBefore)
-      ) {
-        return null;
-      }
-
-      hasFrozenKeylessBefore ||= isFrozenKeyless;
-      hasAssignedBefore ||= isAssigned;
-    }
-
-    return assignments;
-  };
   switch (target.section) {
-    case "active": {
-      if (input.activeTimeOrdered) {
-        return activeSection === "active"
-          ? { kind: "none" }
-          : {
-              kind: "move-active",
-              order: null,
-              assignments: [],
-              unpin: activePinned,
-              unsettle: activeSettled,
-              unsnooze: activeSection === "snoozed",
-            };
-      }
-      const order = target.activeOrder;
-      if (
-        activeSection === "active" &&
-        order.length === activeOrder.length &&
-        order.every((key, index) => key === activeOrder[index])
-      ) {
-        return { kind: "none" };
-      }
-      const assignments = arrange(order, activeKeysById, activeReorderableKeys);
-      if (assignments === null) return { kind: "none" };
-      return {
-        kind: "move-active",
-        order,
-        assignments,
-        unpin: activePinned,
-        unsettle: activeSettled,
-        unsnooze: activeSection === "snoozed",
-      };
-    }
+    // Active is ordered by latest message, so a drop there only changes the section.
+    case "active":
+      return activeSection === "active"
+        ? { kind: "none" }
+        : {
+            kind: "move-active",
+            unpin: activePinned,
+            unsettle: activeSettled,
+            unsnooze: activeSection === "snoozed",
+          };
     case "settled":
       return activeSection === "settled" ? { kind: "none" } : { kind: "settle" };
     case "pinned": {
@@ -453,7 +411,9 @@ export function planSidebarThreadDrop(input: {
       ) {
         return { kind: "none" };
       }
-      const assignments = arrange(order, pinnedKeysById, reorderableKeys);
+      const assignments = reorderableKeys
+        ? planWritablePinnedReorder(order, pinnedKeysById, reorderableKeys, activeKey)
+        : planPinnedReorder({ orderedIds: order, keysById: pinnedKeysById, movedId: activeKey });
       if (assignments === null) return { kind: "none" };
       if (activeSection === "pinned") {
         return assignments.length === 0
@@ -505,7 +465,6 @@ export function applySidebarThreadDrop<
     ...resumed,
     pinnedAt: section === "pinned" ? (thread.pinnedAt ?? now) : null,
     pinOrderKey: section === "pinned" ? (orderKey ?? thread.pinOrderKey) : null,
-    ...(section === "active" && orderKey !== undefined ? { activeOrderKey: orderKey } : {}),
   };
 }
 
@@ -988,7 +947,7 @@ export function firstValidTimestampMs(
   return 0;
 }
 
-export { sortActiveThreadsByOrderKey as sortThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
+export { sortActiveThreadsByLatestMessage as sortThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
 export {
   sortInboxThreadsByReturn,
   sortWorkingThreadsBySend,
