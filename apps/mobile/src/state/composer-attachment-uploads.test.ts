@@ -116,6 +116,7 @@ vi.mock("./server", async () => {
   return { serverEnvironment: { configValueAtom: Atom.family(() => Atom.make(null)) } };
 });
 vi.mock("./git", () => ({ gitEnvironment: {} }));
+vi.mock("./vcs", () => ({ readVcsUnsupportedReason: () => null }));
 vi.mock("./threads", () => ({ threadEnvironment: {} }));
 vi.mock("./use-atom-command", () => ({ useAtomCommand: () => async () => undefined }));
 vi.mock("./session", async () => {

@@ -58,7 +58,7 @@ vi.mock("../../state/use-atom-command", () => ({
 }));
 vi.mock("../threads/thread-settings-options", () => ({ RUNTIME_MODE_CHOICES: [] }));
 vi.mock("../../components/ui/ScreenScrollView", () => ({ ScreenScrollView: Children }));
-vi.mock("../../components/ui/AppText", () => ({ AppText: Children }));
+vi.mock("../../components/ui/AppText", () => ({ AppText: Children, AppTextInput: () => null }));
 vi.mock("../../components/ui/Button", () => ({
   Button: ({
     label,
