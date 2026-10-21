@@ -1,7 +1,7 @@
 import { NodeId, PlanId, ProjectId, RunId } from "@t3tools/contracts";
 import {
   getLatestThreadForProject,
-  sortActiveThreadsByOrderKey,
+  sortActiveThreadsByLatestMessage,
   sortPinnedThreadsByOrderKey,
   sortThreads,
 } from "@t3tools/client-runtime/state/thread-sort";
@@ -52,7 +52,7 @@ describe("client performance", () => {
   });
   test("sort 1000 active threads", async ({ bench }) => {
     await bench("sort", () => {
-      sortActiveThreadsByOrderKey(threads);
+      sortActiveThreadsByLatestMessage(threads);
     }).run();
   });
   test("sort 1000 keyless pinned threads", async ({ bench }) => {

@@ -115,13 +115,26 @@ export function getThreadSortTimestamp(
   return getLatestUserMessageTimestamp(thread);
 }
 
-function activeThreadAnchorTimestampMs(thread: {
+type ActiveThreadSortInput = {
+  readonly id: string;
   readonly createdAt: string;
   readonly unsettledAt?: string | null | undefined;
-}): number {
+  readonly latestUserMessageAt?: string | null | undefined;
+  readonly latestUserAuthoredMessageAt?: string | null | undefined;
+  readonly environmentId?: string | undefined;
+};
+
+function activeThreadTimestampMs(thread: Omit<ActiveThreadSortInput, "id">): number {
+  // Wakes and agent messages also carry the user role, so only messages the
+  // user wrote lift a thread. Servers that predate the field omit it.
+  const latestMessageAt =
+    thread.latestUserAuthoredMessageAt === undefined
+      ? thread.latestUserMessageAt
+      : thread.latestUserAuthoredMessageAt;
   return Math.max(
     toSortableTimestamp(thread.createdAt) ?? 0,
     toSortableTimestamp(thread.unsettledAt ?? undefined) ?? 0,
+    toSortableTimestamp(latestMessageAt ?? undefined) ?? 0,
   );
 }
 
@@ -297,39 +310,17 @@ export function sortPinnedThreadsByOrderKey<
   return [...keyed, ...keyless];
 }
 
-export function sortActiveThreadsByOrderKey<
-  T extends {
-    readonly id: string;
-    readonly createdAt: string;
-    readonly unsettledAt?: string | null | undefined;
-    readonly activeOrderKey?: string | null | undefined;
-    readonly environmentId?: string | undefined;
-  },
->(threads: readonly T[]): T[] {
+export function sortActiveThreadsByLatestMessage<T extends ActiveThreadSortInput>(
+  threads: readonly T[],
+): T[] {
   if (threads.length < 2) return [...threads];
-  const timestamps = new Map<T, number>();
-  for (const thread of threads) {
-    if (thread.activeOrderKey == null) {
-      timestamps.set(thread, activeThreadAnchorTimestampMs(thread));
-    }
-  }
-  return [...threads].sort((left, right) => {
-    const leftKey = left.activeOrderKey;
-    const rightKey = right.activeOrderKey;
-    if (leftKey == null && rightKey != null) return -1;
-    if (leftKey != null && rightKey == null) return 1;
-    let order = 0;
-    if (leftKey != null && rightKey != null) {
-      order = leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
-    } else {
-      order = timestamps.get(right)! - timestamps.get(left)!;
-    }
-    return (
-      order ||
+  const timestamps = new Map(threads.map((thread) => [thread, activeThreadTimestampMs(thread)]));
+  return [...threads].sort(
+    (left, right) =>
+      timestamps.get(right)! - timestamps.get(left)! ||
       left.id.localeCompare(right.id) ||
-      (left.environmentId ?? "").localeCompare(right.environmentId ?? "")
-    );
-  });
+      (left.environmentId ?? "").localeCompare(right.environmentId ?? ""),
+  );
 }
 
 export function planPinnedMove(input: {

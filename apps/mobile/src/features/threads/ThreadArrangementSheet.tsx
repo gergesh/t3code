@@ -226,26 +226,21 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
   useOlderSettledShelfGrowth(olderSettledShelf, listedSettled);
   const visibleSettled = listedSettled.slice(0, settledVisibleCount);
   const settledCount = sections.settled.length + olderSettledShelf.unloadedCount(threads);
-  const planners = useMemo(() => {
-    const planner = (section: "pinned" | "active") =>
+  // Active is ordered by latest message, so only pinned rows have a position to plan.
+  const pinnedPlanner = useMemo(
+    () =>
       createThreadMovePlanner({
-        ordered: sections[section],
+        ordered: sections.pinned,
         allThreads: threads,
-        section,
+        section: "pinned",
         reorderableEnvironmentIds: new Set(
           [...configs].flatMap(([id, config]) =>
-            (
-              section === "pinned"
-                ? config.environment.capabilities.threadPinReorder
-                : !workingShelfEnabled && config.environment.capabilities.threadActiveReorder
-            )
-              ? [id]
-              : [],
+            config.environment.capabilities.threadPinReorder ? [id] : [],
           ),
         ),
-      });
-    return { pinned: planner("pinned"), active: planner("active") };
-  }, [sections, threads, configs, workingShelfEnabled]);
+      }),
+    [sections, threads, configs],
+  );
   const rows = useMemo(() => {
     const result: Row[] = [];
     let offset = 0;
@@ -271,8 +266,8 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
   const frame = useRef<number | null>(null);
   const [preview, setPreview] = useState<Drag | null>(null);
   const translateY = useRef(new Animated.Value(0)).current;
-  const latest = useRef({ rows, planners, moveThread });
-  latest.current = { rows, planners, moveThread };
+  const latest = useRef({ rows, pinnedPlanner, moveThread });
+  latest.current = { rows, pinnedPlanner, moveThread };
 
   function stop() {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
@@ -323,7 +318,10 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
           configs.get(current.thread.environmentId)?.environment.capabilities.threadSettlement
         )
           destination = { section: "settled", targetId: null, placement: "before" };
-      } else if (latest.current.planners[target.section](keyOf(current.thread), candidate) !== null)
+      } else if (target.section === "active") {
+        if (current.sourceSection !== "active")
+          destination = { section: "active", targetId: null, placement: "before" };
+      } else if (latest.current.pinnedPlanner(keyOf(current.thread), candidate) !== null)
         destination = candidate;
     }
     if (
@@ -436,10 +434,7 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
                   })}
                   renderItem={({ item }) => {
                     const thread = item.thread;
-                    const planner =
-                      item.section === "pinned" || item.section === "active"
-                        ? planners[item.section]
-                        : null;
+                    const planner = item.section === "pinned" ? pinnedPlanner : null;
                     const capabilities =
                       thread && configs.get(thread.environmentId)?.environment.capabilities;
                     const sectionActions = thread
@@ -463,11 +458,12 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
                               !capabilities?.threadSnooze)
                           )
                             return [];
-                          return planners[section](item.key, {
-                            section,
-                            targetId: null,
-                            placement: "before",
-                          })
+                          return section === "active" ||
+                            pinnedPlanner(item.key, {
+                              section,
+                              targetId: null,
+                              placement: "before",
+                            })
                             ? [{ name: section, label }]
                             : [];
                         })
@@ -498,12 +494,8 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
                               disabled={
                                 dropBusy ||
                                 pendingOrder !== null ||
-                                !(
-                                  configs.get(thread.environmentId)?.environment.capabilities
-                                    .threadPinReorder ||
-                                  configs.get(thread.environmentId)?.environment.capabilities
-                                    .threadActiveReorder
-                                )
+                                !configs.get(thread.environmentId)?.environment.capabilities
+                                  .threadPinReorder
                               }
                               sectionActions={sectionActions}
                               onSectionMove={(section) => {
