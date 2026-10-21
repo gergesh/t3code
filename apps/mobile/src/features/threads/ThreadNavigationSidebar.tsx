@@ -266,7 +266,6 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     pinningEnvironmentIds,
     autoSettleOptOutEnvironmentIds,
     pinReorderEnvironmentIds,
-    activeReorderEnvironmentIds,
     titleRegenerationEnvironmentIds,
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
@@ -286,7 +285,6 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
     pinReorderEnvironmentIds,
-    activeReorderEnvironmentIds,
     queuedThreadKeys,
     settledLimit: settledVisibleCount,
     now,
@@ -471,9 +469,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             pinningSupported={pinningEnvironmentIds.has(thread.environmentId)}
             autoSettleOptOutSupported={autoSettleOptOutEnvironmentIds.has(thread.environmentId)}
             reorderSupported={
-              item.item.pinned
-                ? pinReorderEnvironmentIds.has(thread.environmentId)
-                : !workingShelfEnabled && activeReorderEnvironmentIds.has(thread.environmentId)
+              item.item.pinned && pinReorderEnvironmentIds.has(thread.environmentId)
             }
             canMoveUp={item.canMoveUp}
             canMoveDown={item.canMoveDown}

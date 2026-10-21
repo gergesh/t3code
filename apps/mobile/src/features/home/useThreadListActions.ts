@@ -286,14 +286,9 @@ export function useThreadListActions(): {
                   return unsnoozeThread(thread);
                 case "pin":
                   return pinThread(thread, step.orderKey);
-                case "reorderActive": {
-                  const result = await reorderActiveMutation({
-                    environmentId: thread.environmentId,
-                    input: { threadId: thread.id, orderKey: step.orderKey },
-                  });
-                  if (result._tag === "Failure") throw Cause.squash(result.cause);
+                case "reorderActive":
+                  // Active threads sort by latest user message, so there is no position to restore.
                   return true;
-                }
                 case "snooze": {
                   const failureTitle =
                     action === "Unpinned"
@@ -656,9 +651,6 @@ export function useThreadListActions(): {
   const reorderPinnedMutation = useAtomCommand(threadEnvironment.reorderPin, {
     reportFailure: false,
   });
-  const reorderActiveMutation = useAtomCommand(threadEnvironment.reorderActive, {
-    reportFailure: false,
-  });
   const moveThread = async (thread: EnvironmentThreadShell, direction: ThreadMoveDestination) => {
     if (!checkThreadOperationPermission(thread, m(msg("Could not move thread")))) return false;
     if (getPendingThreadOrder() !== null || appAtomRegistry.get(threadDropBusyAtom)) return false;
@@ -683,6 +675,22 @@ export function useThreadListActions(): {
       const settled = await settleThread(thread);
       appAtomRegistry.set(threadDropBusyAtom, false);
       return settled;
+    }
+    if (section === "active") {
+      // Active is ordered by latest message, so moving there only changes the section.
+      const lifecycle = threadDropLifecycle(thread, "active", new Date().toISOString());
+      if (!lifecycle.unpin && !lifecycle.unsettle && !lifecycle.unsnooze) return false;
+      if (lifecycle.unpin && !environmentConfigLoaded(thread.environmentId)) return false;
+      if (lifecycle.unsettle && !environmentConfigLoaded(thread.environmentId)) return false;
+      if (lifecycle.unsnooze && !environmentConfigLoaded(thread.environmentId)) return false;
+      selectionHaptic();
+      appAtomRegistry.set(threadDropBusyAtom, true);
+      const moved =
+        (!lifecycle.unpin || (await unpinThread(thread))) &&
+        (!lifecycle.unsettle || (await unsettleThread(thread))) &&
+        (!lifecycle.unsnooze || (await unsnoozeThread(thread)));
+      appAtomRegistry.set(threadDropBusyAtom, false);
+      return moved;
     }
     const configs = appAtomRegistry.get(environmentServerConfigsAtom);
     const connectedEnvironmentIds = new Set(appAtomRegistry.get(connectedEnvironmentIdsAtom));
@@ -717,7 +725,6 @@ export function useThreadListActions(): {
       ),
     })(scopedThreadKey(thread.environmentId, thread.id), direction);
     if (assignments === null) return false;
-    const lifecycle = threadDropLifecycle(thread, section, new Date().toISOString());
     const crossSection = !ordered.some(
       (row) => row.id === thread.id && row.environmentId === thread.environmentId,
     );
@@ -742,35 +749,27 @@ export function useThreadListActions(): {
             assignments,
           }),
         );
-    const reorder = section === "pinned" ? reorderPinnedMutation : reorderActiveMutation;
     const moved = await (async () => {
       if (crossSection) {
-        if (section === "pinned") {
-          const orderKey = assignments.find(
-            ({ id }) => id === scopedThreadKey(thread.environmentId, thread.id),
-          )?.orderKey;
-          // Same as pinThread: older Unpinned, Settled, or Snoozed undos would fight this pin.
-          ThreadUndo.invalidate("pin", scopedThreadKey(thread.environmentId, thread.id));
-          ThreadUndo.invalidate("settle", scopedThreadKey(thread.environmentId, thread.id));
-          ThreadUndo.invalidate("snooze", scopedThreadKey(thread.environmentId, thread.id));
-          const result = await pinMutation({
-            environmentId: thread.environmentId,
-            input: { threadId: thread.id, ...(orderKey === undefined ? {} : { orderKey }) },
-          });
-          if (result._tag === "Failure") {
-            Dialog.alert(m(msg("Could not pin thread")), String(Cause.squash(result.cause)));
-            return false;
-          }
-        } else {
-          if (lifecycle.unpin && !(await unpinThread(thread))) return false;
-          if (lifecycle.unsettle && !(await unsettleThread(thread))) return false;
-          if (lifecycle.unsnooze && !(await unsnoozeThread(thread))) return false;
+        const orderKey = assignments.find(
+          ({ id }) => id === scopedThreadKey(thread.environmentId, thread.id),
+        )?.orderKey;
+        // Same as pinThread: older Unpinned, Settled, or Snoozed undos would fight this pin.
+        ThreadUndo.invalidate("pin", scopedThreadKey(thread.environmentId, thread.id));
+        ThreadUndo.invalidate("settle", scopedThreadKey(thread.environmentId, thread.id));
+        ThreadUndo.invalidate("snooze", scopedThreadKey(thread.environmentId, thread.id));
+        const result = await pinMutation({
+          environmentId: thread.environmentId,
+          input: { threadId: thread.id, ...(orderKey === undefined ? {} : { orderKey }) },
+        });
+        if (result._tag === "Failure") {
+          Dialog.alert(m(msg("Could not pin thread")), String(Cause.squash(result.cause)));
+          return false;
         }
       }
       for (const assignment of assignments) {
         if (
           crossSection &&
-          section === "pinned" &&
           thread.pinnedAt == null &&
           assignment.id === scopedThreadKey(thread.environmentId, thread.id)
         )
@@ -780,7 +779,7 @@ export function useThreadListActions(): {
         if (target === undefined) continue;
         if (!checkThreadOperationPermission(target, m(msg("Could not move thread")))) return false;
         ThreadUndo.invalidate("pin", scopedThreadKey(target.environmentId, target.id));
-        const result = await reorder({
+        const result = await reorderPinnedMutation({
           environmentId: target.environmentId,
           input: { threadId: target.id, orderKey: assignment.orderKey },
         });
