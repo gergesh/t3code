@@ -237,7 +237,7 @@ interface ComposerSendInput {
   readonly isDraftHeroState: boolean;
   readonly panelAnimationsActive: boolean;
   readonly panelAnimationDurationMs: number;
-  readonly keepFullHistory: boolean;
+  readonly compactRequested: boolean;
   /** `/clear` can arm a fresh session on this thread. */
   readonly freshSessionAvailable: boolean;
   readonly resumeCompactionTokens: number | null;
@@ -270,7 +270,7 @@ interface ComposerSendInput {
     SetStateAction<Record<string, ReadonlyArray<CodexFeedbackSubmission>>>
   >;
   readonly setThreadError: ReturnType<typeof makeThreadErrorSetter>;
-  readonly setKeepFullHistory: (threadKey: string, keep: boolean) => void;
+  readonly setCompactRequested: (threadKey: string, requested: boolean) => void;
   readonly anchorNewTurn: TimelineFollow["anchorNewTurn"];
   readonly acknowledgeActiveThreadWoke: () => void;
   /** Resolves true once the side chat started and got the message. */
@@ -335,7 +335,7 @@ export function useComposerSend(input: ComposerSendInput) {
     isDraftHeroState,
     panelAnimationsActive,
     panelAnimationDurationMs,
-    keepFullHistory,
+    compactRequested,
     freshSessionAvailable,
     resumeCompactionTokens,
     usageLimitsKey,
@@ -361,7 +361,7 @@ export function useComposerSend(input: ComposerSendInput) {
     optimisticBlobPreviews,
     setFeedbackSubmissionsByThreadKey,
     setThreadError,
-    setKeepFullHistory,
+    setCompactRequested,
     anchorNewTurn,
     acknowledgeActiveThreadWoke,
     onSideChat,
@@ -977,7 +977,7 @@ export function useComposerSend(input: ComposerSendInput) {
       activeThreadBranch,
       isScratchProject: activeProjectIsScratch,
       resumeCompactionTokens,
-      keepFullHistory,
+      compactRequested,
       phase,
       dispatchMode,
       freshContext: freshArm !== undefined,
@@ -1536,7 +1536,7 @@ export function useComposerSend(input: ComposerSendInput) {
             checkoutPullRequestUrl,
           );
         }
-        setKeepFullHistory(routeThreadKey, false);
+        setCompactRequested(routeThreadKey, false);
         if (freshArm !== undefined) disarmFreshSession(routeThreadKey, freshArm);
         clearUsageLimitsFor(routeThreadKey);
         if (turnUsesAttachmentUploads) {
