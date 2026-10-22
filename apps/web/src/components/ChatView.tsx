@@ -2633,21 +2633,21 @@ export default function ChatView(props: ChatViewProps) {
     })
       ? activeContextWindow.usedTokens
       : null;
-  const [fullHistoryThreadKeys, setFullHistoryThreadKeys] = useState<ReadonlySet<string>>(
+  const [compactRequestedThreadKeys, setCompactRequestedThreadKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const keepFullHistory = fullHistoryThreadKeys.has(routeThreadKey);
-  const setKeepFullHistory = (threadKey: string, keep: boolean) => {
-    setFullHistoryThreadKeys((current) => {
-      if (current.has(threadKey) === keep) return current;
+  const compactRequested = compactRequestedThreadKeys.has(routeThreadKey);
+  const setCompactRequested = (threadKey: string, requested: boolean) => {
+    setCompactRequestedThreadKeys((current) => {
+      if (current.has(threadKey) === requested) return current;
       const next = new Set(current);
-      if (keep) next.add(threadKey);
+      if (requested) next.add(threadKey);
       else next.delete(threadKey);
       return next;
     });
   };
-  const toggleKeepFullHistory = () => setKeepFullHistory(routeThreadKey, !keepFullHistory);
-  const toggleKeepFullHistoryStable = useStableCallback(toggleKeepFullHistory);
+  const toggleCompactRequested = () => setCompactRequested(routeThreadKey, !compactRequested);
+  const toggleCompactRequestedStable = useStableCallback(toggleCompactRequested);
   const handleRestoreThreadBranch = () => {
     if (!canWriteSourceControl || !vcsActionsSupported) return;
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
@@ -2989,7 +2989,7 @@ export default function ChatView(props: ChatViewProps) {
     isDraftHeroState,
     panelAnimationsActive,
     panelAnimationDurationMs,
-    keepFullHistory,
+    compactRequested,
     resumeCompactionTokens,
     showPlanFollowUpPrompt,
     usageLimitsKey,
@@ -3013,7 +3013,7 @@ export default function ChatView(props: ChatViewProps) {
     setOptimisticUserMessages,
     setFeedbackSubmissionsByThreadKey,
     setThreadError,
-    setKeepFullHistory,
+    setCompactRequested,
     anchorNewTurn,
     acknowledgeActiveThreadWoke,
     handleInteractionModeChange,
@@ -3711,8 +3711,8 @@ export default function ChatView(props: ChatViewProps) {
                               queuedRunsControl={queuedRunsControl}
                               bannerItems={composerBannerItems}
                               resumeCompactionTokens={resumeCompactionTokens}
-                              keepFullHistory={keepFullHistory}
-                              onToggleKeepFullHistory={toggleKeepFullHistoryStable}
+                              compactRequested={compactRequested}
+                              onToggleCompactRequested={toggleCompactRequestedStable}
                               onUsageLimitsCommand={
                                 usageLimitsOffered &&
                                 usageLimitsKey !== null &&

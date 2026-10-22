@@ -1081,7 +1081,7 @@ describe("planComposerTurn", () => {
     worktreePath: null,
     activeThreadBranch: "main",
     resumeCompactionTokens: null,
-    keepFullHistory: false,
+    compactRequested: false,
     phase: "ready" as const,
     dispatchMode: "auto" as const,
   };
@@ -1101,17 +1101,24 @@ describe("planComposerTurn", () => {
     });
   });
 
-  it("queues behind a compaction of a stale session, except for /compact itself", () => {
-    const stale = { ...base, resumeCompactionTokens: 120_000 };
+  it("compacts a stale session only when the user asks to", () => {
+    expect(planComposerTurn({ ...base, resumeCompactionTokens: 120_000 })).toMatchObject({
+      compactBeforeSend: false,
+      turnDispatchMode: "auto",
+    });
+  });
+
+  it("queues behind a requested compaction, except for /compact itself", () => {
+    const requested = { ...base, resumeCompactionTokens: 120_000, compactRequested: true };
     for (const messageText of ["hello", "/compactfoo"]) {
-      expect(planComposerTurn({ ...stale, messageText })).toMatchObject({
+      expect(planComposerTurn({ ...requested, messageText })).toMatchObject({
         compactBeforeSend: true,
         turnDispatchMode: "queue",
         shouldQueueBehindActiveRun: true,
       });
     }
     for (const messageText of ["/COMPACT", "/compact keep the API notes", "/compact\n  tests"]) {
-      expect(planComposerTurn({ ...stale, messageText })).toMatchObject({
+      expect(planComposerTurn({ ...requested, messageText })).toMatchObject({
         compactBeforeSend: false,
         turnDispatchMode: "auto",
         shouldQueueBehindActiveRun: false,
