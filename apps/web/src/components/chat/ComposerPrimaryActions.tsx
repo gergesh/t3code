@@ -56,6 +56,7 @@ interface ComposerPrimaryActionsProps {
   onImplementPlanInNewThread: () => void;
   compactBeforeSendTokens?: number | null;
   promptCacheLabel?: string | null;
+  compactSkipReason?: string | null;
   compactRequested?: boolean;
   onToggleCompactRequested?: () => void;
 }
@@ -114,6 +115,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onImplementPlanInNewThread,
   compactBeforeSendTokens = null,
   promptCacheLabel = null,
+  compactSkipReason = null,
   compactRequested = false,
   onToggleCompactRequested,
 }: ComposerPrimaryActionsProps) {
@@ -282,7 +284,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     compactBeforeSendTokens !== null && !showResume && !isEditingQueuedMessage
       ? formatContextWindowTokens(compactBeforeSendTokens)
       : null;
-  const compactsBeforeSend = compactTokens !== null && compactRequested;
+  const compactsBeforeSend =
+    compactTokens !== null && compactRequested && compactSkipReason === null;
 
   const submitLabel = showResume
     ? "Resume thread"
@@ -379,15 +382,19 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               type="button"
               className={cn(
                 "flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-xs tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:h-8 [&_svg]:pointer-events-none [&_svg]:size-3.5",
-                compactRequested
-                  ? "border-warning/40 text-warning hover:bg-warning/8"
-                  : "border-border text-muted-foreground hover:text-foreground",
+                compactSkipReason !== null
+                  ? "cursor-default border-border text-muted-foreground opacity-64"
+                  : compactRequested
+                    ? "border-warning/40 text-warning hover:bg-warning/8"
+                    : "border-border text-muted-foreground hover:text-foreground",
               )}
               {...pointerFocusProps}
-              aria-pressed={compactRequested}
+              aria-pressed={compactsBeforeSend}
+              // Not `disabled`, so the tooltip still explains why.
+              aria-disabled={compactSkipReason !== null}
               aria-label={`Compact ${compactTokens} tokens of history before sending`}
               disabled={!canOperateThread}
-              onClick={onToggleCompactRequested}
+              onClick={compactSkipReason === null ? onToggleCompactRequested : undefined}
             />
           }
         >
@@ -397,12 +404,15 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         </TooltipTrigger>
         <TooltipPopup>
           <div>
-            {compactRequested
-              ? `Next send compacts ${compactTokens} tokens first.`
-              : `Next send keeps all ${compactTokens} tokens.`}
+            {compactSkipReason ??
+              (compactRequested
+                ? `Next send compacts ${compactTokens} tokens first.`
+                : `Next send keeps all ${compactTokens} tokens.`)}
           </div>
           {promptCacheLabel ? <div>{promptCacheLabel}</div> : null}
-          <div>{compactRequested ? "Click to keep full history" : "Click to compact first"}</div>
+          {compactSkipReason === null ? (
+            <div>{compactRequested ? "Click to keep full history" : "Click to compact first"}</div>
+          ) : null}
         </TooltipPopup>
       </Tooltip>
       {submit}

@@ -53,7 +53,8 @@ You can also send `/compact` in an existing conversation. Web and desktop offer
 after Claude's prompt cache expires, a **Compact** chip with the thread's token count shows
 next to the send button. It starts off, so your message keeps the full history.
 Click the chip to turn it on, and Enter then summarizes the history first before
-sending your message. The cache lasts about an hour on a Claude
+sending your message. Sending `/clear` never compacts first, since it drops the
+history anyway. The cache lasts about an hour on a Claude
 subscription and 5 minutes with an API key, Bedrock, or Vertex. The dot on the
 context meter is green while the cache is warm and amber once it has expired; hover
 the meter to see how long until or since it expires. See [commands and skills](./composer.md#commands-and-skills) for using

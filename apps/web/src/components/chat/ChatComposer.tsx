@@ -76,6 +76,7 @@ import {
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import {
+  compactBeforeSendSkipReason,
   deriveComposerSendState,
   getAntigravitySendBlockReason,
   readFileAsDataUrl,
@@ -1320,9 +1321,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     projectSelectionRequired ||
     environmentUnavailable !== null ||
     (!composerSendState.hasSendableContent && !showResumeAction);
+  const compactSkipReason = compactBeforeSendSkipReason(prompt);
+  const compactsBeforeSend =
+    props.resumeCompactionTokens !== null && props.compactRequested && compactSkipReason === null;
   const collapsedComposerPrimaryActionLabel = showResumeAction
     ? "Resume thread"
-    : props.resumeCompactionTokens !== null && props.compactRequested
+    : compactsBeforeSend
       ? "Open composer to compact and send"
       : "Send message";
   const showMobilePendingAnswerActions =
@@ -3692,8 +3696,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   onClick={(event) => {
                     event.stopPropagation();
                     if (showResumeAction) onResume();
-                    else if (props.resumeCompactionTokens !== null && props.compactRequested)
-                      expandMobileComposer();
+                    else if (compactsBeforeSend) expandMobileComposer();
                     else submitComposer();
                   }}
                 >
@@ -3997,6 +4000,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     compactBeforeSendTokens={props.resumeCompactionTokens}
                     promptCacheLabel={props.promptCacheLabel}
                     promptCacheWarm={props.promptCacheWarm}
+                    compactSkipReason={compactSkipReason}
                     compactRequested={props.compactRequested}
                     onToggleCompactRequested={props.onToggleCompactRequested}
                     compactDisabled={
