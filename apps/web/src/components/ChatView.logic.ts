@@ -1292,6 +1292,15 @@ export function snapshotComposerSend(contents: ComposerSendContents) {
 
 export type ComposerSendSnapshot = ReturnType<typeof snapshotComposerSend>;
 
+/** Why a message never compacts first, or null when it may. */
+export function compactBeforeSendSkipReason(messageText: string): string | null {
+  if (COMPACT_COMMAND_PATTERN.test(messageText)) return "/compact already compacts the history.";
+  if (messageText.trim().toLowerCase() === "/clear") {
+    return "/clear drops the history, so there is nothing to compact.";
+  }
+  return null;
+}
+
 /** How a composer send dispatches: where it runs and whether it waits behind other work. */
 export function planComposerTurn(input: {
   readonly messageText: string;
@@ -1319,7 +1328,7 @@ export function planComposerTurn(input: {
     !input.freshContext &&
     input.resumeCompactionTokens !== null &&
     input.compactRequested &&
-    !COMPACT_COMMAND_PATTERN.test(input.messageText);
+    compactBeforeSendSkipReason(input.messageText) === null;
   const dispatchMode =
     input.freshContext && (input.dispatchMode === "steer" || input.dispatchMode === "restart")
       ? "queue"

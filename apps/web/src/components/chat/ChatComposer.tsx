@@ -83,7 +83,11 @@ import {
   replaceTextRange,
 } from "../../composer-logic";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
-import { deriveComposerSendState, getAntigravitySendBlockReason } from "../ChatView.logic";
+import {
+  compactBeforeSendSkipReason,
+  deriveComposerSendState,
+  getAntigravitySendBlockReason,
+} from "../ChatView.logic";
 import {
   dataTransferHasComposerMention,
   makeComposerMentionDragHandlers,
@@ -1218,9 +1222,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     projectSelectionRequired ||
     environmentUnavailable !== null ||
     (!composerSendState.hasSendableContent && !showResumeAction);
+  const compactSkipReason = compactBeforeSendSkipReason(prompt);
+  const compactsBeforeSend =
+    props.resumeCompactionTokens !== null && props.compactRequested && compactSkipReason === null;
   const collapsedComposerPrimaryActionLabel = showResumeAction
     ? "Resume thread"
-    : props.resumeCompactionTokens !== null && props.compactRequested
+    : compactsBeforeSend
       ? "Open composer to compact and send"
       : "Send message";
   const showMobilePendingAnswerActions =
@@ -3340,8 +3347,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   onClick={(event) => {
                     event.stopPropagation();
                     if (showResumeAction) onResume();
-                    else if (props.resumeCompactionTokens !== null && props.compactRequested)
-                      expandMobileComposer();
+                    else if (compactsBeforeSend) expandMobileComposer();
                     else submitComposer();
                   }}
                 >
@@ -3624,6 +3630,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onInterrupt={handleInterruptPrimaryActionStable}
                     compactBeforeSendTokens={props.resumeCompactionTokens}
                     promptCacheLabel={props.promptCacheLabel}
+                    compactSkipReason={compactSkipReason}
                     compactRequested={props.compactRequested}
                     onToggleCompactRequested={props.onToggleCompactRequested}
                   >
