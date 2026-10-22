@@ -64,7 +64,8 @@ When you return to a large thread after Claude's prompt cache expires, a
 starts off, so your message keeps the full history. Click the chip to turn it on,
 and Enter then summarizes the history first before sending your message. The mobile
 app shows a chip labelled with the token count that starts on: tap it to keep the
-full history for that message. The cache lasts about an hour on a Claude
+full history for that message. Sending `/clear` never compacts first, since it drops
+the history anyway. The cache lasts about an hour on a Claude
 subscription and 5 minutes with an API key, Bedrock, or Vertex. Hover the chip to see how long
 until or since the cache expires. See [commands and skills](./composer.md#commands-and-skills) for using
 composer commands.

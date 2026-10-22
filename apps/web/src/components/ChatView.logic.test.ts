@@ -1365,7 +1365,7 @@ describe("planComposerTurn", () => {
     });
   });
 
-  it("queues behind a requested compaction, except for /compact itself", () => {
+  it("queues behind a requested compaction, except for /compact and /clear", () => {
     const requested = { ...base, resumeCompactionTokens: 120_000, compactRequested: true };
     for (const messageText of ["hello", "/compactfoo"]) {
       expect(planComposerTurn({ ...requested, messageText })).toMatchObject({
@@ -1374,7 +1374,12 @@ describe("planComposerTurn", () => {
         shouldQueueBehindActiveRun: true,
       });
     }
-    for (const messageText of ["/COMPACT", "/compact keep the API notes", "/compact\n  tests"]) {
+    for (const messageText of [
+      "/COMPACT",
+      "/compact keep the API notes",
+      "/compact\n  tests",
+      "/clear",
+    ]) {
       expect(planComposerTurn({ ...requested, messageText })).toMatchObject({
         compactBeforeSend: false,
         turnDispatchMode: "auto",
