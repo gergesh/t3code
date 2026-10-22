@@ -61,6 +61,22 @@ export function hasDismissedResumeCompaction(
   });
 }
 
+/** When Claude's prompt cache for the latest request expires, or null when unknown. */
+export function claudePromptCacheExpiry(input: {
+  readonly provider: string | null | undefined;
+  readonly updatedAt: string | null | undefined;
+  readonly promptCacheTtlMs?: number | undefined;
+}): { readonly expiresAtMs: number; readonly estimated: boolean } | null {
+  if (input.provider !== "claudeAgent") return null;
+  const updatedAt = Date.parse(input.updatedAt ?? "");
+  if (!Number.isFinite(updatedAt)) return null;
+  return {
+    expiresAtMs: updatedAt + (input.promptCacheTtlMs ?? CLAUDE_RESUME_COMPACTION_FALLBACK_MS),
+    // A request served fully from cache reports no TTL, so the fallback is a guess.
+    estimated: input.promptCacheTtlMs === undefined,
+  };
+}
+
 export function shouldOfferResumeCompaction(input: {
   readonly provider: string | null | undefined;
   readonly usedTokens: number | null | undefined;
@@ -68,20 +84,43 @@ export function shouldOfferResumeCompaction(input: {
   readonly promptCacheTtlMs?: number | undefined;
   readonly now: string;
 }): boolean {
-  if (
-    input.provider !== "claudeAgent" ||
-    (input.usedTokens ?? 0) < COMPACTION_SUGGESTION_MIN_TOKENS
-  ) {
-    return false;
-  }
-
-  const updatedAt = Date.parse(input.updatedAt ?? "");
+  if ((input.usedTokens ?? 0) < COMPACTION_SUGGESTION_MIN_TOKENS) return false;
+  const expiry = claudePromptCacheExpiry(input);
   const now = Date.parse(input.now);
-  return (
-    Number.isFinite(updatedAt) &&
-    Number.isFinite(now) &&
-    now - updatedAt >= (input.promptCacheTtlMs ?? CLAUDE_RESUME_COMPACTION_FALLBACK_MS)
-  );
+  return expiry !== null && Number.isFinite(now) && now >= expiry.expiresAtMs;
+}
+
+function formatMinutes(ms: number, estimated: boolean): string {
+  const minutes = Math.floor(ms / 60_000);
+  const hours = Math.floor(minutes / 60);
+  const text =
+    minutes < 1
+      ? "<1m"
+      : hours === 0
+        ? `${minutes}m`
+        : minutes % 60 === 0
+          ? `${hours}h`
+          : `${hours}h ${minutes % 60}m`;
+  return estimated ? `~${text}` : text;
+}
+
+/** Whether the prompt cache is still warm, and how long until or since it expires. */
+export function describePromptCache(input: {
+  readonly provider: string | null | undefined;
+  readonly updatedAt: string | null | undefined;
+  readonly promptCacheTtlMs?: number | undefined;
+  readonly now: string;
+}): { readonly warm: boolean; readonly label: string } | null {
+  const expiry = claudePromptCacheExpiry(input);
+  const now = Date.parse(input.now);
+  if (expiry === null || !Number.isFinite(now)) return null;
+  const remainingMs = expiry.expiresAtMs - now;
+  return remainingMs > 0
+    ? {
+        warm: true,
+        label: `Cache warm, expires in ${formatMinutes(remainingMs, expiry.estimated)}`,
+      }
+    : { warm: false, label: `Cache expired ${formatMinutes(-remainingMs, expiry.estimated)} ago` };
 }
 
 export function resolveContextWindowModelDisplayName(

@@ -186,6 +186,8 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   compactDisabled: boolean;
   compactDisabledReason: string | null;
   compactBeforeSendTokens: number | null;
+  promptCacheLabel: string | null;
+  promptCacheWarm: boolean;
   compactRequested: boolean;
   onToggleCompactRequested: () => void;
 }) {
@@ -198,6 +200,8 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
           onCompact={props.onCompactContext}
           compactDisabled={props.compactDisabled}
           compactDisabledReason={props.compactDisabledReason}
+          promptCacheLabel={props.promptCacheLabel}
+          promptCacheWarm={props.promptCacheWarm}
         />
       ) : props.reserveContextWindowMeter ? (
         <ContextWindowMeterPlaceholder />
@@ -229,6 +233,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
         compactBeforeSendTokens={props.compactBeforeSendTokens}
+        promptCacheLabel={props.promptCacheLabel}
         compactRequested={props.compactRequested}
         onToggleCompactRequested={props.onToggleCompactRequested}
       />

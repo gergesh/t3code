@@ -1,3 +1,4 @@
+import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -24,8 +25,18 @@ export function ContextWindowMeter(props: {
   onCompact?: (() => void) | undefined;
   compactDisabled?: boolean | undefined;
   compactDisabledReason?: string | null | undefined;
+  promptCacheLabel?: string | null | undefined;
+  promptCacheWarm?: boolean | undefined;
 }) {
-  const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
+  const {
+    usage,
+    modelDisplayName,
+    onCompact,
+    compactDisabled,
+    compactDisabledReason,
+    promptCacheLabel,
+    promptCacheWarm,
+  } = props;
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
   const radius = 9.75;
@@ -49,11 +60,14 @@ export function ContextWindowMeter(props: {
             size="icon-sm"
             variant="ghost-muted"
             className="size-7"
-            aria-label={
+            aria-label={[
               usage.maxTokens !== null && usedPercentage
                 ? `Context window ${usedPercentage} used`
-                : `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`
-            }
+                : `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`,
+              promptCacheLabel,
+            ]
+              .filter(Boolean)
+              .join(", ")}
           >
             <span className="relative flex size-5 items-center justify-center">
               <svg
@@ -82,6 +96,15 @@ export function ContextWindowMeter(props: {
                   className="transition-[stroke-dashoffset,stroke] duration-500 ease-out motion-reduce:transition-none"
                 />
               </svg>
+              {promptCacheLabel ? (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-2 ring-background",
+                    promptCacheWarm ? "bg-success" : "bg-warning",
+                  )}
+                />
+              ) : null}
             </span>
           </Button>
         }
@@ -142,6 +165,18 @@ export function ContextWindowMeter(props: {
               <span className="font-medium tabular-nums text-secondary-label">
                 {formatContextWindowCost(usage.cost)}
               </span>
+            </div>
+          ) : null}
+          {promptCacheLabel ? (
+            <div className="flex items-center gap-1.5 text-2xs leading-4 text-secondary-label">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  promptCacheWarm ? "bg-success" : "bg-warning",
+                )}
+              />
+              <span className="tabular-nums">{promptCacheLabel}</span>
             </div>
           ) : null}
           {usage.compactsAutomatically ? (

@@ -2,6 +2,7 @@ import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3
 import { describe, expect, it } from "vite-plus/test";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import {
+  describePromptCache,
   hasAvailableCompactionProvider,
   hasDismissedResumeCompaction,
   resolveContextWindowModelDisplayName,
@@ -155,5 +156,41 @@ describe("shouldReserveContextWindowMeter", () => {
         providerReportsContextWindow: null,
       }),
     ).toBe(true);
+  });
+});
+
+describe("describePromptCache", () => {
+  const usage = { provider: "claudeAgent", updatedAt: "2026-10-19T12:00:00.000Z" };
+
+  it("counts down while the reported cache is warm", () => {
+    expect(
+      describePromptCache({
+        ...usage,
+        promptCacheTtlMs: 3_600_000,
+        now: "2026-10-19T12:19:00.000Z",
+      }),
+    ).toEqual({ warm: true, label: "Cache warm, expires in 41m" });
+    expect(
+      describePromptCache({ ...usage, promptCacheTtlMs: 300_000, now: "2026-10-19T12:04:30.000Z" }),
+    ).toEqual({ warm: true, label: "Cache warm, expires in <1m" });
+  });
+
+  it("says how long ago the cache expired", () => {
+    expect(
+      describePromptCache({ ...usage, promptCacheTtlMs: 300_000, now: "2026-10-19T13:10:00.000Z" }),
+    ).toEqual({ warm: false, label: "Cache expired 1h 5m ago" });
+  });
+
+  it("marks the time as estimated when Claude did not report a TTL", () => {
+    expect(describePromptCache({ ...usage, now: "2026-10-19T12:10:00.000Z" })).toEqual({
+      warm: true,
+      label: "Cache warm, expires in ~1h",
+    });
+  });
+
+  it("has nothing to say for providers without a known prompt cache", () => {
+    expect(
+      describePromptCache({ ...usage, provider: "codex", now: "2026-10-19T12:10:00.000Z" }),
+    ).toBeNull();
   });
 });

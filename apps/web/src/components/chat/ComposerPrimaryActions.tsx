@@ -55,6 +55,7 @@ interface ComposerPrimaryActionsProps {
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   compactBeforeSendTokens?: number | null;
+  promptCacheLabel?: string | null;
   compactRequested?: boolean;
   onToggleCompactRequested?: () => void;
 }
@@ -112,6 +113,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onInterrupt,
   onImplementPlanInNewThread,
   compactBeforeSendTokens = null,
+  promptCacheLabel = null,
   compactRequested = false,
   onToggleCompactRequested,
 }: ComposerPrimaryActionsProps) {
@@ -399,6 +401,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               ? `Next send compacts ${compactTokens} tokens first.`
               : `Next send keeps all ${compactTokens} tokens.`}
           </div>
+          {promptCacheLabel ? <div>{promptCacheLabel}</div> : null}
           <div>{compactRequested ? "Click to keep full history" : "Click to compact first"}</div>
         </TooltipPopup>
       </Tooltip>

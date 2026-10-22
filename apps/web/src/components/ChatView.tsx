@@ -316,6 +316,7 @@ import { resolveThreadSyncPhase } from "../threadSync";
 import {
   hasAvailableCompactionProvider,
   hasDismissedResumeCompaction,
+  describePromptCache,
   shouldOfferResumeCompaction,
 } from "./chat/ContextWindowMeter.logic";
 import {
@@ -2633,6 +2634,14 @@ export default function ChatView(props: ChatViewProps) {
     })
       ? activeContextWindow.usedTokens
       : null;
+  const promptCache = activeContextWindow
+    ? describePromptCache({
+        provider: selectedProvider,
+        updatedAt: activeContextWindow.updatedAt,
+        promptCacheTtlMs: activeThreadLiveTokenUsage?.promptCacheTtlMs,
+        now: `${nowMinute}:00.000Z`,
+      })
+    : null;
   const [compactRequestedThreadKeys, setCompactRequestedThreadKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -3711,6 +3720,8 @@ export default function ChatView(props: ChatViewProps) {
                               queuedRunsControl={queuedRunsControl}
                               bannerItems={composerBannerItems}
                               resumeCompactionTokens={resumeCompactionTokens}
+                              promptCacheLabel={promptCache?.label ?? null}
+                              promptCacheWarm={promptCache?.warm ?? false}
                               compactRequested={compactRequested}
                               onToggleCompactRequested={toggleCompactRequestedStable}
                               onUsageLimitsCommand={
