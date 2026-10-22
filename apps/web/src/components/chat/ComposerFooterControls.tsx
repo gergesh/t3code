@@ -216,8 +216,8 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   compactBeforeSendTokens: number | null;
-  keepFullHistory: boolean;
-  onToggleKeepFullHistory: () => void;
+  compactRequested: boolean;
+  onToggleCompactRequested: () => void;
 }) {
   return (
     <>
@@ -245,8 +245,8 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         compactBeforeSendTokens={props.compactBeforeSendTokens}
-        keepFullHistory={props.keepFullHistory}
-        onToggleKeepFullHistory={props.onToggleKeepFullHistory}
+        compactRequested={props.compactRequested}
+        onToggleCompactRequested={props.onToggleCompactRequested}
       >
         {props.children}
       </ComposerPrimaryActions>

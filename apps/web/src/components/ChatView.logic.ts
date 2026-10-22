@@ -1302,7 +1302,7 @@ export function planComposerTurn(input: {
   readonly worktreePath: string | null;
   readonly activeThreadBranch: string | null;
   readonly resumeCompactionTokens: number | null;
-  readonly keepFullHistory: boolean;
+  readonly compactRequested: boolean;
   readonly phase: SessionPhase;
   readonly dispatchMode: ComposerDispatchMode;
   /** The turn starts a new provider session, so it neither compacts first nor steers. */
@@ -1312,13 +1312,13 @@ export function planComposerTurn(input: {
     !input.sendQueuesBehindSetup && (!input.isServerThread || input.activeMessageCount === 0);
   const shouldCreateWorktree =
     isFirstMessage && input.sendEnvMode === "worktree" && !input.worktreePath;
-  // A stale Claude session compacts before this message so the turn does not re-read the
-  // old history. The message queues behind the /compact run, since steering into it is
-  // rejected.
+  // When the user opts in, a stale Claude session compacts before this message so the turn
+  // does not re-read the old history. The message queues behind the /compact run, since
+  // steering into it is rejected.
   const compactBeforeSend =
     !input.freshContext &&
     input.resumeCompactionTokens !== null &&
-    !input.keepFullHistory &&
+    input.compactRequested &&
     !COMPACT_COMMAND_PATTERN.test(input.messageText);
   const dispatchMode =
     input.freshContext && (input.dispatchMode === "steer" || input.dispatchMode === "restart")

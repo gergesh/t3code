@@ -2510,15 +2510,15 @@ export default function ChatView(props: ChatViewProps) {
     })
       ? activeContextWindow.usedTokens
       : null;
-  const [fullHistoryThreadKeys, setFullHistoryThreadKeys] = useState<ReadonlySet<string>>(
+  const [compactRequestedThreadKeys, setCompactRequestedThreadKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const keepFullHistory = fullHistoryThreadKeys.has(routeThreadKey);
-  const setKeepFullHistory = (threadKey: string, keep: boolean) => {
-    setFullHistoryThreadKeys((current) => {
-      if (current.has(threadKey) === keep) return current;
+  const compactRequested = compactRequestedThreadKeys.has(routeThreadKey);
+  const setCompactRequested = (threadKey: string, requested: boolean) => {
+    setCompactRequestedThreadKeys((current) => {
+      if (current.has(threadKey) === requested) return current;
       const next = new Set(current);
-      if (keep) next.add(threadKey);
+      if (requested) next.add(threadKey);
       else next.delete(threadKey);
       return next;
     });
@@ -2529,8 +2529,8 @@ export default function ChatView(props: ChatViewProps) {
   const freshSessionCommandAvailable =
     freshSessionAvailable && activePendingApproval === null && pendingUserInputs.length === 0;
   const freshSessionArmed = useFreshSessionArmed(routeThreadKey);
-  const toggleKeepFullHistory = () => setKeepFullHistory(routeThreadKey, !keepFullHistory);
-  const toggleKeepFullHistoryStable = useStableCallback(toggleKeepFullHistory);
+  const toggleCompactRequested = () => setCompactRequested(routeThreadKey, !compactRequested);
+  const toggleCompactRequestedStable = useStableCallback(toggleCompactRequested);
   const armFreshSessionStable = useStableCallback(() => armFreshSession(routeThreadKey));
   const handleRestoreThreadBranch = () => {
     if (!canWriteSourceControl || !vcsActionsSupported) return;
@@ -2941,7 +2941,7 @@ export default function ChatView(props: ChatViewProps) {
     isDraftHeroState,
     panelAnimationsActive,
     panelAnimationDurationMs,
-    keepFullHistory,
+    compactRequested,
     freshSessionAvailable: freshSessionCommandAvailable,
     resumeCompactionTokens,
     usageLimitsKey,
@@ -2969,7 +2969,7 @@ export default function ChatView(props: ChatViewProps) {
     },
     setFeedbackSubmissionsByThreadKey,
     setThreadError,
-    setKeepFullHistory,
+    setCompactRequested,
     anchorNewTurn,
     acknowledgeActiveThreadWoke,
     onSideChat: sideChat.available ? sendSideChatStable : undefined,
@@ -3677,8 +3677,8 @@ export default function ChatView(props: ChatViewProps) {
                                     : composerBannerItems
                                 }
                                 resumeCompactionTokens={resumeCompactionTokens}
-                                keepFullHistory={keepFullHistory}
-                                onToggleKeepFullHistory={toggleKeepFullHistoryStable}
+                                compactRequested={compactRequested}
+                                onToggleCompactRequested={toggleCompactRequestedStable}
                                 sideChatAvailable={sideChat.available}
                                 sideChatDisabledReason={sideChatDisabledReason}
                                 onFreshSession={
