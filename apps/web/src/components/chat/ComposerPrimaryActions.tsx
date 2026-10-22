@@ -66,6 +66,7 @@ interface ComposerPrimaryActionsProps {
   compactBeforeSendTokens?: number | null;
   hideCompactToggle?: boolean;
   promptCacheLabel?: string | null;
+  compactSkipReason?: string | null;
   compactRequested?: boolean;
   onToggleCompactRequested?: () => void;
 }
@@ -259,6 +260,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   compactBeforeSendTokens = null,
   hideCompactToggle = false,
   promptCacheLabel = null,
+  compactSkipReason = null,
   compactRequested = false,
   onToggleCompactRequested,
 }: ComposerPrimaryActionsProps) {
@@ -386,7 +388,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     compactBeforeSendTokens !== null && !showResume && !isEditingQueuedMessage
       ? formatContextWindowTokens(compactBeforeSendTokens)
       : null;
-  const compactsBeforeSend = compactTokens !== null && compactRequested;
+  const compactsBeforeSend =
+    compactTokens !== null && compactRequested && compactSkipReason === null;
 
   const submitLabel = showResume
     ? gt("Resume thread")
@@ -509,14 +512,19 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           render={
             <button
               type="button"
-              className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
+              className={cn(
+                "flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground",
+                compactSkipReason !== null && "cursor-default opacity-64",
+              )}
               {...pointerFocusProps}
-              aria-pressed={compactRequested}
+              aria-pressed={compactsBeforeSend}
+              // Not `disabled`, so the tooltip still explains why.
+              aria-disabled={compactSkipReason !== null}
               aria-label={gt("Compact {tokens} tokens of history before sending", {
                 tokens: compactTokens,
               })}
               disabled={!canOperateThread}
-              onClick={onToggleCompactRequested}
+              onClick={compactSkipReason === null ? onToggleCompactRequested : undefined}
             />
           }
         >
@@ -528,14 +536,17 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         </TooltipTrigger>
         <TooltipPopup>
           <div>
-            {compactRequested
-              ? gt("Next send compacts {tokens} tokens first.", { tokens: compactTokens })
-              : gt("Next send keeps all {tokens} tokens.", { tokens: compactTokens })}
+            {compactSkipReason ??
+              (compactRequested
+                ? gt("Next send compacts {tokens} tokens first.", { tokens: compactTokens })
+                : gt("Next send keeps all {tokens} tokens.", { tokens: compactTokens }))}
           </div>
           {promptCacheLabel ? <div>{promptCacheLabel}</div> : null}
-          <div>
-            {compactRequested ? gt("Click to keep full history") : gt("Click to compact first")}
-          </div>
+          {compactSkipReason === null ? (
+            <div>
+              {compactRequested ? gt("Click to keep full history") : gt("Click to compact first")}
+            </div>
+          ) : null}
         </TooltipPopup>
       </Tooltip>
       {children}
