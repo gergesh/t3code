@@ -224,6 +224,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   onInterrupt: () => void;
   compactBeforeSendTokens: number | null;
   hideCompactToggle: boolean;
+  promptCacheLabel: string | null;
   compactRequested: boolean;
   onToggleCompactRequested: () => void;
 }) {
@@ -255,6 +256,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         onInterrupt={props.onInterrupt}
         compactBeforeSendTokens={props.compactBeforeSendTokens}
         hideCompactToggle={props.hideCompactToggle}
+        promptCacheLabel={props.promptCacheLabel}
         compactRequested={props.compactRequested}
         onToggleCompactRequested={props.onToggleCompactRequested}
       >
