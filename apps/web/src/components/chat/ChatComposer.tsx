@@ -392,6 +392,7 @@ export interface ChatComposerProps {
   canSteer: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
   resumeCompactionTokens: number | null;
+  promptCacheLabel: string | null;
   compactRequested: boolean;
   onToggleCompactRequested: () => void;
   onUsageLimitsCommand?: (() => void) | undefined;
@@ -3875,6 +3876,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onInterrupt={handleInterruptPrimaryActionStable}
                     compactBeforeSendTokens={props.resumeCompactionTokens}
                     hideCompactToggle={dictationTakesFooter}
+                    promptCacheLabel={props.promptCacheLabel}
                     compactRequested={props.compactRequested}
                     onToggleCompactRequested={props.onToggleCompactRequested}
                   >
