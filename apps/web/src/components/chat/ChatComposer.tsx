@@ -373,6 +373,7 @@ export interface ChatComposerProps {
   isCompacting: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
   resumeCompactionTokens: number | null;
+  promptCacheLabel: string | null;
   compactRequested: boolean;
   onToggleCompactRequested: () => void;
   onUsageLimitsCommand?: (() => void) | undefined;
@@ -3622,6 +3623,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryActionStable}
                     compactBeforeSendTokens={props.resumeCompactionTokens}
+                    promptCacheLabel={props.promptCacheLabel}
                     compactRequested={props.compactRequested}
                     onToggleCompactRequested={props.onToggleCompactRequested}
                   >

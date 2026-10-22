@@ -333,6 +333,7 @@ import { hasAvailableCompactionProvider } from "./chat/compaction.logic";
 import {
   deriveLatestContextWindowSnapshot,
   hasDismissedResumeCompaction,
+  describePromptCache,
   latestProviderTurnTokenUsage,
   shouldOfferResumeCompaction,
 } from "@t3tools/client-runtime/state/context-window";
@@ -2510,6 +2511,14 @@ export default function ChatView(props: ChatViewProps) {
     })
       ? activeContextWindow.usedTokens
       : null;
+  const promptCache = activeContextWindow
+    ? describePromptCache({
+        provider: selectedProvider,
+        updatedAt: activeContextWindow.updatedAt,
+        promptCacheTtlMs: activeThreadLiveTokenUsage?.promptCacheTtlMs,
+        now: `${nowMinute}:00.000Z`,
+      })
+    : null;
   const [compactRequestedThreadKeys, setCompactRequestedThreadKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -3681,6 +3690,7 @@ export default function ChatView(props: ChatViewProps) {
                                 onToggleCompactRequested={toggleCompactRequestedStable}
                                 sideChatAvailable={sideChat.available}
                                 sideChatDisabledReason={sideChatDisabledReason}
+                                promptCacheLabel={promptCache?.label ?? null}
                                 onFreshSession={
                                   freshSessionCommandAvailable ? armFreshSessionStable : undefined
                                 }
