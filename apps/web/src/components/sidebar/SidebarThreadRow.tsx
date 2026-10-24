@@ -73,6 +73,8 @@ import { msg, T, useGT, useMessages, Var } from "gt-react";
 
 import type { MessageResolver } from "../../i18n/messages";
 
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
+import { useInlineActionConfirm } from "../pullRequest/useInlineActionConfirm";
 import { useRightPanelStore } from "../../rightPanelStore";
 import { useOpenPrLink } from "../../lib/openPullRequestLink";
 import { useUiStateStore } from "../../uiStateStore";
@@ -590,6 +592,8 @@ type SidebarThreadRowProps = {
   settlementSupported: boolean;
   snoozeSupported: boolean;
   pinningSupported: boolean;
+  /** The thread's project has a worktree merge command. */
+  worktreeMergeConfigured: boolean;
   isPinned: boolean;
   sortable?: SortableThreadRowBag | undefined;
   dropVerb: SidebarDropVerb | null;
@@ -626,6 +630,7 @@ type SidebarThreadRowProps = {
     source: ContextMenuSource,
   ) => void;
   onSettle: (threadRef: ScopedThreadRef) => void;
+  onMergeWorktree: (threadRef: ScopedThreadRef) => void;
   onActionSweepStart: (
     threadRef: ScopedThreadRef,
     action: SidebarSweepAction,
@@ -693,6 +698,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     onFileDropThreads,
     onRenameTitleChange,
     onSettle,
+    onMergeWorktree,
     onActionSweepStart,
     onSnooze,
     onStartRename,
@@ -710,6 +716,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
+  const mergeConfirm = useInlineActionConfirm(threadKey);
   const { leaseLiveStatus, rowRef: leaseRowRef } = useSidebarRowSubscriptionLease(props.isActive);
   const { revealRef } = props;
   const rowRef = (row: HTMLElement | null) => {
@@ -945,6 +952,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     event.stopPropagation();
     onSettle(threadRef);
   };
+  // Merging cannot be undone, so the first click only arms it.
+  const mergeConfirmProps = mergeConfirm.props("merge", () => onMergeWorktree(threadRef));
+  const handleMergeClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    mergeConfirmProps.onClick(event);
+  };
   const handleActionPointerDown = (event: ReactPointerEvent) => {
     if (!event.isPrimary || event.button !== 0) return;
     event.stopPropagation();
@@ -996,6 +1010,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   }
   const showSnoozeButton =
     canOperateThread && props.snoozeSupported && canSnooze(thread, { now: snoozeGateNow });
+  const showMergeButton =
+    canOperateThread &&
+    props.worktreeMergeConfigured &&
+    thread.worktreePath !== null &&
+    thread.branch !== null;
   // Closing here, not just masking, keeps the menu from reopening when the button returns.
   if (snoozeMenuOpenRaw && !showSnoozeButton) setSnoozeMenuOpen(false);
   const snoozeMenuOpen = snoozeMenuOpenRaw && showSnoozeButton;
@@ -1649,7 +1668,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       <RelativeTimeLabel timestamp={resolveThreadActivityTimestamp(thread)} />
                     )}
                   </span>
-                  {props.settlementSupported || showSnoozeButton || hasUnsentDraft ? (
+                  {props.settlementSupported ||
+                  showSnoozeButton ||
+                  showMergeButton ||
+                  hasUnsentDraft ? (
                     <span
                       className={cn(
                         // Mouse clicks leave Settle focused; focus-within would pin controls over
@@ -1685,6 +1707,34 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           timestampFormat={props.timestampFormat}
                           environmentId={thread.environmentId}
                         />
+                      ) : null}
+                      {showMergeButton ? (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <button
+                                type="button"
+                                aria-label={
+                                  mergeConfirm.isArmed("merge")
+                                    ? "Confirm merge"
+                                    : "Merge into the default branch"
+                                }
+                                onClick={handleMergeClick}
+                                onBlur={mergeConfirmProps.onBlur}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                              />
+                            }
+                          >
+                            <PullRequestGlyph.merged className="size-3.5" />
+                            {mergeConfirm.isArmed("merge") ? "Merge?" : null}
+                          </TooltipTrigger>
+                          <TooltipPopup>
+                            {mergeConfirm.isArmed("merge")
+                              ? "Click again to merge"
+                              : "Merge into the default branch"}
+                          </TooltipPopup>
+                        </Tooltip>
                       ) : null}
                       {props.settlementSupported ? (
                         <Tooltip>

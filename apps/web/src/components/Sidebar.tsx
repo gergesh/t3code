@@ -17,6 +17,7 @@ import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import * as Schema from "effect/Schema";
 import { resolveVcsTerminology } from "@t3tools/shared/vcs";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import {
   DndContext,
@@ -129,6 +130,7 @@ import {
 } from "../threadSelectionStore";
 import {
   canTurnThreadIntoProject,
+  readThreadWorktreeMergeAvailable,
   useAcknowledgeThreadWoke,
   useThreadActions,
 } from "../hooks/useThreadActions";
@@ -835,6 +837,15 @@ function useSidebarLookups() {
   const projectByKey = new Map(
     projects.map((project) => [`${project.environmentId}:${project.id}`, project] as const),
   );
+  const worktreeMergeProjectKeys = new Set(
+    projects.flatMap((project) => {
+      const settings = serverConfigs.get(project.environmentId)?.settings;
+      return settings &&
+        resolveProjectSettings(settings, project.id).settings.worktreeCommands.merge !== ""
+        ? [`${project.environmentId}:${project.id}`]
+        : [];
+    }),
+  );
   const projectDisplayNameByKey = new Map(
     projectGroups.flatMap((group) =>
       group.memberProjects.map(
@@ -860,6 +871,7 @@ function useSidebarLookups() {
     environmentLabelById,
     providerEntriesByEnvironment,
     projectByKey,
+    worktreeMergeProjectKeys,
     projectDisplayNameByKey,
     projectGroupByScopeKey,
     projectScopeItems,
@@ -929,6 +941,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     environmentLabelById,
     providerEntriesByEnvironment,
     projectByKey,
+    worktreeMergeProjectKeys,
     projectDisplayNameByKey,
     projectGroupByScopeKey,
     projectScopeItems: lookupProjectScopeItems,
@@ -944,6 +957,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const {
     settleThread,
     unsettleThread,
+    mergeThreadWorktree,
+    confirmAndMergeThreadWorktree,
     snoozeThread,
     unsnoozeThread,
     pinThread,
@@ -2739,6 +2754,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               terminology,
               isPinned,
               isSettled,
+              canMergeWorktree: readThreadWorktreeMergeAvailable(threadRef),
               autoSettleEnabled: thread.autoSettleDisabledAt == null,
               isSnoozed,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
@@ -2820,6 +2836,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "unsettle":
             attemptUnsettle(threadRef);
+            return;
+          case "merge-worktree":
+            void confirmAndMergeThreadWorktree(threadRef);
             return;
           case "unsnooze":
             attemptUnsnooze(threadRef);
@@ -3557,6 +3576,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             settlementSupported={serverConfigs.has(thread.environmentId)}
                             snoozeSupported={serverConfigs.has(thread.environmentId)}
                             pinningSupported={serverConfigs.has(thread.environmentId)}
+                            worktreeMergeConfigured={worktreeMergeProjectKeys.has(
+                              `${thread.environmentId}:${thread.projectId}`,
+                            )}
                             isPinned={thread.pinnedAt != null}
                             dropVerb={
                               dragState?.activeKey === threadKey
@@ -3618,6 +3640,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             renamingTitle={renamingThreadKey === threadKey ? renamingTitle : ""}
                             onContextMenu={handleThreadContextMenu}
                             onSettle={attemptSettle}
+                            onMergeWorktree={mergeThreadWorktree}
                             onActionSweepStart={startActionSweep}
                             onUnsettle={attemptUnsettle}
                             onSnooze={attemptSnooze}

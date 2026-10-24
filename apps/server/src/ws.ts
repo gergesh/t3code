@@ -3322,6 +3322,15 @@ export const layerWsRpc = (
                 .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid),
             ),
           ),
+        [WS_METHODS.vcsMergeWorktree]: (input) =>
+          gitWorkflow.mergeWorktree(input).pipe(
+            Effect.tap(() => refreshGitStatus(input.cwd)),
+            Effect.tap(() =>
+              vcsStatusBroadcaster
+                .refreshLocalStatus(input.path)
+                .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid),
+            ),
+          ),
         [WS_METHODS.vcsCreateRef]: (input) =>
           (input.switchRef
             ? assertCheckoutIdle("GitWorkflowService.createRef", input.cwd)

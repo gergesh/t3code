@@ -9,6 +9,7 @@ const baseState: ThreadActionMenuState = {
   projectFilter: null,
   isPinned: false,
   isSettled: false,
+  canMergeWorktree: false,
   autoSettleEnabled: true,
   isSnoozed: false,
   canSnoozeNow: true,
