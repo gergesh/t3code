@@ -29,10 +29,17 @@ const COMMAND_KINDS = [
     description:
       "Runs instead of the built-in worktree removal, at the project root. It must delete $T3CODE_WORKTREE_PATH.",
   },
+  {
+    kind: "merge",
+    searchId: "worktree-merge-command",
+    label: "worktree merge command",
+    description:
+      "Runs from the Merge action on worktree threads, at the project root. It must merge $T3CODE_BRANCH into the default branch and delete $T3CODE_WORKTREE_PATH.",
+  },
 ] as const;
 
 /**
- * Custom worktree create/remove commands. A project's t3.json can suggest
+ * Custom worktree create/remove/merge commands. A project's t3.json can suggest
  * them, but they only run once imported here, so opening a repository never
  * runs its commands on its own. Importing also brings the file's setup action,
  * which usually prepares the checkout those commands create.
@@ -63,6 +70,7 @@ export function WorktreeCommandsSettings() {
     suggested !== undefined &&
     ((suggested.create ?? "") !== commands.create ||
       (suggested.remove ?? "") !== commands.remove ||
+      (suggested.merge ?? "") !== commands.merge ||
       setupScript !== undefined);
 
   // One write for both keys: each override write replaces the project's whole entry.
@@ -78,7 +86,11 @@ export function WorktreeCommandsSettings() {
         )
       : null;
     updateSettings({
-      worktreeCommands: { create: suggested.create ?? "", remove: suggested.remove ?? "" },
+      worktreeCommands: {
+        create: suggested.create ?? "",
+        remove: suggested.remove ?? "",
+        merge: suggested.merge ?? "",
+      },
       ...(newScript
         ? {
             defaultProjectScripts: [
@@ -116,7 +128,7 @@ export function WorktreeCommandsSettings() {
             className="w-full"
             value={mixed ? "" : commands[kind]}
             onCommit={(next) => updateSettings({ worktreeCommands: { [kind]: next } })}
-            placeholder={mixed ? "Mixed" : "Built-in"}
+            placeholder={mixed ? "Mixed" : kind === "merge" ? "None" : "Built-in"}
             spellCheck={false}
             aria-label={label}
           />

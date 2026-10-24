@@ -136,6 +136,7 @@ vi.mock("./useSettings", () => ({
 }));
 vi.mock("./useThreadActions", () => ({
   canTurnThreadIntoProject: () => false,
+  readThreadWorktreeMergeAvailable: () => false,
   useThreadActions: () =>
     Object.fromEntries(
       [

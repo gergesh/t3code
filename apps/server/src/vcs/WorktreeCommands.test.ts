@@ -57,17 +57,23 @@ describe("WorktreeCommands", () => {
       assert.deepStrictEqual(yield* commands.resolve("/repo"), {
         create: "project-create",
         remove: "",
+        merge: "",
       });
       assert.deepStrictEqual(yield* commands.resolve("/elsewhere"), {
         create: "environment-create",
         remove: "environment-remove",
+        merge: "",
       });
     }).pipe(
       Effect.provide(
         makeLayer({
-          worktreeCommands: { create: "environment-create", remove: "environment-remove" },
+          worktreeCommands: {
+            create: "environment-create",
+            remove: "environment-remove",
+            merge: "",
+          },
           projectSettingsOverrides: {
-            [projectId]: { worktreeCommands: { create: "project-create", remove: "" } },
+            [projectId]: { worktreeCommands: { create: "project-create", remove: "", merge: "" } },
           },
         }),
       ),

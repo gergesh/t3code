@@ -1149,6 +1149,8 @@ export type WorktreeCleanup = typeof WorktreeCleanup.Type;
 export const WorktreeCommands = Schema.Struct({
   create: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   remove: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  /** No built-in step: an empty command hides the Merge action. */
+  merge: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 });
 export type WorktreeCommands = typeof WorktreeCommands.Type;
 
@@ -1895,6 +1897,7 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       create: Schema.optionalKey(TrimmedString),
       remove: Schema.optionalKey(TrimmedString),
+      merge: Schema.optionalKey(TrimmedString),
     }),
   ),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
