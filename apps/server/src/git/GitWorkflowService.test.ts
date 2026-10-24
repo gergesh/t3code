@@ -63,7 +63,7 @@ function makeLayer(input: {
   return GitWorkflowService.layer.pipe(
     Layer.provide(
       Layer.mock(WorktreeCommands.WorktreeCommands)({
-        resolve: () => Effect.succeed({ create: "", remove: "" }),
+        resolve: () => Effect.succeed({ create: "", remove: "", merge: "" }),
         ...input.worktreeCommands,
       }),
     ),
@@ -1233,7 +1233,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
                 ),
             },
             worktreeCommands: {
-              resolve: () => Effect.succeed({ create: "make-worktree", remove: "" }),
+              resolve: () => Effect.succeed({ create: "make-worktree", remove: "", merge: "" }),
               run,
             },
           }),
@@ -1261,7 +1261,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
                 pruneWorktrees,
               },
               worktreeCommands: {
-                resolve: () => Effect.succeed({ create: "", remove: "drop-worktree" }),
+                resolve: () => Effect.succeed({ create: "", remove: "drop-worktree", merge: "" }),
                 run: ({ env }) =>
                   fileSystem
                     .remove(env.T3CODE_WORKTREE_PATH!, { recursive: true })
@@ -1291,7 +1291,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
               resolve: () => Effect.succeed(handleFor("git")),
               git: { execute: () => gitStatus(" M src/index.ts\n") },
               worktreeCommands: {
-                resolve: () => Effect.succeed({ create: "", remove: "drop-worktree" }),
+                resolve: () => Effect.succeed({ create: "", remove: "drop-worktree", merge: "" }),
                 run,
               },
             }),
@@ -1323,7 +1323,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
               git: { execute: gitExecute, pruneWorktrees: gitPrune },
               jj: { pruneWorktrees: jjPrune },
               worktreeCommands: {
-                resolve: () => Effect.succeed({ create: "", remove: "drop-workspace" }),
+                resolve: () => Effect.succeed({ create: "", remove: "drop-workspace", merge: "" }),
                 run: ({ env }) =>
                   fileSystem
                     .remove(env.T3CODE_WORKTREE_PATH!, { recursive: true })
@@ -1352,7 +1352,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
               detect: () => Effect.succeed(handleFor("git")),
               resolve: () => Effect.succeed(handleFor("git")),
               worktreeCommands: {
-                resolve: () => Effect.succeed({ create: "", remove: "true" }),
+                resolve: () => Effect.succeed({ create: "", remove: "true", merge: "" }),
                 run: () => Effect.succeed(""),
               },
             }),
@@ -1366,6 +1366,124 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
         assert.instanceOf(error, GitCommandError);
         expect(error.detail).toContain("left");
       }).pipe(Effect.provide(NodeServices.layer)),
+    );
+
+    it.effect("runs the merge command for the branch and prunes after it", () => {
+      const run = vi.fn(
+        (_input: Parameters<WorktreeCommands.WorktreeCommands["Service"]["run"]>[0]) =>
+          Effect.succeed(""),
+      );
+      const pruneWorktrees = vi.fn(() => Effect.void);
+
+      return Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        // A child of the scoped temp dir, so the scope's own cleanup survives the removal.
+        const worktreePath = `${yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-custom-merge-" })}/worktree`;
+        yield* fileSystem.makeDirectory(worktreePath);
+        const workflow = yield* GitWorkflowService.GitWorkflowService.pipe(
+          Effect.provide(
+            makeLayer({
+              detect: () => Effect.succeed(handleFor("git")),
+              resolve: () => Effect.succeed(handleFor("git")),
+              git: { execute: () => gitStatus(""), pruneWorktrees },
+              worktreeCommands: {
+                resolve: () => Effect.succeed({ create: "", remove: "", merge: "jw merge" }),
+                run: (input) =>
+                  run(input).pipe(
+                    Effect.andThen(fileSystem.remove(worktreePath, { recursive: true })),
+                    Effect.as(""),
+                    Effect.orDie,
+                  ),
+              },
+            }),
+          ),
+        );
+
+        yield* workflow.mergeWorktree({ cwd: "/repo", path: worktreePath, branch: "t3/feature" });
+
+        const [call] = run.mock.calls[0]!;
+        assert.equal(call.command, "jw merge");
+        assert.deepStrictEqual(call.env, {
+          T3CODE_PROJECT_ROOT: "/repo",
+          T3CODE_WORKTREE_PATH: worktreePath,
+          T3CODE_BRANCH: "t3/feature",
+        });
+        assert.equal(pruneWorktrees.mock.calls.length, 1);
+      }).pipe(Effect.provide(NodeServices.layer));
+    });
+
+    it.effect("refuses to merge a git worktree with uncommitted changes", () => {
+      const run = vi.fn(() => Effect.succeed(""));
+
+      return Effect.gen(function* () {
+        const workflow = yield* GitWorkflowService.GitWorkflowService.pipe(
+          Effect.provide(
+            makeLayer({
+              detect: () => Effect.succeed(handleFor("git")),
+              resolve: () => Effect.succeed(handleFor("git")),
+              git: { execute: () => gitStatus("?? notes.txt\n") },
+              worktreeCommands: {
+                resolve: () => Effect.succeed({ create: "", remove: "", merge: "jw merge" }),
+                run,
+              },
+            }),
+          ),
+        );
+
+        const error = yield* Effect.flip(
+          workflow.mergeWorktree({ cwd: "/repo", path: "/worktree", branch: "t3/feature" }),
+        );
+
+        expect(error.detail).toContain("uncommitted changes");
+        assert.equal(run.mock.calls.length, 0);
+      });
+    });
+
+    it.effect("refuses to merge a jj workspace whose working copy has changes", () => {
+      const run = vi.fn(() => Effect.succeed(""));
+
+      return Effect.gen(function* () {
+        const workflow = yield* GitWorkflowService.GitWorkflowService.pipe(
+          Effect.provide(
+            makeLayer({
+              detect: () => Effect.succeed(handleFor("jj")),
+              jjDriver: {
+                currentChange: () => Effect.succeed({ empty: false } as JjVcsDriver.JjChange),
+              },
+              worktreeCommands: {
+                resolve: () => Effect.succeed({ create: "", remove: "", merge: "jw merge" }),
+                run,
+              },
+            }),
+          ),
+        );
+
+        const error = yield* Effect.flip(
+          workflow.mergeWorktree({ cwd: "/repo", path: "/workspace", branch: "t3/feature" }),
+        );
+
+        expect(error.detail).toContain("uncommitted changes");
+        assert.equal(run.mock.calls.length, 0);
+      });
+    });
+
+    it.effect("refuses to merge when the project has no merge command", () =>
+      Effect.gen(function* () {
+        const workflow = yield* GitWorkflowService.GitWorkflowService.pipe(
+          Effect.provide(
+            makeLayer({
+              detect: () => Effect.succeed(handleFor("git")),
+              resolve: () => Effect.succeed(handleFor("git")),
+            }),
+          ),
+        );
+
+        const error = yield* Effect.flip(
+          workflow.mergeWorktree({ cwd: "/repo", path: "/worktree", branch: "t3/feature" }),
+        );
+
+        expect(error.detail).toContain("no worktree merge command");
+      }),
     );
   });
 });

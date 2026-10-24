@@ -7,6 +7,7 @@
  */
 import {
   GitCommandError,
+  type VcsMergeWorktreeInput,
   type VcsRemoveWorktreeInput,
   type WorktreeCommands as WorktreeCommandsSetting,
 } from "@t3tools/contracts";
@@ -61,10 +62,18 @@ export function worktreeRemoveCommandEnv(input: VcsRemoveWorktreeInput): Record<
   };
 }
 
+export function worktreeMergeCommandEnv(input: VcsMergeWorktreeInput): Record<string, string> {
+  return {
+    T3CODE_PROJECT_ROOT: input.cwd,
+    T3CODE_WORKTREE_PATH: input.path,
+    T3CODE_BRANCH: input.branch,
+  };
+}
+
 export class WorktreeCommands extends Context.Service<
   WorktreeCommands,
   {
-    /** The effective commands for the project rooted at `projectCwd`; `""` keeps the built-in step. */
+    /** The effective commands for the project rooted at `projectCwd`; `""` keeps the built-in step, or for merge, means there is none. */
     readonly resolve: (
       projectCwd: string,
     ) => Effect.Effect<WorktreeCommandsSetting, GitCommandError>;

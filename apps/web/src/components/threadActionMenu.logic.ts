@@ -15,6 +15,7 @@ export type ThreadActionMenuId =
   | "unpin"
   | "settle"
   | "unsettle"
+  | "merge-worktree"
   | "auto-settle"
   | "auto-settle:enabled"
   | "auto-settle:disabled"
@@ -106,6 +107,8 @@ export interface ThreadActionMenuState {
   readonly terminology?: VcsTerminology;
   readonly isPinned: boolean;
   readonly isSettled: boolean;
+  /** The thread has a worktree and its project a worktree merge command. */
+  readonly canMergeWorktree: boolean;
   readonly autoSettleEnabled: boolean;
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
@@ -176,6 +179,9 @@ export function buildThreadActionMenuItems(
               }
             : { id: "settle" as const, label: resolve(msg("Settle thread")), icon: "circle-check" },
         ]
+      : []),
+    ...(state.canMergeWorktree
+      ? [{ id: "merge-worktree" as const, label: "Merge into default branch", icon: "git-merge" }]
       : []),
     ...(state.supports.snooze
       ? [
