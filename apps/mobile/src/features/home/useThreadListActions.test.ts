@@ -97,6 +97,8 @@ vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: unknown) => command,
 }));
 vi.mock("../../state/use-thread-outbox", () => ({ queuedThreadKeysAtom: "queued-thread-keys" }));
+vi.mock("../../state/projects", () => ({ environmentProjects: { projectAtom: () => "project" } }));
+vi.mock("../../state/vcs", () => ({ vcsEnvironment: { mergeWorktree: "merge-worktree" } }));
 vi.mock("../../state/thread-order", () => ({
   threadDropBusyAtom: "thread-drop-busy",
   getPendingThreadOrder: () => state.pendingOrder,

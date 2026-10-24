@@ -9,6 +9,7 @@ import {
   type ServerSettings,
   type ServerSettingsPatch,
   type ThreadEnvMode,
+  type WorktreeCommands,
   type WorktreeSubmodules,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   type ProjectScopedServerSettingKey,
@@ -97,6 +98,12 @@ const WORKTREE_COMMAND_FIELDS = [
     label: "Remove command",
     subtitle:
       "Runs instead of the built-in worktree removal. It must delete $T3CODE_WORKTREE_PATH.",
+  },
+  {
+    kind: "merge",
+    label: "Merge command",
+    subtitle:
+      "Runs from the Merge action on worktree threads. It must merge $T3CODE_BRANCH into the default branch and delete $T3CODE_WORKTREE_PATH.",
   },
 ] as const;
 
@@ -264,7 +271,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
     (target) =>
       target.environment.serverConfig.environment.capabilities.threadRestartContinuation === true,
   );
-  const uniformWorktreeCommand = (kind: "create" | "remove") => {
+  const uniformWorktreeCommand = (kind: keyof WorktreeCommands) => {
     const value = displayTargets[0]?.settings.worktreeCommands[kind] ?? null;
     return displayTargets.every((target) => target.settings.worktreeCommands[kind] === value)
       ? value
@@ -272,8 +279,12 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
   };
   // An environment patch merges, but a project write replaces the whole override value, so
   // it carries the other command along.
-  const writeWorktreeCommand = (kind: "create" | "remove", value: string) => {
-    const current = displayTargets[0]?.settings.worktreeCommands ?? { create: "", remove: "" };
+  const writeWorktreeCommand = (kind: keyof WorktreeCommands, value: string) => {
+    const current = displayTargets[0]?.settings.worktreeCommands ?? {
+      create: "",
+      remove: "",
+      merge: "",
+    };
     write({
       worktreeCommands: projectSelected ? { ...current, [kind]: value } : { [kind]: value },
     });
@@ -440,6 +451,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                         key={field.kind}
                         label={field.label}
                         subtitle={field.subtitle}
+                        emptyPlaceholder={field.kind === "merge" ? "None" : "Built-in"}
                         value={uniformWorktreeCommand(field.kind)}
                         disabled={disabledFor("worktreeCommands")}
                         onCommit={(value) => writeWorktreeCommand(field.kind, value)}

@@ -534,6 +534,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["custom script workspace provider delete cleanup teardown t3.json"],
   },
   {
+    id: "worktree-merge-command",
+    title: "Worktree merge command",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["custom script workspace land integrate default branch main jw t3.json"],
+  },
+  {
     id: "add-project-starts-in",
     title: "Add project starts in",
     to: "/settings/general",

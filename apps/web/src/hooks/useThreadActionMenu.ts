@@ -47,7 +47,7 @@ import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
-import { useThreadActions } from "./useThreadActions";
+import { readThreadWorktreeMergeAvailable, useThreadActions } from "./useThreadActions";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -81,6 +81,7 @@ export function useThreadActionMenu(input: {
   const {
     settleThread,
     unsettleThread,
+    confirmAndMergeThreadWorktree,
     snoozeThread,
     unsnoozeThread,
     pinThread,
@@ -145,6 +146,7 @@ export function useThreadActionMenu(input: {
         projectFilter: null,
         isPinned: thread.pinnedAt != null,
         isSettled: supports.settlement && thread.settledOverride === "settled",
+        canMergeWorktree: readThreadWorktreeMergeAvailable(threadRef),
         autoSettleEnabled: thread.autoSettleDisabledAt == null,
         isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
@@ -223,6 +225,9 @@ export function useThreadActionMenu(input: {
           return;
         case "unsettle":
           await reportFailure("Failed to un-settle thread", () => unsettleThread(threadRef));
+          return;
+        case "merge-worktree":
+          await confirmAndMergeThreadWorktree(threadRef);
           return;
         case "unsnooze":
           await reportFailure("Failed to wake thread", () => unsnoozeThread(threadRef));

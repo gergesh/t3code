@@ -382,7 +382,7 @@ describe("scoped settings writes", () => {
         patch: {
           projectSettingsOverrides: {
             [projectId]: {
-              worktreeCommands: { create: "jw add", remove: "jw remove" },
+              worktreeCommands: { create: "jw add", remove: "jw remove", merge: "" },
               defaultProjectScripts: [setup],
             },
           },

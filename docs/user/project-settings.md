@@ -200,6 +200,12 @@ absolute path as the last line of its output. The remove command must delete the
 Code checks both and reports the command's output when it fails. It still refuses to remove a
 Git worktree with uncommitted changes unless the removal is forced.
 
+**Worktree merge command** has no built-in step. When you set it, worktree threads get a **Merge**
+action next to **Settle** in the sidebar (click it twice to confirm), in the thread menu, and in the
+mobile thread menu. The command must merge `T3CODE_BRANCH` into the default branch and delete
+`T3CODE_WORKTREE_PATH`. T3 Code refuses to run it while the worktree has uncommitted changes, checks
+that the worktree is gone afterwards, and then settles the thread.
+
 A repository can suggest commands in `t3.json`:
 
 ```json

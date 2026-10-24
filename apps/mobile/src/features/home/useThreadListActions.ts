@@ -14,9 +14,11 @@ import { scopedThreadKey } from "../../lib/scopedEntities";
 import { refreshArchivedThreadsForEnvironment } from "../archive/useArchivedThreadSnapshots";
 import { pinOrderKeyBetween } from "@t3tools/client-runtime/state/thread-sort";
 import { appAtomRegistry } from "../../state/atom-registry";
+import { environmentProjects } from "../../state/projects";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { readEnvironmentScope } from "../../state/session";
 import { environmentThreadShells, threadEnvironment } from "../../state/threads";
+import { vcsEnvironment } from "../../state/vcs";
 import { queuedThreadKeysAtom } from "../../state/use-thread-outbox";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -220,6 +222,63 @@ function confirmThreadDeletion(
       void executeAction("delete", thread);
     },
   });
+}
+
+/**
+ * Runs the project's worktree merge command, which merges the thread's branch into the default
+ * branch and deletes its worktree, then settles the thread: its work has landed.
+ */
+export function useMergeThreadWorktree() {
+  const mergeMutation = useAtomCommand(vcsEnvironment.mergeWorktree, { reportFailure: false });
+  const settleMutation = useAtomCommand(threadEnvironment.settle, { reportFailure: false });
+  const merge = async (thread: EnvironmentThreadShell, branch: string, worktreePath: string) => {
+    const project = appAtomRegistry.get(
+      environmentProjects.projectAtom({
+        environmentId: thread.environmentId,
+        projectId: thread.projectId,
+      }),
+    );
+    if (project === null) {
+      Dialog.alert(`Could not merge ${branch}`, "The thread's project is not loaded yet.");
+      return;
+    }
+    selectionHaptic();
+    const merged = await mergeMutation({
+      environmentId: thread.environmentId,
+      input: { cwd: project.workspaceRoot, path: worktreePath, branch },
+    });
+    if (merged._tag === "Failure") {
+      const error = Cause.squash(merged.cause);
+      Dialog.alert(
+        `Could not merge ${branch}`,
+        error instanceof Error ? error.message : "The merge command failed.",
+      );
+      return;
+    }
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (!environmentSupportsSettlement(thread.environmentId)) return;
+    const settled = await settleMutation({
+      environmentId: thread.environmentId,
+      input: { threadId: thread.id },
+    });
+    if (settled._tag === "Failure") {
+      Dialog.alert(`Merged ${branch}`, "The thread could not be settled.");
+    }
+  };
+  return (thread: EnvironmentThreadShell) => {
+    const { branch, worktreePath } = thread;
+    if (!branch || !worktreePath) return;
+    if (!checkThreadOperationPermission(thread, `Could not merge ${branch}`)) return;
+    Dialog.confirm({
+      title: `Merge ${branch}?`,
+      message:
+        "This runs the project's merge command, which merges it into the default branch and deletes the worktree, then settles the thread.",
+      confirmText: "Merge",
+      onConfirm: () => {
+        void merge(thread, branch, worktreePath);
+      },
+    });
+  };
 }
 
 export function useThreadListActions(): {

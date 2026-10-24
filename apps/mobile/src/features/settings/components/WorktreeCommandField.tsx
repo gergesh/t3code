@@ -8,6 +8,8 @@ import { cn } from "../../../lib/cn";
 export function WorktreeCommandField(props: {
   readonly label: string;
   readonly subtitle: string;
+  /** What an empty command means; merge has no built-in step to fall back to. */
+  readonly emptyPlaceholder: string;
   readonly value: string | null;
   readonly disabled: boolean;
   readonly onCommit: (value: string) => void;
@@ -33,7 +35,7 @@ export function WorktreeCommandField(props: {
         autoCapitalize="none"
         autoCorrect={false}
         spellCheck={false}
-        placeholder={props.value === null ? "Mixed" : "Built-in"}
+        placeholder={props.value === null ? "Mixed" : props.emptyPlaceholder}
         placeholderTextColorClassName="accent-foreground-muted"
         accessibilityLabel={props.label}
         editable={!props.disabled}

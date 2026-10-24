@@ -20,6 +20,7 @@ import {
   type GitPreparePullRequestThreadResult,
   type GitPullRequestRefInput,
   type VcsPullResult,
+  type VcsMergeWorktreeInput,
   type VcsRemoveWorktreeInput,
   type GitResolvePullRequestResult,
   type GitRunStackedActionInput,
@@ -141,6 +142,8 @@ type WorkflowKind = "git" | "jj";
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
   VcsWorkflowOps & {
+    /** Runs the project's custom merge command, which merges the branch and deletes the worktree. */
+    readonly mergeWorktree: (input: VcsMergeWorktreeInput) => Effect.Effect<void, GitCommandError>;
     /** Whether this service supports the repository containing the supplied path. */
     readonly isRepository: (cwd: string) => Effect.Effect<boolean, GitManagerServiceError>;
     readonly providerCwd: (cwd: string) => Effect.Effect<string, GitManagerServiceError>;
@@ -253,6 +256,48 @@ export const make = Effect.gen(function* () {
         : jjWorkflow.pruneWorktrees({ cwd: input.cwd });
     },
   );
+
+  const mergeWithCustomCommand = Effect.fn("GitWorkflowService.mergeWithCustomCommand")(function* (
+    kind: WorkflowKind,
+    command: string,
+    input: VcsMergeWorktreeInput,
+  ) {
+    const operation = "GitWorkflowService.mergeWorktree";
+    const fail = (detail: string, cause?: unknown) =>
+      new GitCommandError({ operation, command, cwd: input.cwd, detail, cause });
+    // Merging deletes the worktree, so work that is not yet in a commit would be lost.
+    const dirty =
+      kind === "git"
+        ? (yield* git.execute({
+            operation,
+            cwd: input.path,
+            args: ["status", "--porcelain"],
+          })).stdout.trim() !== ""
+        : !(yield* jj
+            .currentChange(input.path)
+            .pipe(
+              Effect.mapError((cause) =>
+                fail(`Could not read the working copy at ${input.path}.`, cause),
+              ),
+            )).empty;
+    if (dirty) {
+      return yield* fail(
+        `${input.path} has uncommitted changes. Commit or discard them before merging.`,
+      );
+    }
+    yield* worktreeCommands.run({
+      operation,
+      command,
+      projectCwd: input.cwd,
+      env: WorktreeCommands.worktreeMergeCommandEnv(input),
+    });
+    if (yield* pathExists(input.path)) {
+      return yield* fail(`The custom worktree merge command left ${input.path} in place.`);
+    }
+    yield* kind === "git"
+      ? git.pruneWorktrees({ cwd: input.cwd })
+      : jjWorkflow.pruneWorktrees({ cwd: input.cwd });
+  });
 
   const ensureGit = Effect.fn("GitWorkflowService.ensureGit")(function* (
     operation: string,
@@ -764,6 +809,28 @@ export const make = Effect.gen(function* () {
                         : jjWorkflow.removeWorktree(input),
                   ),
                 ),
+        ),
+      ),
+    mergeWorktree: (input) =>
+      resolveWorkspaceKind(input.cwd, input.path).pipe(
+        undetectableCommand("GitWorkflowService.mergeWorktree", input.cwd),
+        Effect.flatMap((kind) =>
+          kind === null
+            ? notARepositoryCommand("GitWorkflowService.mergeWorktree", input.cwd)
+            : worktreeCommands.resolve(input.cwd).pipe(
+                Effect.flatMap(({ merge }) =>
+                  merge === ""
+                    ? Effect.fail(
+                        new GitCommandError({
+                          operation: "GitWorkflowService.mergeWorktree",
+                          command: "worktree merge command",
+                          cwd: input.cwd,
+                          detail: "This project has no worktree merge command.",
+                        }),
+                      )
+                    : mergeWithCustomCommand(kind, merge, input),
+                ),
+              ),
         ),
       ),
     pruneWorktrees: route("GitWorkflowService.pruneWorktrees", commandRouting, {

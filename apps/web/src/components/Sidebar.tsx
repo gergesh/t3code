@@ -15,6 +15,7 @@ import { Atom } from "effect/reactivity";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 import { resolveVcsTerminology, type VcsTerminology } from "@t3tools/shared/vcs";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import {
   DndContext,
@@ -112,7 +113,11 @@ import {
   getThreadKeysToDeselectAfterDelete,
   useThreadSelectionStore,
 } from "../threadSelectionStore";
-import { useAcknowledgeThreadWoke, useThreadActions } from "../hooks/useThreadActions";
+import {
+  readThreadWorktreeMergeAvailable,
+  useAcknowledgeThreadWoke,
+  useThreadActions,
+} from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
 import { useTerminalFocus } from "../hooks/useTerminalFocus";
@@ -719,6 +724,15 @@ function useSidebarLookups() {
   const projectByKey = new Map(
     projects.map((project) => [`${project.environmentId}:${project.id}`, project] as const),
   );
+  const worktreeMergeProjectKeys = new Set(
+    projects.flatMap((project) => {
+      const settings = serverConfigs.get(project.environmentId)?.settings;
+      return settings &&
+        resolveProjectSettings(settings, project.id).settings.worktreeCommands.merge !== ""
+        ? [`${project.environmentId}:${project.id}`]
+        : [];
+    }),
+  );
   const projectDisplayNameByKey = new Map(
     projectGroups.flatMap((group) =>
       group.memberProjects.map(
@@ -740,6 +754,7 @@ function useSidebarLookups() {
     environmentLabelById,
     providerEntriesByEnvironment,
     projectByKey,
+    worktreeMergeProjectKeys,
     projectDisplayNameByKey,
     projectGroupByScopeKey,
     projectScopeItems,
@@ -787,6 +802,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     environmentLabelById,
     providerEntriesByEnvironment,
     projectByKey,
+    worktreeMergeProjectKeys,
     projectDisplayNameByKey,
     projectGroupByScopeKey,
     projectScopeItems,
@@ -801,6 +817,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const {
     settleThread,
     unsettleThread,
+    mergeThreadWorktree,
+    confirmAndMergeThreadWorktree,
     snoozeThread,
     unsnoozeThread,
     pinThread,
@@ -2406,6 +2424,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               terminology,
               isPinned,
               isSettled,
+              canMergeWorktree: readThreadWorktreeMergeAvailable(threadRef),
               autoSettleEnabled: thread.autoSettleDisabledAt == null,
               isSnoozed,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
@@ -2479,6 +2498,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "unsettle":
             attemptUnsettle(threadRef);
+            return;
+          case "merge-worktree":
+            void confirmAndMergeThreadWorktree(threadRef);
             return;
           case "unsnooze":
             attemptUnsnooze(threadRef);
@@ -3022,6 +3044,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               serverConfigs.get(thread.environmentId)?.environment.capabilities
                                 .threadPinning === true
                             }
+                            worktreeMergeConfigured={worktreeMergeProjectKeys.has(
+                              `${thread.environmentId}:${thread.projectId}`,
+                            )}
                             isPinned={thread.pinnedAt != null}
                             dropVerb={
                               dragState?.activeKey === threadKey
@@ -3080,6 +3105,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             renamingTitle={renamingThreadKey === threadKey ? renamingTitle : ""}
                             onContextMenu={handleThreadContextMenu}
                             onSettle={attemptSettle}
+                            onMergeWorktree={mergeThreadWorktree}
                             onActionSweepStart={startActionSweep}
                             onUnsettle={attemptUnsettle}
                             onSnooze={attemptSnooze}

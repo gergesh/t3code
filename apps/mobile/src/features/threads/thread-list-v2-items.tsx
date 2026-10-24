@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import * as Dialog from "../../components/ui/Dialog";
 import type { ThreadRowProviderInstance } from "./thread-provider-instance";
 import {
@@ -12,6 +13,7 @@ import { RowPressable } from "../../components/ui/RowPressable";
 import { CustomSnoozeSheet } from "./CustomSnoozeSheet";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { threadArrangementOpenAtom } from "../../state/thread-order";
+import { worktreeMergeConfiguredAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useVisibleSecondClock } from "./use-visible-second-clock";
@@ -51,6 +53,7 @@ import {
 import { useThreadPr } from "../../state/use-thread-pr";
 import { useSwipeRowDormant } from "../home/swipe-row-activation";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
+import { useMergeThreadWorktree } from "../home/useThreadListActions";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
 import {
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
@@ -682,6 +685,23 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     [onRegenerateThreadTitle, thread],
   );
   const handleSettle = useCallback(() => onSettleThread(thread), [onSettleThread, thread]);
+  const worktreeMergeConfigured = useAtomValue(
+    worktreeMergeConfiguredAtom(thread.environmentId, thread.projectId),
+  );
+  const mergeThreadWorktree = useMergeThreadWorktree();
+  const mergeMenuItems = useMemo<MenuAction[]>(
+    () =>
+      canOperateThread && worktreeMergeConfigured && thread.worktreePath && thread.branch
+        ? [
+            {
+              id: "merge-worktree",
+              title: "Merge into default branch",
+              image: PullRequestGlyph.merged,
+            },
+          ]
+        : [],
+    [canOperateThread, worktreeMergeConfigured, thread.worktreePath, thread.branch],
+  );
   const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
   // Recycling changes identity without remounting; clear local UI directly because equality may skip the render closure.
   const rowIdentity = `${thread.environmentId}:${thread.id}`;
@@ -818,6 +838,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const snoozableCardMenuActions = useMemo<MenuAction[]>(
     () => [
       { id: "settle", title: "Settle", image: "checkmark" },
+      ...mergeMenuItems,
       {
         id: "snooze",
         title: "Snooze",
@@ -830,18 +851,25 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       LEGACY_MENU_ACTIONS[0]!,
       { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
     ],
-    [arrangementMenuItems, autoSettleMenuItems, snoozePresetActions, titleMenuItems],
+    [
+      arrangementMenuItems,
+      autoSettleMenuItems,
+      mergeMenuItems,
+      snoozePresetActions,
+      titleMenuItems,
+    ],
   );
   const cardMenuActions = useMemo<MenuAction[]>(
     () => [
       CARD_MENU_ACTIONS[0]!,
+      ...mergeMenuItems,
       ...arrangementMenuItems,
       ...titleMenuItems,
       ...autoSettleMenuItems,
       LEGACY_MENU_ACTIONS[0]!,
       ...CARD_MENU_ACTIONS.slice(1),
     ],
-    [arrangementMenuItems, autoSettleMenuItems, titleMenuItems],
+    [arrangementMenuItems, autoSettleMenuItems, mergeMenuItems, titleMenuItems],
   );
   const slimMenuActions = useMemo<MenuAction[]>(
     () => [
@@ -879,6 +907,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
       if (nativeEvent.event === "new-thread-on-branch") onNewThreadOnBranch(thread);
       if (nativeEvent.event === "settle") handleSettle();
+      if (nativeEvent.event === "merge-worktree") mergeThreadWorktree(thread);
       if (nativeEvent.event === "unsettle") handleUnsettle();
       if (nativeEvent.event === "unsnooze") handleUnsnooze();
       if (nativeEvent.event === "pin") handlePin();
@@ -929,6 +958,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       handleUnpin,
       handleUnsettle,
       handleUnsnooze,
+      mergeThreadWorktree,
       setCustomSnoozeOpen,
       snoozePresets,
     ],
