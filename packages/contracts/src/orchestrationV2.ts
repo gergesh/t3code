@@ -123,6 +123,7 @@ export const OrchestrationV2AppThreadLineage = Schema.Struct({
 export type OrchestrationV2AppThreadLineage = typeof OrchestrationV2AppThreadLineage.Type;
 
 export const OrchestrationV2ContextTransferType = Schema.Literals([
+  "side_chat",
   "fork",
   "provider_handoff",
   "merge_back",
@@ -173,6 +174,27 @@ export const OrchestrationV2ContextTransferResolution = Schema.Union([
 export type OrchestrationV2ContextTransferResolution =
   typeof OrchestrationV2ContextTransferResolution.Type;
 
+export const OrchestrationV2HistoricalMessage = Schema.Struct({
+  role: Schema.Literals(["user", "assistant"]),
+  text: Schema.String,
+  runStatus: Schema.optional(Schema.String),
+  threadId: ThreadId,
+  runId: Schema.NullOr(RunId),
+  itemId: TurnItemId,
+  providerThreadId: Schema.NullOr(ProviderThreadId),
+  status: Schema.String,
+  kind: Schema.String,
+});
+export type OrchestrationV2HistoricalMessage = typeof OrchestrationV2HistoricalMessage.Type;
+
+export const OrchestrationV2ContextHistory = Schema.Struct({
+  messages: Schema.Array(OrchestrationV2HistoricalMessage),
+  coverage: Schema.String,
+  omittedItems: NonNegativeInt,
+  omittedItemIds: Schema.optional(Schema.Array(TurnItemId)),
+});
+export type OrchestrationV2ContextHistory = typeof OrchestrationV2ContextHistory.Type;
+
 export const OrchestrationV2ProviderTurnTokenUsage = Schema.Struct({
   usedTokens: NonNegativeInt,
   maxTokens: Schema.optional(Schema.NullOr(NonNegativeInt)),
@@ -189,6 +211,8 @@ export type OrchestrationV2ProviderTurnTokenUsage =
   typeof OrchestrationV2ProviderTurnTokenUsage.Type;
 
 export const OrchestrationV2ContextTransfer = Schema.Struct({
+  /** Frozen, bounded transcript for an isolated temporary conversation. */
+  snapshotHistory: Schema.optional(OrchestrationV2ContextHistory),
   id: ContextTransferId,
   type: OrchestrationV2ContextTransferType,
   sourceThreadId: ThreadId,
@@ -399,6 +423,8 @@ const LenientThreadOpens = Schema.NullOr(OrchestrationV2ThreadOpens).pipe(
 );
 
 export const OrchestrationV2AppThread = Schema.Struct({
+  /** Temporary conversations are addressable but omitted from normal navigation. */
+  sideChatOf: Schema.optional(Schema.NullOr(ThreadId)),
   ...OrchestrationV2CreationFields,
   id: ThreadId,
   projectId: ProjectId,
@@ -983,19 +1009,6 @@ export const OrchestrationV2ProviderThread = Schema.Struct({
 });
 export type OrchestrationV2ProviderThread = typeof OrchestrationV2ProviderThread.Type;
 
-export const OrchestrationV2HistoricalMessage = Schema.Struct({
-  role: Schema.Literals(["user", "assistant"]),
-  text: Schema.String,
-  runStatus: Schema.optional(Schema.String),
-  threadId: ThreadId,
-  runId: Schema.NullOr(RunId),
-  itemId: TurnItemId,
-  providerThreadId: Schema.NullOr(ProviderThreadId),
-  status: Schema.String,
-  kind: Schema.String,
-});
-export type OrchestrationV2HistoricalMessage = typeof OrchestrationV2HistoricalMessage.Type;
-
 export const OrchestrationV2ContextHandoff = Schema.Struct({
   id: ContextHandoffId,
   transferId: Schema.optional(Schema.NullOr(ContextTransferId)),
@@ -1017,14 +1030,7 @@ export const OrchestrationV2ContextHandoff = Schema.Struct({
   status: Schema.Literals(["pending", "ready", "failed", "superseded"]),
   summaryMessageId: Schema.NullOr(MessageId),
   summaryText: Schema.String,
-  history: Schema.optional(
-    Schema.Struct({
-      messages: Schema.Array(OrchestrationV2HistoricalMessage),
-      coverage: Schema.String,
-      omittedItems: NonNegativeInt,
-      omittedItemIds: Schema.optional(Schema.Array(TurnItemId)),
-    }),
-  ),
+  history: Schema.optional(OrchestrationV2ContextHistory),
   delivery: Schema.optional(
     Schema.Struct({
       nativeThreadId: Schema.String,
@@ -1894,6 +1900,7 @@ export type OrchestrationV2LatestVisibleMessageSummary =
   typeof OrchestrationV2LatestVisibleMessageSummary.Type;
 
 export const OrchestrationV2ThreadShell = Schema.Struct({
+  sideChatOf: Schema.optional(Schema.NullOr(ThreadId)),
   ...OrchestrationV2CreationFields,
   id: ThreadId,
   projectId: ProjectId,
@@ -2722,6 +2729,18 @@ export const OrchestrationV2StoredEventJson = Schema.Struct({
 export type OrchestrationV2StoredEventJson = typeof OrchestrationV2StoredEventJson.Type;
 
 export const OrchestrationV2Command = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("thread.side-chat.create"),
+    ...OrchestrationV2CreationFields,
+    commandId: CommandId,
+    sourceThreadId: ThreadId,
+    targetThreadId: ThreadId,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.side-chat.keep"),
+    commandId: CommandId,
+    threadId: ThreadId,
+  }),
   Schema.Struct({
     type: Schema.Literal("thread.stop"),
     commandId: CommandId,

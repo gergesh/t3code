@@ -72,6 +72,7 @@ export function withCreationProvenance(
   switch (command.type) {
     case "thread.create":
     case "message.dispatch":
+    case "thread.side-chat.create":
     case "thread.fork":
     case "thread.merge_back":
     case "delegated_task.request":
@@ -94,6 +95,7 @@ function existingThreadIdsForCommand(
     case "thread.visit":
     case "thread.mark-unread":
       return [];
+    case "thread.side-chat.create":
     case "thread.fork":
       return [command.sourceThreadId];
     case "thread.merge_back":
