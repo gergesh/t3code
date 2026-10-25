@@ -433,7 +433,7 @@ function ThreadArrangementSheet(props: { onClose: () => void }) {
                     dropBusy,
                     pendingOrder,
                     listEnvironments,
-                    planners,
+                    pinnedPlanner,
                     configs,
                   }}
                   // Rows hold their drag gesture, so each keeps its own view.
