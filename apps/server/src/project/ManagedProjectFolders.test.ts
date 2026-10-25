@@ -24,6 +24,7 @@ import * as JjVcsDriver from "../vcs/JjVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { describeJj, seedJjRepo } from "../vcs/testing/JjTestSupport.ts";
+import * as WorktreeCommands from "../vcs/WorktreeCommands.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
@@ -42,6 +43,7 @@ const layerGitWorkflow = (
     Layer.provide(Layer.mock(GitManager.GitManager)({})),
     Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({})),
     Layer.provide(JjVcsDriver.layer.pipe(Layer.provide(vcsProcess ?? VcsProcess.layer))),
+    Layer.provide(Layer.mock(WorktreeCommands.WorktreeCommands)({})),
   );
 
 const layerEnrichment = ProjectEnrichmentService.layer.pipe(

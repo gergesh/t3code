@@ -63,6 +63,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as JjVcsDriver from "../vcs/JjVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as WorktreeCommands from "../vcs/WorktreeCommands.ts";
 import * as GitManager from "../git/GitManager.ts";
 import * as JjStatus from "../jj/JjStatus.ts";
 import * as JjWorkflow from "../jj/JjWorkflow.ts";
@@ -365,6 +366,7 @@ describeJj("unsupported Jujutsu draft launches", () => {
                 Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
                 Layer.provide(Layer.mock(GitManager.GitManager)({})),
                 Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({})),
+                Layer.provide(Layer.mock(WorktreeCommands.WorktreeCommands)({})),
               ),
             ),
           );
@@ -450,6 +452,7 @@ describeJj("broken pinned Jujutsu draft launches", () => {
               Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
               Layer.provide(Layer.mock(GitManager.GitManager)({})),
               Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({ localStatus: status.localStatus })),
+              Layer.provide(Layer.mock(WorktreeCommands.WorktreeCommands)({})),
               Layer.provide(Layer.succeed(VcsProcess.VcsProcess, repo.process)),
               Layer.provide(NodeServices.layer),
             ),

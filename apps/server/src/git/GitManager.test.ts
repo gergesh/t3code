@@ -49,6 +49,7 @@ import {
 } from "@t3tools/provider-core/server/textGenerationOperations";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as JjVcsDriver from "../vcs/JjVcsDriver.ts";
+import * as WorktreeCommands from "../vcs/WorktreeCommands.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "../vcs/VcsProjectConfig.ts";
@@ -3956,6 +3957,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             }),
             Effect.provide(
               Layer.mergeAll(
+                Layer.mock(WorktreeCommands.WorktreeCommands)({}),
                 Layer.mock(JjWorkflow.JjWorkflow)({}),
                 Layer.mock(JjVcsDriver.JjVcsDriver)({
                   capabilities: {
