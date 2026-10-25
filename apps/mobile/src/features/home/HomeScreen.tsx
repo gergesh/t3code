@@ -67,6 +67,7 @@ import {
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
+  ThreadListV2SectionDivider,
   ThreadListV2WorkingShelfHeader,
 } from "../threads/thread-list-v2-items";
 import { useThreadRowProviderInstanceResolver } from "../threads/thread-provider-instance";
@@ -550,6 +551,9 @@ export function HomeScreen(props: HomeScreenProps) {
           onToggle={toggleWorkingShelf}
         />
       );
+    }
+    if (item.type === "v2-active-divider") {
+      return <ThreadListV2SectionDivider label="Active" />;
     }
     if (item.type === "v2-snoozed-shelf") {
       return (
