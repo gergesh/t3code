@@ -412,6 +412,8 @@ export interface ThreadListV2Layout {
   readonly listedSettledThreads: ReadonlyArray<EnvironmentThreadShell>;
   readonly workingCount: number;
   readonly workingShelfHeaderIndex: number | null;
+  /** Where Active rows start; the Working shelf sits between Pinned and Active. */
+  readonly activeStartIndex: number;
   readonly snoozedCount: number;
   readonly snoozedShelfHeaderIndex: number | null;
   readonly settledCount: number;
@@ -452,6 +454,12 @@ export interface ThreadListV2WorkingShelfListItem {
   readonly disabled: boolean;
 }
 
+/** Labels Active below the Working shelf, so its rows do not read as part of the shelf. */
+export interface ThreadListV2ActiveDividerListItem {
+  readonly type: "v2-active-divider";
+  readonly key: "v2-active-divider";
+}
+
 export interface ThreadListV2SnoozedShelfListItem {
   readonly type: "v2-snoozed-shelf";
   readonly key: "v2-snoozed-shelf";
@@ -473,6 +481,7 @@ export type ThreadListV2ListItem =
   | ThreadListV2ThreadListItem
   | ThreadListV2PendingListItem
   | ThreadListV2WorkingShelfListItem
+  | ThreadListV2ActiveDividerListItem
   | ThreadListV2SnoozedShelfListItem
   | ThreadListV2SettledShelfListItem;
 
@@ -483,6 +492,7 @@ export function isThreadListV2ListItem(value: {
     value.type === "v2-thread" ||
     value.type === "v2-pending" ||
     value.type === "v2-working-shelf" ||
+    value.type === "v2-active-divider" ||
     value.type === "v2-snoozed-shelf" ||
     value.type === "v2-settled-shelf"
   );
@@ -526,6 +536,8 @@ export function threadListV2ListItemsAreEqual(
         previous.expanded === item.expanded &&
         previous.disabled === item.disabled
       );
+    case "v2-active-divider":
+      return previous.type === "v2-active-divider";
     case "v2-snoozed-shelf":
       return (
         previous.type === "v2-snoozed-shelf" &&
@@ -572,6 +584,7 @@ export function buildThreadListV2ListItems(input: {
   readonly workingCount?: number;
   readonly workingShelfExpanded?: boolean;
   readonly workingShelfHeaderIndex?: number | null;
+  readonly activeStartIndex?: number;
   readonly snoozedCount?: number;
   readonly snoozedShelfExpanded?: boolean;
   readonly snoozedShelfHeaderIndex?: number | null;
@@ -632,9 +645,10 @@ export function buildThreadListV2ListItems(input: {
   const settledCount = input.settledCount ?? 0;
   const settledShelfHeaderIndex = input.settledShelfHeaderIndex ?? null;
   const snoozedEnd = settledShelfHeaderIndex ?? threadItems.length;
-  const workingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
-  const activeEnd = workingShelfHeaderIndex ?? workingEnd;
-  const result: ThreadListV2ListItem[] = [...pendingItems, ...threadItems.slice(0, activeEnd)];
+  const activeEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
+  const activeStart = input.activeStartIndex ?? workingShelfHeaderIndex ?? 0;
+  const pinnedEnd = workingShelfHeaderIndex ?? activeStart;
+  const result: ThreadListV2ListItem[] = [...pendingItems, ...threadItems.slice(0, pinnedEnd)];
   const shelfDisabled = input.shelfPreferencesLoading === true;
   if (workingShelfHeaderIndex !== null && workingCount > 0) {
     result.push({
@@ -644,8 +658,12 @@ export function buildThreadListV2ListItems(input: {
       expanded: input.workingShelfExpanded === true,
       disabled: shelfDisabled,
     });
-    result.push(...threadItems.slice(workingShelfHeaderIndex, workingEnd));
+    result.push(...threadItems.slice(workingShelfHeaderIndex, activeStart));
+    if (activeEnd > activeStart) {
+      result.push({ type: "v2-active-divider", key: "v2-active-divider" });
+    }
   }
+  result.push(...threadItems.slice(activeStart, activeEnd));
   if (snoozedShelfHeaderIndex !== null && snoozedCount > 0) {
     result.push({
       type: "v2-snoozed-shelf",
@@ -840,6 +858,7 @@ export function buildThreadListV2Items(input: {
       listedSettledThreads: [],
       workingCount: 0,
       workingShelfHeaderIndex: null,
+      activeStartIndex: 0,
       snoozedCount: 0,
       snoozedShelfHeaderIndex: null,
       settledCount: 0,
@@ -910,7 +929,8 @@ export function buildThreadListV2Items(input: {
       isLast: false,
     });
   }
-  for (const thread of orderedActive) {
+  const workingShelfHeaderIndex = orderedWorking.length > 0 ? items.length : null;
+  for (const thread of visibleWorking) {
     items.push({
       thread,
       variant: "card",
@@ -920,8 +940,8 @@ export function buildThreadListV2Items(input: {
       isLast: false,
     });
   }
-  const workingShelfHeaderIndex = orderedWorking.length > 0 ? items.length : null;
-  for (const thread of visibleWorking) {
+  const activeStartIndex = items.length;
+  for (const thread of orderedActive) {
     items.push({
       thread,
       variant: "card",
@@ -963,6 +983,7 @@ export function buildThreadListV2Items(input: {
     listedSettledThreads: listedSettled,
     workingCount: orderedWorking.length,
     workingShelfHeaderIndex,
+    activeStartIndex,
     snoozedCount: orderedSnoozed.length,
     snoozedShelfHeaderIndex,
     settledCount: settledTotal,
