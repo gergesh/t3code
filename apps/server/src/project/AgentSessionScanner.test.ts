@@ -68,7 +68,6 @@ interface ScannerTestInput {
 const layerScannerTest = (input: ScannerTestInput) =>
   Layer.effect(AgentSessionScanner.AgentSessionScanner, AgentSessionScanner.make).pipe(
     Layer.provide(input.processRunner ?? ProcessRunner.layer),
-  ).pipe(
     Layer.provide(
       Layer.mergeAll(
         ServerSettings.layerTest({

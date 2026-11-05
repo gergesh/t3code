@@ -65,6 +65,8 @@ import {
   type ServedPeer,
 } from "./PeerLinks.testkit.ts";
 import * as RemoteDelegation from "./RemoteDelegation.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
 // The laptop's agent asks the user to link the box. The laptop is its real
 // orchestrator and toolkit; the box is its real descriptor and MCP OAuth on a
@@ -157,7 +159,13 @@ const makeLaptop = Effect.gen(function* () {
     Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
     Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
     Layer.provide(Layer.succeedContext(linking)),
-    Layer.provide(NodeCrypto.layer),
+    Layer.provide(
+      Layer.mergeAll(
+        NodeCrypto.layer,
+        Layer.mock(GitWorkflowService.GitWorkflowService)({}),
+        Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+      ),
+    ),
     Layer.provideMerge(layerThreads),
     Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
     Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),

@@ -146,10 +146,9 @@ describeJj("JjWorkspaces.createWorktree", () => {
             newRefName: "feat/source",
             path: null,
           });
-          const created = yield* Effect.all(
-            [root, source.worktree.path, root, source.worktree.path].map((cwd) =>
-              ops.createWorktree({ cwd, refName: "main", path: null }),
-            ),
+          const created = yield* Effect.forEach(
+            [root, source.worktree.path, root, source.worktree.path],
+            (cwd) => ops.createWorktree({ cwd, refName: "main", path: null }),
             { concurrency: "unbounded" },
           );
           const destination = created[0]!.worktree.path;
@@ -287,12 +286,14 @@ describeJj("JjWorkspaces.createWorktree", () => {
               repo.process
                 .run(input)
                 .pipe(
-                  Effect.flatMap((result) =>
-                    input.command === "jj" &&
-                    input.args.includes("workspace") &&
-                    input.args.includes("add")
-                      ? Deferred.succeed(added, undefined).pipe(Effect.andThen(Effect.never))
-                      : Effect.succeed(result),
+                  Effect.filterOrElse(
+                    () =>
+                      !(
+                        input.command === "jj" &&
+                        input.args.includes("workspace") &&
+                        input.args.includes("add")
+                      ),
+                    () => Deferred.succeed(added, undefined).pipe(Effect.andThen(Effect.never)),
                   ),
                 ),
           };

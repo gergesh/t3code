@@ -1,5 +1,7 @@
+// @effect-diagnostics processEnvInEffect:off -- the jj fixture's disposable config path lives in JJ_CONFIG.
 import { assert, it } from "@effect/vitest";
 import { CheckpointRef, VcsError } from "@t3tools/contracts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -26,7 +28,7 @@ import {
 const ContractLayer = Layer.effect(VcsDriver.VcsDriver, JjVcsDriver.JjVcsDriver).pipe(
   Layer.provide(JjVcsDriver.layer),
   Layer.provideMerge(VcsProcess.layer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const encodeVcsError = Schema.encodeEffect(Schema.fromJsonString(VcsError));
@@ -113,7 +115,7 @@ describeJj("JjVcsDriver detection", () => {
         Effect.provide(
           JjVcsDriver.layer.pipe(
             Layer.provide(countingProcess),
-            Layer.provideMerge(NodeServices.layer),
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
       );
@@ -615,7 +617,7 @@ describeJj("JjVcsDriver list reads", () => {
       Effect.provide(
         JjVcsDriver.layer.pipe(
           Layer.provide(malformedProcess),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     );
@@ -668,7 +670,7 @@ describeJj("JjVcsDriver list reads", () => {
       Effect.provide(
         JjVcsDriver.layer.pipe(
           Layer.provide(failingProcess),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     );

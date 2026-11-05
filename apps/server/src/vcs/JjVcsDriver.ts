@@ -359,13 +359,11 @@ const makeVcsDriverShape = Effect.gen(function* () {
     }
     const marker = yield* markerRoot(cwd);
     if (marker === null || marker.marker !== "jj") {
-      return yield* Effect.fail(
-        new VcsRepositoryDetectionError({
+      return yield* new VcsRepositoryDetectionError({
           operation: "JjVcsDriver.repoPaths",
           cwd,
           detail: "No Jujutsu workspace was found at this path.",
-        }),
-      );
+        });
     }
     const paths = yield* JjRepo.resolveJjRepoPaths(fileSystem, path, marker.root);
     if (cwd === paths.workspaceRoot) {
@@ -466,13 +464,11 @@ const makeVcsDriverShape = Effect.gen(function* () {
             colocated: paths.gitDir !== null,
           });
       if (reason !== null || paths.gitDir === null) {
-        return yield* Effect.fail(
-          new VcsUnsupportedOperationError({
+        return yield* new VcsUnsupportedOperationError({
             operation,
             kind: "jj",
             detail: reason ?? "This Jujutsu workspace has no colocated Git store.",
-          }),
-        );
+          });
       }
       return { ...paths, gitDir: paths.gitDir };
     },
@@ -526,15 +522,13 @@ const makeVcsDriverShape = Effect.gen(function* () {
       yield* ensureUsable(operation, cwd);
       const change = yield* changeFromRevset(operation, cwd, "@", false);
       if (change === null) {
-        return yield* Effect.fail(
-          new VcsProcessOutputReadError({
+        return yield* new VcsProcessOutputReadError({
             operation,
             command: "jj log",
             cwd,
             stream: "stdout",
             cause: new Error("jj reported no working-copy change for this workspace."),
-          }),
-        );
+          });
       }
       return change;
     },
@@ -902,15 +896,13 @@ const makeVcsDriverShape = Effect.gen(function* () {
       );
 
       if (result.exitCode !== 0 && result.exitCode !== 1) {
-        return yield* Effect.fail(
-          new VcsProcessExitError({
+        return yield* new VcsProcessExitError({
             operation,
             command: "git check-ignore",
             cwd,
             exitCode: result.exitCode,
             detail: "git check-ignore failed.",
-          }),
-        );
+          });
       }
 
       for (const ignoredPath of splitNullSeparatedGitStdoutPaths(result)) {

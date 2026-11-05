@@ -1643,6 +1643,7 @@ export const make = Effect.gen(function* () {
     >();
     // Resolve every candidate directory first so one batch reads all git identities.
     const directories = new Map<string, Option.Option<FileSystem.File.Info>>();
+    const identityDirectories = new Map<string, string>();
     for (const candidate of raw) {
       const expanded = expandHomePath(candidate.cwd.trim(), homeDir);
       if (!path.isAbsolute(expanded)) continue;
@@ -1671,15 +1672,21 @@ export const make = Effect.gen(function* () {
               Effect.orElseSucceed(() => null),
             )
           : null;
-      const unimportedJjWorkspace =
-        jjPaths !== null &&
-        jjPaths.workspaceRoot !== jjPaths.mainWorkspaceRoot &&
-        !importedProjectsByRoot.has(yield* directoryIdentity(realPath));
-      directories.set(resolved, unimportedJjWorkspace ? Option.none() : stats);
+      const secondaryJjWorkspace =
+        jjPaths !== null && jjPaths.workspaceRoot !== jjPaths.mainWorkspaceRoot;
+      if (secondaryJjWorkspace && !importedProjectsByRoot.has(yield* directoryIdentity(realPath))) {
+        directories.set(resolved, Option.none());
+        continue;
+      }
+      // A secondary workspace may carry a linked-worktree .git file; its identity is the main one.
+      if (secondaryJjWorkspace) identityDirectories.set(resolved, jjPaths.mainWorkspaceRoot);
+      directories.set(resolved, stats);
     }
+    const identityDirectory = (directory: string) =>
+      identityDirectories.get(directory) ?? directory;
     const directoryGitIdentities = yield* readGitIdentities(
       Array.from(directories).flatMap(([directory, stats]) =>
-        Option.isSome(stats) ? [directory] : [],
+        Option.isSome(stats) ? [identityDirectory(directory)] : [],
       ),
     );
 
@@ -1694,7 +1701,7 @@ export const make = Effect.gen(function* () {
       if (stats === undefined || Option.isNone(stats)) continue;
       let key = directoryKeys.get(resolved);
       if (key === undefined) {
-        const gitIdentity = directoryGitIdentities.get(resolved);
+        const gitIdentity = directoryGitIdentities.get(identityDirectory(resolved));
         if (gitIdentity === undefined || gitIdentity._tag === "Worktree") {
           key = "";
         } else {

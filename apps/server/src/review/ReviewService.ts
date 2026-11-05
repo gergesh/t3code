@@ -21,6 +21,7 @@ import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as KnownWorkspaces from "../workspace/KnownWorkspaces.ts";
+import { isWithinRoot } from "../workspace/pathContainment.ts";
 
 const WORKSPACE_BOUND_SUBJECTS = {
   "ReviewService.getBranchCommits": "commit list",
@@ -80,7 +81,7 @@ export const make = Effect.gen(function* () {
       canonicalizePath(config.cwd),
     ]);
     if (
-      KnownWorkspaces.isWithinRoot(path, candidate, workspaceRoot) ||
+      isWithinRoot(path, candidate, workspaceRoot) ||
       (yield* knownWorkspaces.contains(candidate))
     ) {
       return;

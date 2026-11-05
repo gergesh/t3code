@@ -217,9 +217,13 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
       .pipe(Effect.orElseSucceed(() => null));
     const markerRoot =
       detected?.kind === "jj"
-        ? yield* Effect.try(() => resolveRepositoryRootFromMarkers(cwd)).pipe(
-            Effect.orElseSucceed(() => null),
-          )
+        ? yield* Effect.sync(() => {
+            try {
+              return resolveRepositoryRootFromMarkers(cwd);
+            } catch {
+              return null;
+            }
+          })
         : null;
     if (markerRoot !== null) {
       return new RepositoryIdentityCacheKey({ rootPath: markerRoot, isBare: false });

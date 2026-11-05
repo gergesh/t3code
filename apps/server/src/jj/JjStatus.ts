@@ -180,14 +180,12 @@ export const resolveWorkspaceRefName = Effect.fn("JjStatus.resolveWorkspaceRefNa
       (name) => !otherManagedWorkspaces.has(workspaceNameForRef(name)),
     ) ?? [];
   if (count > 1 || names.length > 1) {
-    return yield* Effect.fail(
-      new VcsUnsupportedOperationError({
+    return yield* new VcsUnsupportedOperationError({
         operation: "JjStatus.resolveWorkspaceRefName",
         kind: "jj",
         detail:
           "Ambiguous descendant bookmarks. Switch to the intended bookmark before continuing.",
-      }),
-    );
+      });
   }
   if (names.length === 1) return names[0]!;
   return refNameFromSegment(segment, otherManagedWorkspaces);
@@ -404,17 +402,15 @@ const countAheadChanges = Effect.fn("JjStatus.countAheadChanges")(function* (
       outputMode: "error",
     },
   ).pipe(
-    Effect.flatMap((result) =>
-      result.exitCode === 0 || result.exitCode === 1
-        ? Effect.succeed(result)
-        : Effect.fail(
-            new GitCommandError({
-              operation: "JjStatus.countAheadChanges",
-              command: "git",
-              cwd,
-              detail: result.stderr,
-            }),
-          ),
+    Effect.filterOrFail(
+      (result) => result.exitCode === 0 || result.exitCode === 1,
+      (result) =>
+        new GitCommandError({
+          operation: "JjStatus.countAheadChanges",
+          command: "git",
+          cwd,
+          detail: result.stderr,
+        }),
     ),
     mapJjFailure("JjStatus.countAheadChanges", cwd, "Could not resolve remote ancestry."),
   );
@@ -503,8 +499,6 @@ export const makeJjStatus = Effect.fn("JjStatus.makeJjStatus")(function* (
               );
             }),
           ),
-        )
-        .pipe(
           Effect.as(true as const),
           Effect.mapError(
             (cause) =>

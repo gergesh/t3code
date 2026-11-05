@@ -305,9 +305,7 @@ export const makeJjPullRequestThread = (deps: JjPullRequestThreadDeps): JjPullRe
         // ref backwards, when jj's default would abandon commits during the import; the global
         // config prevents that.
         if (remoteName === null) {
-          return yield* Effect.fail(
-            jjFailure(operation, input.cwd, "This repository has no remote to fetch from."),
-          );
+          return yield* jjFailure(operation, input.cwd, "This repository has no remote to fetch from.");
         }
         yield* changeRequestHeadRef
           .pipe(
@@ -320,8 +318,6 @@ export const makeJjPullRequestThread = (deps: JjPullRequestThreadDeps): JjPullRe
                 { timeoutMs: FETCH_TIMEOUT_MS },
               ),
             ),
-          )
-          .pipe(
             Effect.catch((cause) =>
               summary.isCrossRepository === true || pullRequest.state !== "open"
                 ? Effect.fail(cause)
@@ -342,7 +338,7 @@ export const makeJjPullRequestThread = (deps: JjPullRequestThreadDeps): JjPullRe
                           sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl),
                         )
                     ) {
-                      return yield* Effect.fail(cause);
+                      return yield* cause;
                     }
                     // Some hosts publish no pull ref. Only an open PR in this repository can
                     // safely use its named branch: a closed head may have moved since closing.

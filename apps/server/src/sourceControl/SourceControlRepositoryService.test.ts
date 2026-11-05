@@ -24,6 +24,7 @@ import * as JjWorkflow from "../jj/JjWorkflow.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./SourceControlRepositoryService.ts";
+import { unusedCheckpointOps } from "../vcs/testing/JjTestSupport.ts";
 
 const CLONE_URLS = {
   nameWithOwner: "octocat/t3code",
@@ -79,6 +80,7 @@ function layer(input: {
     Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)(input.jj ?? {})),
     Layer.provide(
       Layer.mock(JjVcsDriver.JjVcsDriver)({
+  checkpoints: unusedCheckpointOps,
         ensureUsable: (_operation, cwd) =>
           Effect.succeed({
             workspaceRoot: cwd,

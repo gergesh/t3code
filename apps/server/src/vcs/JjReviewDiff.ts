@@ -349,10 +349,9 @@ export const makeJjReviewDiff = (deps: JjReviewDiffDeps): JjReviewDiffOps => {
       ],
       { maxOutputBytes: REVIEW_METADATA_MAX_OUTPUT_BYTES },
     ).pipe(
-      Effect.catch((error) => {
-        if (error._tag !== "VcsProcessExitError" || error.exitCode !== 128) {
-          return Effect.fail(error);
-        }
+      Effect.catchIf(
+        (error) => error._tag === "VcsProcessExitError" && error.exitCode === 128,
+        (error) => {
         // Only diagnose a failed triple-dot diff. Unrelated histories have no optional totals;
         // malformed commands, missing objects, timeouts and all other failures remain failures.
         return colocatedGitCommand(
@@ -362,14 +361,15 @@ export const makeJjReviewDiff = (deps: JjReviewDiffDeps): JjReviewDiffOps => {
           ["merge-base", baseChange.commitId, input.change.commitId],
           { allowNonZeroExit: true },
         ).pipe(
-          Effect.catch(() => Effect.fail(error)),
+          Effect.mapError(() => error),
           Effect.flatMap((diagnostic) =>
             diagnostic.exitCode === 1 && diagnostic.stdout === "" && diagnostic.stderr === ""
-              ? Effect.succeed(undefined)
+              ? Effect.undefined
               : Effect.fail(error),
           ),
         );
-      }),
+        },
+      ),
     );
     if (stats === undefined) return undefined;
     const files = parseReviewNumstat(stats.stdout);
@@ -492,13 +492,11 @@ export const makeJjReviewDiff = (deps: JjReviewDiffDeps): JjReviewDiffOps => {
       { maxOutputBytes: REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES },
     );
     if (result.stdout.includes("\0")) {
-      return yield* Effect.fail(
-        new VcsUnsupportedOperationError({
+      return yield* new VcsUnsupportedOperationError({
           operation,
           kind: "jj",
           detail: `Cannot expand binary file '${relativePath}'.`,
-        }),
-      );
+        });
     }
     return result.stdout;
   });
@@ -512,15 +510,13 @@ export const makeJjReviewDiff = (deps: JjReviewDiffDeps): JjReviewDiffOps => {
     const baseRef = input.baseRef ?? (input.sourceKind === "working-tree" ? "@-" : null);
     const headRef = input.headRef ?? (input.sourceKind === "working-tree" ? "@" : null);
     if (baseRef === null || headRef === null) {
-      return yield* Effect.fail(
-        new VcsProcessExitError({
+      return yield* new VcsProcessExitError({
           operation,
           command: "git show",
           cwd: input.cwd,
           exitCode: 1,
           detail: "Diff file expansion requires both base and head refs.",
-        }),
-      );
+        });
     }
 
     // `@` and `@-` both read the working copy, and every read snapshots it, so share one.
@@ -551,13 +547,11 @@ export const makeJjReviewDiff = (deps: JjReviewDiffDeps): JjReviewDiffOps => {
           },
         );
         if (/^Binary files /m.test(patch.stdout)) {
-          return yield* Effect.fail(
-            new VcsUnsupportedOperationError({
+          return yield* new VcsUnsupportedOperationError({
               operation,
               kind: "jj",
               detail: `Cannot expand binary file '${input.newPath}'.`,
-            }),
-          );
+            });
         }
         const contents = fullContextContents(patch.stdout);
         if (contents !== null) return contents;
@@ -583,15 +577,13 @@ export const makeJjReviewDiff = (deps: JjReviewDiffDeps): JjReviewDiffOps => {
       resolveFileRevision(input.cwd, headRef, workingCopy),
     ]);
     if (baseOid === null || headOid === null) {
-      return yield* Effect.fail(
-        new VcsProcessExitError({
+      return yield* new VcsProcessExitError({
           operation,
           command: "git show",
           cwd: input.cwd,
           exitCode: 1,
           detail: "Diff file expansion could not resolve the comparison revisions.",
-        }),
-      );
+        });
     }
     let comparisonBase = baseOid;
     if (input.sourceKind === "branch-range") {

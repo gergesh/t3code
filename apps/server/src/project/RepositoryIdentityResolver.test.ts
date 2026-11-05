@@ -2,6 +2,7 @@ import * as Layer from "effect/Layer";
 import type * as Duration from "effect/Duration";
 // @effect-diagnostics nodeBuiltinImport:off - realpathSync.native resolves Windows 8.3 short names, which the Effect realPath does not.
 import * as NodeFS from "node:fs";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -65,7 +66,7 @@ const layerRepositoryIdentityResolverTest = (options: {
     ),
   );
 
-it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("RepositoryIdentityResolverLive", (it) => {
   it.effect("does not inherit an ancestor jj identity for a missing cwd", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -324,6 +325,9 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
                 return runner.run(input);
               }),
           }),
+          Effect.provide(
+            Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({ detect: () => Effect.succeed(null) }),
+          ),
         );
         const bareProbes = () =>
           runs.filter((args) => args.some((arg) => arg.startsWith("--git-dir=")));

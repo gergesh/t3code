@@ -99,7 +99,8 @@ describe("mobile preferences state", () => {
             secureItems.delete(key);
           }),
       });
-      const makeState = MobilePreferences.make().pipe(
+      const makeState = Effect.service(MobilePreferences.MobilePreferencesStore).pipe(
+        Effect.provide(MobilePreferences.layer),
         Effect.provideService(MobileDatabase.MobileDatabase, database),
         Effect.provideService(MobileSecureStorage.MobileSecureStorage, secureStorage),
         Effect.map((store) => makePreferencesState(store)),

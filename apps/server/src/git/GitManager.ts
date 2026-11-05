@@ -34,6 +34,7 @@ import {
   type VcsStatusRemoteResult,
   VcsStatusResult,
   SourceControlProviderError,
+  type ProjectId,
   type ThreadId,
   type ThreadPullRequestKey,
   type VcsCreateWorktreeInput,
@@ -2305,6 +2306,7 @@ export const make = Effect.gen(function* () {
             operation: "runStackedAction",
             cwd: input.cwd,
             ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
+            ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
           }),
         );
 

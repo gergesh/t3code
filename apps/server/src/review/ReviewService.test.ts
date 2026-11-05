@@ -18,6 +18,7 @@ import type * as VcsDriver from "../vcs/VcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as KnownWorkspaces from "../workspace/KnownWorkspaces.ts";
 import * as ReviewService from "./ReviewService.ts";
+import { unusedCheckpointOps } from "../vcs/testing/JjTestSupport.ts";
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 
@@ -26,14 +27,7 @@ function makeDriver(
   overrides: Partial<VcsDriver.VcsDriver["Service"]>,
 ): VcsDriver.VcsDriver["Service"] {
   return {
-    capabilities: {
-      kind,
-      supportsWorktrees: kind === "git",
-      supportsBookmarks: kind === "jj",
-      supportsAtomicSnapshot: kind === "jj",
-      supportsPushDefaultRemote: kind === "git",
-      ignoreClassifier: "git-compatible-fallback",
-    },
+    checkpoints: unusedCheckpointOps,
     execute: () => Effect.die("unexpected driver execute"),
     detectRepository: () => Effect.die("unexpected driver detectRepository"),
     isInsideWorkTree: () => Effect.die("unexpected driver isInsideWorkTree"),

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -96,7 +97,7 @@ const writeTranscript = Effect.fn("AgentSessionScanner.test.writeTranscript")(fu
 const claudeSessionLine = (cwd: string) =>
   `${JSON.stringify({ type: "user", cwd, sessionId: "s1" })}\n${JSON.stringify({ type: "assistant" })}\n`;
 
-it.layer(NodeServices.layer)("AgentSessionScanner activation", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AgentSessionScanner activation", (it) => {
   describeJj("secondary workspaces", () => {
     it.effect("reports a non-colocated main workspace without a git marker", () =>
       Effect.gen(function* () {

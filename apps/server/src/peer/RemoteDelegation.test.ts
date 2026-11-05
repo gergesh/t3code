@@ -65,6 +65,8 @@ import * as PeerLinks from "./PeerLinks.ts";
 import { descriptorOf, layerLinkingEnvironment, linkTo, servePeer } from "./PeerLinks.testkit.ts";
 import * as RemoteDelegation from "./RemoteDelegation.ts";
 import * as PeerLinkRequests from "./PeerLinkRequests.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
 // The laptop's agent delegates a task to the box through a link. The box is
 // its real /mcp behind real OAuth, with one thread the test finishes; the
@@ -477,7 +479,13 @@ const boxToolkitLayer = (thread: BoxThread) => {
     McpHttpServer.layerProjectRegistration,
   ).pipe(
     Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
-    Layer.provide(NodeCrypto.layer),
+    Layer.provide(
+      Layer.mergeAll(
+        NodeCrypto.layer,
+        Layer.mock(GitWorkflowService.GitWorkflowService)({}),
+        Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+      ),
+    ),
     Layer.provide(layerBoxThreads),
     Layer.provide(layerBoxLaunches),
     Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
@@ -604,7 +612,13 @@ const makeLaptop = (
       ),
       Layer.provide(Layer.succeedContext(linking)),
       Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
-      Layer.provide(NodeCrypto.layer),
+      Layer.provide(
+        Layer.mergeAll(
+          NodeCrypto.layer,
+          Layer.mock(GitWorkflowService.GitWorkflowService)({}),
+          Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+        ),
+      ),
       Layer.provideMerge(layerThreads),
       Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
       Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),

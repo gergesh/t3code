@@ -16,6 +16,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as JjVcsDriver from "../vcs/JjVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import { isWithinRoot } from "./pathContainment.ts";
 import { isFilesystemRoot, managedWorktreesDirectories } from "../worktreesDirectory.ts";
 
 export class UnknownWorkspaceError extends Schema.TaggedError<UnknownWorkspaceError>()(
@@ -31,14 +32,6 @@ export class UnknownWorkspaceError extends Schema.TaggedError<UnknownWorkspaceEr
 }
 
 /** Resolve candidate and root consistently before checking containment. */
-export const isWithinRoot = (path: Path.Path, candidate: string, root: string) => {
-  const relative = path.relative(root, candidate);
-  return (
-    relative === "" ||
-    (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
-  );
-};
-
 export class KnownWorkspaces extends Context.Service<
   KnownWorkspaces,
   {

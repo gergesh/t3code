@@ -826,7 +826,7 @@ describeJj("JjStackedAction pull request thread history", () => {
                 headBranchProbe: ({ headSelectors }) => ({ headSelectors, limit: 1 }),
                 getDefaultBranch: () => Effect.succeed("main"),
                 listChangeRequests: () => Effect.succeed([]),
-                readChangeRequestTemplate: () => Effect.succeed(Option.none()),
+                readChangeRequestTemplate: () => Effect.succeedNone,
                 createChangeRequest: ({ bodyFile }) =>
                   fileSystem.readFileString(bodyFile).pipe(
                     Effect.tap((body) =>

@@ -36,7 +36,7 @@ describe("VcsDriverRegistry", () => {
           resolveKind: (input) => Effect.succeed(input.requestedKind ?? "auto"),
         }),
       ),
-      Layer.provide(NodeServices.layer),
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Layer.provide(
         Layer.mock(VcsProcess.VcsProcess)({
           run: (input) =>
@@ -82,7 +82,7 @@ describe("VcsDriverRegistry", () => {
         assert.isNull(yield* registry.detect({ cwd: root, jjOnly: true }));
         assert.isEmpty(calls);
       }).pipe(Effect.provide(makeDiskBackedLayer(root, calls)));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   describeJj("facade jj detection", () => {
@@ -93,7 +93,7 @@ describe("VcsDriverRegistry", () => {
           const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
           assert.equal((yield* registry.detect({ cwd: root, jjOnly: true }))?.kind, "jj");
         }).pipe(Effect.provide(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))));
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     );
   });
 

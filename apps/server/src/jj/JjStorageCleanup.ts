@@ -1,9 +1,9 @@
 import type { WorktreeKeepWhen } from "@t3tools/contracts";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 
 import * as JjProcess from "../vcs/JjProcess.ts";
 import { STATUS_UPSTREAM_REFRESH_ENV } from "../vcs/GitVcsDriverCore.ts";
@@ -14,10 +14,10 @@ import { workspaceNameForRef, workspacePruneLock } from "./JjWorkspaces.ts";
 
 const cleanupLayer = JjVcsDriver.layer.pipe(Layer.provideMerge(VcsProcess.layer));
 
-class JjStorageCleanupRecoveryError extends Data.TaggedError("JjStorageCleanupRecoveryError")<{
-  readonly message: string;
-  readonly cause?: unknown;
-}> {}
+class JjStorageCleanupRecoveryError extends Schema.TaggedError<JjStorageCleanupRecoveryError>()(
+  "JjStorageCleanupRecoveryError",
+  { message: Schema.String, cause: Schema.optional(Schema.Defect()) },
+) {}
 
 const inspectDisk = Effect.fn("JjStorageCleanup.inspectDisk")(function* (
   process: VcsProcess.VcsProcess["Service"],
@@ -391,7 +391,7 @@ export const removeJjStorageCleanup = Effect.fn("JjStorageCleanup.remove")(funct
         const held = path.join(temporary, "workspace");
         const renamed = yield* fileSystem.rename(paths.workspaceRoot, held).pipe(
           Effect.as(true),
-          Effect.catch(() => Effect.succeed(false)),
+          Effect.orElseSucceed(() => false),
         );
         if (!renamed) {
           yield* fileSystem.remove(temporary, { recursive: true });
@@ -457,19 +457,15 @@ export const removeJjStorageCleanup = Effect.fn("JjStorageCleanup.remove")(funct
             ),
           );
           if (!registered)
-            return yield* Effect.fail(
-              new JjStorageCleanupRecoveryError({
+            return yield* new JjStorageCleanupRecoveryError({
                 message: `Workspace registration changed; recover preserved files from ${held}`,
-              }),
-            );
+              });
           // Do not overwrite a concurrently recreated path. Leave the holding path intact
           // if restoration fails, and include its location in the reported error.
           if (yield* fileSystem.exists(paths.workspaceRoot))
-            return yield* Effect.fail(
-              new JjStorageCleanupRecoveryError({
+            return yield* new JjStorageCleanupRecoveryError({
                 message: `Workspace path was recreated; recover preserved files from ${held}`,
-              }),
-            );
+              });
           yield* fileSystem.rename(held, paths.workspaceRoot).pipe(
             Effect.mapError(
               (error) =>

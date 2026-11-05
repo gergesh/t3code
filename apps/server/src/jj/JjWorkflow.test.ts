@@ -104,6 +104,8 @@ const withWorkflow = <A, E>(
                         faviconPath: null,
                         projectIcon: null,
                         scripts: [],
+                        pinnedAt: null,
+                        archivedAt: null,
                         createdAt: IsoDateTime.make("2026-01-01T00:00:00.000Z"),
                         updatedAt: IsoDateTime.make("2026-01-01T00:00:00.000Z"),
                         deletedAt: null,

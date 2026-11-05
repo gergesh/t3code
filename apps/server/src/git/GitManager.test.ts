@@ -10,6 +10,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Context from "effect/Context";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -68,6 +69,8 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitManager from "./GitManager.ts";
+import { unusedCheckpointOps } from "../vcs/testing/JjTestSupport.ts";
+import * as WorktreeCommands from "../vcs/WorktreeCommands.ts";
 
 /** A change request the fake host reports. Omitted fields read as an open, undated request. */
 type FakeChangeRequest = Omit<ChangeRequest, "provider" | "state" | "updatedAt"> & {
@@ -783,13 +786,18 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               GitWorkflowService.layer.pipe(
                 Layer.provide(Layer.succeed(GitManager.GitManager, manager)),
                 Layer.provide(
-                  VcsDriverRegistry.layer.pipe(
-                    Layer.provide(VcsProjectConfig.layer),
-                    Layer.provide(VcsProcess.layer),
-                  ),
+                  Layer.mock(WorktreeCommands.WorktreeCommands)({
+                    resolve: () => Effect.succeed({ create: "", remove: "", merge: "" }),
+                  }),
                 ),
+                Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({})),
               ),
             ),
+            Layer.provideMerge(
+              VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer)),
+            ),
+            Layer.provide(JjVcsDriver.layer),
+            Layer.provide(VcsProcess.layer),
             Layer.provide(
               Layer.mock(BackgroundPolicy.BackgroundPolicy)({
                 shouldRunScopeWork: () => Effect.succeed(true),
@@ -3475,18 +3483,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
       yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
       const directory = yield* makeTempDir("t3code-pr-snapshot-");
-      yield* Effect.acquireRelease(
-        Effect.sync(() => {
-          const previous = process.env.TMPDIR;
-          process.env.TMPDIR = directory;
-          return previous;
-        }),
-        (previous) =>
-          Effect.sync(() => {
-            if (previous === undefined) delete process.env.TMPDIR;
-            else process.env.TMPDIR = previous;
-          }),
-      );
       const { service } = createFakeSourceControlProvider();
       let createdBodyFile: string | undefined;
       const { manager } = yield* makeManager({
@@ -3499,9 +3495,16 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               expect(NodeFS.readFileSync(bodyFile, "utf8").length).toBeGreaterThan(0);
             }),
         },
-      });
-      process.env.TMPDIR = NodePath.join(directory, "not-created");
-      const result = yield* runStackedAction(manager, { cwd: repoDir, action: "create_pr" });
+      }).pipe(
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ TMPDIR: directory }))),
+      );
+      const result = yield* runStackedAction(manager, { cwd: repoDir, action: "create_pr" }).pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromUnknown({ TMPDIR: NodePath.join(directory, "not-created") }),
+          ),
+        ),
+      );
       expect(result.pr.status).toBe("created");
       expect(createdBodyFile).toBeDefined();
       expect(NodeFS.existsSync(createdBodyFile!)).toBe(false);
@@ -4916,6 +4919,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                   resolve: () => Effect.succeed({ create: "", remove: "", merge: "" }),
                 }),
                 Layer.mock(JjVcsDriver.JjVcsDriver)({
+  checkpoints: unusedCheckpointOps,
                   capabilities: {
                     kind: "jj",
                     supportsWorktrees: false,

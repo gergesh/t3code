@@ -5,6 +5,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { beforeAll, describe } from "@effect/vitest";
 import { SourceControlProviderKind } from "@t3tools/contracts";
@@ -18,6 +19,7 @@ import * as SourceControlProvider from "@t3tools/source-control-core/server/Sour
 import * as SourceControlProviderRegistry from "../../sourceControl/SourceControlProviderRegistry.ts";
 import { isJjVersionSupported, parseJjVersion } from "../JjAvailability.ts";
 import * as JjVcsDriver from "../JjVcsDriver.ts";
+import type * as VcsDriver from "../VcsDriver.ts";
 import * as VcsProcess from "../VcsProcess.ts";
 
 const execFileAsync = NodeUtil.promisify(NodeChildProcess.execFile);
@@ -114,10 +116,13 @@ export const runGit = (
     catch: (cause) => new JjTestCommandError({ command: `git ${args.join(" ")}`, cwd, cause }),
   }).pipe(Effect.map((result) => result.stdout));
 
+/** Fills the required `checkpoints` field of driver mocks whose test never checkpoints. */
+export const unusedCheckpointOps = {} as VcsDriver.VcsCheckpointOps;
+
 /** The driver over a real subprocess runner, which is what every jj fixture below runs against. */
 export const JjDriverLayer = JjVcsDriver.layer.pipe(
   Layer.provideMerge(VcsProcess.layer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 export interface SeedJjRepoInput {

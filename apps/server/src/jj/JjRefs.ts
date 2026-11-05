@@ -211,13 +211,11 @@ export const makeJjRefs = Effect.fn("JjRefs.makeJjRefs")(function* (
       strandedSegmentRows(segment).length > 0 ||
       (segment.length === 0 && !change.empty && change.localBookmarks.length === 0);
     if (stranded) {
-      return yield* Effect.fail(
-        jjFailure(
+      return yield* jjFailure(
           input.operation,
           input.cwd,
           `This work is not on a bookmark yet. Create a bookmark for it (or commit and bookmark it) before switching to ${input.targetRefName}; \`jj new\` would hide it.`,
-        ),
-      );
+        );
     }
   });
 
@@ -306,13 +304,11 @@ export const makeJjRefs = Effect.fn("JjRefs.makeJjRefs")(function* (
           suffix += 1;
         }
         if (names.has(targetBranch)) {
-          return yield* Effect.fail(
-            jjFailure(
+          return yield* jjFailure(
               operation,
               input.cwd,
               `Could not find an available branch name for '${input.newBranch}'.`,
-            ),
-          );
+            );
         }
       }
 

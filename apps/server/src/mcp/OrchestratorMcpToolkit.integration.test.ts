@@ -54,10 +54,12 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../peer/PeerLinks.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 
 const layerOrchestratorToolkit = McpHttpServer.layerOrchestratorToolkit.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitWorkflowService.GitWorkflowService)({})),
+  Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
 );
 
 /** A task delegated here always has a local child thread. */

@@ -19,6 +19,7 @@ import * as JjRepo from "../vcs/JjRepo.ts";
 import * as JjVcsDriver from "../vcs/JjVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as KnownWorkspaces from "./KnownWorkspaces.ts";
+import { unusedCheckpointOps } from "../vcs/testing/JjTestSupport.ts";
 
 interface Scenario {
   readonly kind?: "git" | "jj";
@@ -112,6 +113,7 @@ const withWorkspace = (scenario: Scenario) =>
       detail: "unavailable",
     });
     const jjLayer = Layer.mock(JjVcsDriver.JjVcsDriver)({
+  checkpoints: unusedCheckpointOps,
       capabilities: {
         kind: "jj",
         supportsWorktrees: true,
@@ -126,10 +128,10 @@ const withWorkspace = (scenario: Scenario) =>
             (cwd === projectRoot && scenario.failure === "project-paths") ||
             (cwd !== projectRoot && scenario.failure === "workspace-paths")
           ) {
-            return yield* Effect.fail(failure);
+            return yield* failure;
           }
           const marker = yield* JjRepo.findVcsMarkerRoot(fs, path, cwd);
-          if (marker?.marker !== "jj") return yield* Effect.fail(failure);
+          if (marker?.marker !== "jj") return yield* failure;
           return yield* JjRepo.resolveJjRepoPaths(fs, path, marker.root);
         }),
       listWorkspaces: (cwd) => {
@@ -157,9 +159,7 @@ const withWorkspace = (scenario: Scenario) =>
       VcsDriverRegistry.VcsDriverRegistry,
       Effect.gen(function* () {
         const driver = yield* JjVcsDriver.JjVcsDriver;
-        return yield* Effect.gen(function* () {
-          return yield* VcsDriverRegistry.VcsDriverRegistry;
-        }).pipe(
+        return yield* Effect.service(VcsDriverRegistry.VcsDriverRegistry).pipe(
           Effect.provide(
             Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
               detect: ({ cwd, jjOnly }) => {

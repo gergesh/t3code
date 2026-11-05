@@ -374,8 +374,6 @@ const threadProps: ThreadDetailScreenProps = {
   onSendMessage: async () => null,
   onReconnectEnvironment: noop,
   canSwitchThreadProvider: false,
-  onUpdateThreadModelSelection: noop,
-  onUpdateThreadRuntimeMode: noop,
   onUpdateThreadInteractionMode: noop,
   onRespondToApproval: async () => undefined,
   onSelectUserInputOption: noop,

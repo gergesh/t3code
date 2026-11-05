@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
-import { ThreadId, VcsProcessExitError } from "@t3tools/contracts";
+import { CheckpointRef, ThreadId, VcsProcessExitError } from "@t3tools/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -8,7 +8,6 @@ import type * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
 
 import { parseTurnDiffFilesFromNumstat } from "../checkpointing/Diffs.ts";
-import { checkpointRefForThreadTurn } from "../checkpointing/Utils.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
 import type * as VcsDriver from "./VcsDriver.ts";
@@ -25,6 +24,9 @@ import {
   withJjRepo,
   write,
 } from "./testing/JjTestSupport.ts";
+
+const checkpointRefForThreadTurn = (threadId: ThreadId, turnCount: number) =>
+  CheckpointRef.make(`refs/t3/checkpoints/${threadId}/turn/${turnCount}`);
 
 const threadId = ThreadId.make("thread-jj-checkpoints");
 const baselineRef = checkpointRefForThreadTurn(threadId, 0);
@@ -240,37 +242,31 @@ describeJj("JjCheckpoints restore", () => {
                     .writeFileString(repo.path.join(repo.root, ".git", `${tempRef}.lock`), "")
                     .pipe(Effect.orDie);
                   if (multipleFailures)
-                    return yield* Effect.fail(
-                      new VcsProcessExitError({
+                    return yield* new VcsProcessExitError({
                         operation: input.operation,
                         command: "primary restore",
                         cwd: repo.root,
                         exitCode: 9,
                         detail: "primary restore failure",
-                      }),
-                    );
+                      });
                 }
                 if (multipleFailures && input.args.includes("forget")) {
-                  return yield* Effect.fail(
-                    new VcsProcessExitError({
+                  return yield* new VcsProcessExitError({
                       operation: input.operation,
                       command: "bookmark cleanup",
                       cwd: repo.root,
                       exitCode: 8,
                       detail: "bookmark cleanup failure",
-                    }),
-                  );
+                    });
                 }
                 if (multipleFailures && input.args.includes("abandon")) {
-                  return yield* Effect.fail(
-                    new VcsProcessExitError({
+                  return yield* new VcsProcessExitError({
                       operation: input.operation,
                       command: "abandon cleanup",
                       cwd: repo.root,
                       exitCode: 7,
                       detail: "abandon cleanup failure",
-                    }),
-                  );
+                    });
                 }
                 return result;
               }),
@@ -339,10 +335,14 @@ describeJj("JjCheckpoints restore", () => {
               repo.process
                 .run(input)
                 .pipe(
-                  Effect.flatMap((result) =>
-                    interruptAfterImport && input.command === "jj" && input.args.includes("import")
-                      ? Effect.interrupt
-                      : Effect.succeed(result),
+                  Effect.filterOrElse(
+                    () =>
+                      !(
+                        interruptAfterImport &&
+                        input.command === "jj" &&
+                        input.args.includes("import")
+                      ),
+                    () => Effect.interrupt,
                   ),
                 ),
           },

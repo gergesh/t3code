@@ -1068,7 +1068,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
                   IdAllocator.layer,
                   NodeCrypto.layer,
                   Layer.mock(CheckpointStore.CheckpointStore)({
-                    isGitRepository: gitUnavailable,
+                    supportsCheckpoints: gitUnavailable,
                     captureCheckpoint: gitUnavailable,
                     hasCheckpointRef: gitUnavailable,
                   }),

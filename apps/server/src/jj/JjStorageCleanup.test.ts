@@ -1,4 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -26,7 +29,7 @@ const bookmark = "feature/cleanup";
 const withWorkspace = <A, E>(
   use: (
     repo: JjRepoFixture & { readonly cwd: string },
-  ) => Effect.Effect<A, E, Layer.Success<typeof NodeServices.layer>>,
+  ) => Effect.Effect<A, E, Layer.Success<typeof NodeServices.layer> | Digest.Digest | SecureRandom.SecureRandom>,
 ) =>
   withJjRepo({ prefix: "t3-jj-storage-cleanup-", seed: true }, (repo) =>
     Effect.gen(function* () {
@@ -43,7 +46,7 @@ const withWorkspace = <A, E>(
         cwd,
       ]);
       return yield* use({ ...repo, cwd });
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
 describeJj("JjStorageCleanup", () => {

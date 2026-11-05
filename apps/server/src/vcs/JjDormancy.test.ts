@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -6,9 +7,8 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import { ChildProcessSpawner } from "effect/process";
 
-import { ThreadId } from "@t3tools/contracts";
+import { CheckpointRef, ThreadId } from "@t3tools/contracts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
-import { checkpointRefForThreadTurn } from "../checkpointing/Utils.ts";
 import * as ServerConfig from "../config.ts";
 import * as SourceControlDiscovery from "../sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -16,6 +16,9 @@ import * as JjVcsDriver from "./JjVcsDriver.ts";
 import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import * as VcsProjectConfig from "./VcsProjectConfig.ts";
+
+const checkpointRefForThreadTurn = (threadId: ThreadId, turnCount: number) =>
+  CheckpointRef.make(`refs/t3/checkpoints/${threadId}/turn/${turnCount}`);
 
 it.effect("keeps colocated jj markers on Git when repository selection requests Git", () =>
   Effect.gen(function* () {
@@ -34,13 +37,9 @@ it.effect("keeps colocated jj markers on Git when repository selection requests 
         return Effect.succeed({
           exitCode: ChildProcessSpawner.ExitCode(0),
           stdout:
-            command === "rev-parse --is-inside-work-tree"
-              ? "true\n"
-              : command === "rev-parse --show-toplevel"
-                ? `${root}\n`
-                : command === "rev-parse --git-common-dir"
-                  ? `${path.join(root, ".git")}\n`
-                  : `${input.command} version 1.0.0\n`,
+            command === "rev-parse --is-inside-work-tree --show-toplevel --git-common-dir"
+              ? `true\n${root}\n${path.join(root, ".git")}\n`
+              : `${input.command} version 1.0.0\n`,
           stderr: "",
           stdoutTruncated: false,
           stderrTruncated: false,
@@ -79,7 +78,7 @@ it.effect("keeps colocated jj markers on Git when repository selection requests 
       assert.ok(jj);
       assert.strictEqual(jj.implemented, true);
     }).pipe(Effect.provide(Layer.merge(registryLayer, discoveryLayer)));
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("keeps Git checkpoints with an explicit Git selection and jj markers", () =>
@@ -87,7 +86,7 @@ it.effect("keeps Git checkpoints with an explicit Git selection and jj markers",
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-jj-config-dormancy-" });
-    const processLayer = VcsProcess.layer.pipe(Layer.provide(NodeServices.layer));
+    const processLayer = VcsProcess.layer.pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
     const registryLayer = VcsDriverRegistry.layer.pipe(Layer.provide(processLayer));
     const checkpointLayer = CheckpointStore.layer.pipe(Layer.provideMerge(registryLayer));
     yield* Effect.gen(function* () {
@@ -129,5 +128,5 @@ it.effect("keeps Git checkpoints with an explicit Git selection and jj markers",
         ),
       ),
     );
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
