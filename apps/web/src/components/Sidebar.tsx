@@ -16,7 +16,7 @@ import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import * as Schema from "effect/Schema";
-import { resolveVcsTerminology, type VcsTerminology } from "@t3tools/shared/vcs";
+import { resolveVcsTerminology } from "@t3tools/shared/vcs";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import {
   DndContext,
@@ -2659,7 +2659,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       threadRef: ScopedThreadRef,
       position: { x: number; y: number },
       source: ContextMenuSource,
-      terminology: VcsTerminology,
       fromSearch = false,
     ) => {
       void (async () => {
@@ -2685,6 +2684,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           thread.worktreePath ??
           projectByKey.get(`${thread.environmentId}:${thread.projectId}`)?.workspaceRoot ??
           null;
+        // Read once at click time: the rows only subscribe to the cheap branch stream.
+        const terminology = resolveVcsTerminology(
+          threadWorkspacePath
+            ? Option.getOrNull(
+                AsyncResult.value(
+                  appAtomRegistry.get(
+                    vcsEnvironment.status({
+                      environmentId: thread.environmentId,
+                      input: { cwd: threadWorkspacePath, includeRemote: false },
+                    }),
+                  ),
+                ),
+              )
+            : null,
+        );
         const configLoaded = serverConfigs.has(thread.environmentId);
         const supportsAutoSettleOptOut =
           serverConfigs.get(thread.environmentId)?.environment.capabilities
@@ -2963,7 +2977,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   );
   const handleSearchResultContextMenu = useStableCallback(
     (threadRef: ScopedThreadRef, position: { x: number; y: number }, source: ContextMenuSource) =>
-      handleThreadContextMenu(threadRef, position, source, resolveVcsTerminology(null), true),
+      handleThreadContextMenu(threadRef, position, source, true),
   );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window keydown for thread navigation shortcuts using the current thread list

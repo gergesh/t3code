@@ -1,7 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import type * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -9,7 +7,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import type * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -47,7 +44,6 @@ import {
 } from "@t3tools/contracts";
 const encodeSessionPayload = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
-
 export const NOW_MS = Date.parse("2026-06-10T12:00:00.000Z");
 export const DAY_MS = 24 * 60 * 60 * 1_000;
 
@@ -55,7 +51,9 @@ export function at(offsetMs: number): DateTime.Utc {
   return DateTime.makeUnsafe(NOW_MS + offsetMs);
 }
 
-export function shell(overrides: Partial<OrchestrationV2ThreadShell> = {}): OrchestrationV2ThreadShell {
+export function shell(
+  overrides: Partial<OrchestrationV2ThreadShell> = {},
+): OrchestrationV2ThreadShell {
   return {
     id: ThreadId.make("thread-1"),
     projectId: ProjectId.make("project-1"),
@@ -403,9 +401,6 @@ export const cleanupFixture = (
       setScheduledThreadIds: (next: string[]) => {
         scheduledThreadIds = next;
       },
-      setDeletedThreads: (next: OrchestrationV2ThreadShell[]) => {
-        deletedThreads = next;
-      },
       setStoredWorktreePaths: (paths: string[]) => {
         storedWorktreePaths = paths;
       },
@@ -446,13 +441,16 @@ export const cleanupFixture = (
       },
     };
   });
-export const pausedMeasurementFixture = (storageCleanup?: StorageCleanupSettings) =>
+export const pausedMeasurementFixture = (
+  storageCleanup?: StorageCleanupSettings,
+  options?: { readonly runJj?: typeof runJj },
+) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const measuring = yield* Deferred.make<void>();
     const resume = yield* Deferred.make<void>();
     let measuredPath: string | undefined;
-    const fixture = yield* cleanupFixture(storageCleanup).pipe(
+    const fixture = yield* cleanupFixture(storageCleanup, options).pipe(
       Effect.provideService(FileSystem.FileSystem, {
         ...fs,
         readDirectory: (directory, options) =>
@@ -482,64 +480,8 @@ export const annexWorktree = Effect.fnUntraced(function* (
 });
 
 export const runCleanupTest = <A, E>(
-  effect: Effect.Effect<
-    A,
-    E,
-    | FileSystem.FileSystem
-    | Digest.Digest
-    | ServerConfig.ServerConfig
-    | GitVcsDriver.GitVcsDriver
-    | Path.Path
-    | Scope.Scope
-  >,
+  effect: Effect.Effect<A, E, Layer.Success<typeof cleanupTestLayer> | Scope.Scope>,
 ) => effect.pipe(Effect.provide(cleanupTestLayer));
-
-
-it.live.each(["repository", "uppercase", "bare"] as const)(
-  "keeps a worktree holding an ignored nested %s",
-  (kind) =>
-    runCleanupTest(
-      Effect.gen(function* () {
-        const { service, fs, repo, worktree, command, setPolicy } = yield* cleanupFixture();
-        setPolicy("tracked-changes");
-        const nested = `${worktree}/dist/nested`;
-        if (kind === "uppercase") {
-          yield* command(repo, ["worktree", "add", "-b", "nested", nested]);
-        } else {
-          yield* command(repo, [
-            "clone",
-            "--no-hardlinks",
-            ...(kind === "bare" ? ["--bare"] : []),
-            repo,
-            nested,
-          ]);
-        }
-        if (kind === "uppercase") yield* fs.rename(`${nested}/.git`, `${nested}/.GIT`);
-        yield* fs.writeFileString(`${nested}/uncommitted.txt`, "irreplaceable work\n");
-        expect((yield* command(worktree, ["status", "--porcelain"])).stdout).toBe("");
-        const report = yield* service.runNow;
-        expect(report.entries.find((entry) => entry.path === worktree)).toMatchObject({
-          outcome: "kept",
-          reason: "Contains a nested Git repository",
-        });
-        expect(yield* fs.readFileString(`${nested}/uncommitted.txt`)).toBe("irreplaceable work\n");
-        expect(
-          (yield* command(nested, [
-            ...(kind === "uppercase"
-              ? [
-                  `--git-dir=${(yield* fs.readFileString(`${nested}/.GIT`)).trim().slice(8)}`,
-                  "--work-tree=.",
-                ]
-              : []),
-            "-c",
-            "safe.bareRepository=all",
-            "rev-parse",
-            "--is-bare-repository",
-          ])).stdout.trim(),
-        ).toBe(String(kind === "bare"));
-      }),
-    ),
-);
 
 export const submoduleCleanupFixture = () =>
   Effect.gen(function* () {
@@ -564,273 +506,3 @@ export const submoduleCleanupFixture = () =>
     yield* recordSubmodules();
     return { ...fixture, submodule, child, recordSubmodules };
   });
-
-it.live("inspects a pnpm store excluded from reclaimed bytes for nested repositories", () =>
-  runCleanupTest(
-    Effect.gen(function* () {
-      const { service, fs, repo, worktree, command, setPolicy } = yield* cleanupFixture();
-      setPolicy("tracked-changes");
-      const storeDir = yield* fs.makeTempDirectoryScoped({ prefix: "cleanup-store-" });
-      const nested = `${worktree}/node_modules/.pnpm/nested`;
-      yield* command(repo, ["clone", "--no-hardlinks", repo, nested]);
-      yield* fs.writeFileString(`${nested}/uncommitted.txt`, "keep me");
-      yield* fs.writeFileString(
-        `${worktree}/node_modules/.modules.yaml`,
-        JSON.stringify({ storeDir, virtualStoreDir: ".pnpm" }),
-      );
-      const report = yield* service.runNow;
-      expect(report.entries.find((entry) => entry.path === worktree)).toMatchObject({
-        outcome: "kept",
-        reason: "Contains a nested Git repository",
-      });
-      expect(yield* fs.readFileString(`${nested}/uncommitted.txt`)).toBe("keep me");
-    }),
-  ),
-);
-
-it.live("keeps an ignored repository inside a registered submodule", () =>
-  runCleanupTest(
-    Effect.gen(function* () {
-      const { service, fs, repo, worktree, submodule, command, setPolicy } =
-        yield* submoduleCleanupFixture();
-      setPolicy("tracked-changes");
-      const nested = `${submodule}/dist/nested`;
-      yield* command(repo, ["clone", "--no-hardlinks", repo, nested]);
-      yield* fs.writeFileString(`${nested}/uncommitted.txt`, "keep me");
-      const report = yield* service.runNow;
-      expect(report.entries.find((entry) => entry.path === worktree)).toMatchObject({
-        outcome: "kept",
-        reason: "Contains a nested Git repository",
-      });
-      expect(yield* fs.readFileString(`${nested}/uncommitted.txt`)).toBe("keep me");
-    }),
-  ),
-);
-
-it.live("removes clean submodules recursively, including deinitialized repositories", () =>
-  runCleanupTest(
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const git = yield* GitVcsDriver.GitVcsDriver;
-      let editedDuringClean = false;
-      const { service, repo, worktree, submodule, command, recordSubmodules, setPolicy } =
-        yield* submoduleCleanupFixture().pipe(
-          Effect.provideService(GitVcsDriver.GitVcsDriver, {
-            ...git,
-            execute: (input) =>
-              git.execute(input).pipe(
-                Effect.tap(() => {
-                  if (input.args[0] !== "clean") return Effect.void;
-                  editedDuringClean = true;
-                  return fs.writeFileString(`${input.cwd}/tracked.txt`, "late edit\n");
-                }),
-              ),
-          }),
-        );
-      setPolicy("tracked-changes");
-      yield* fs.writeFileString(`${worktree}/notes.txt`, "untracked\n");
-      yield* fs.writeFileString(`${worktree}/.env`, "ignored\n");
-      yield* command(submodule, [
-        "-c",
-        "protocol.file.allow=always",
-        "submodule",
-        "add",
-        repo,
-        "stored",
-      ]);
-      const legacy = `${worktree}/legacy`;
-      yield* command(repo, ["clone", "--no-hardlinks", repo, legacy]);
-      yield* command(worktree, ["submodule", "add", repo, "legacy"]);
-      expect((yield* fs.stat(`${legacy}/.git`)).type).toBe("Directory");
-      yield* command(legacy, [
-        "-c",
-        "protocol.file.allow=always",
-        "submodule",
-        "add",
-        repo,
-        "child",
-      ]);
-      yield* command(legacy, [
-        "-c",
-        "protocol.file.allow=always",
-        "submodule",
-        "add",
-        repo,
-        "stored",
-      ]);
-      yield* command(legacy, [
-        "-c",
-        "user.name=Cleanup test",
-        "-c",
-        "user.email=cleanup@example.test",
-        "commit",
-        "-am",
-        "record legacy children",
-      ]);
-      yield* command(legacy, ["push", "origin", "HEAD:legacy"]);
-      yield* command(legacy, ["submodule", "deinit", "stored"]);
-      yield* recordSubmodules();
-      yield* command(submodule, ["submodule", "deinit", "stored"]);
-      const checkpoint = (yield* command(submodule, [
-        "commit-tree",
-        "HEAD^{tree}",
-        "-p",
-        "HEAD",
-        "-m",
-        "checkpoint",
-      ])).stdout.trim();
-      yield* command(submodule, [
-        "update-ref",
-        "refs/t3/orchestration-v2/checkpoints/test",
-        checkpoint,
-      ]);
-      const admin = (yield* command(worktree, ["rev-parse", "--absolute-git-dir"])).stdout.trim();
-      const report = yield* service.runNow;
-      expect(editedDuringClean).toBe(false);
-      expect(report.entries.find((entry) => entry.path === worktree)).toMatchObject({
-        outcome: "removed",
-      });
-      expect(report.counts).toEqual({ removed: 1, kept: 0, failed: 0 });
-      expect(yield* fs.exists(worktree)).toBe(false);
-      expect(yield* fs.exists(admin)).toBe(false);
-    }),
-  ),
-);
-
-it.live("keeps nested submodule files protected by the current keep rule", () =>
-  runCleanupTest(
-    Effect.gen(function* () {
-      const { service, fs, worktree, submodule, child, command, setPolicy } =
-        yield* submoduleCleanupFixture();
-      setPolicy("tracked-changes");
-      yield* fs.writeFileString(`${child}/tracked.txt`, "local edit\n");
-      expect(
-        (yield* service.runNow).entries.find((entry) => entry.path === worktree),
-      ).toMatchObject({ outcome: "kept" });
-      expect(yield* fs.readFileString(`${child}/tracked.txt`)).toBe("local edit\n");
-      yield* fs.writeFileString(`${child}/tracked.txt`, "original\n");
-      setPolicy("any-local-files");
-      yield* fs.writeFileString(`${child}/.env`, "local secret\n");
-      expect(
-        (yield* service.runNow).entries.find((entry) => entry.path === worktree),
-      ).toMatchObject({ outcome: "kept" });
-      expect(yield* fs.readFileString(`${child}/.env`)).toBe("local secret\n");
-
-      yield* fs.remove(`${child}/.env`);
-      yield* command(submodule, ["submodule", "deinit", "child"]);
-      yield* fs.writeFileString(`${child}/.env`, "secret after deinit\n");
-      const report = yield* service.runNow;
-      expect({
-        outcome: report.entries.find((entry) => entry.path === worktree)?.outcome,
-        contents: (yield* fs.exists(`${child}/.env`))
-          ? yield* fs.readFileString(`${child}/.env`)
-          : null,
-      }).toEqual({ outcome: "kept", contents: "secret after deinit\n" });
-
-      yield* fs.remove(`${child}/.env`);
-      setPolicy("uncommitted-changes");
-      yield* fs.writeFileString(`${child}/notes.txt`, "notes after deinit\n");
-      const untrackedReport = yield* service.runNow;
-      expect({
-        outcome: untrackedReport.entries.find((entry) => entry.path === worktree)?.outcome,
-        contents: (yield* fs.exists(`${child}/notes.txt`))
-          ? yield* fs.readFileString(`${child}/notes.txt`)
-          : null,
-      }).toEqual({ outcome: "kept", contents: "notes after deinit\n" });
-    }),
-  ),
-);
-
-it.live("keeps unpushed submodule history after checkout and deinitialization", () =>
-  runCleanupTest(
-    Effect.gen(function* () {
-      const { service, fs, worktree, submodule, child, command, recordSubmodules } =
-        yield* submoduleCleanupFixture();
-      yield* command(child, ["checkout", "-b", "local-only"]);
-      yield* fs.writeFileString(`${child}/tracked.txt`, "unpublished work\n");
-      yield* command(child, ["commit", "-am", "local work"]);
-      const local = (yield* command(child, ["rev-parse", "HEAD"])).stdout.trim();
-      yield* recordSubmodules();
-      expect(
-        (yield* service.runNow).entries.find((entry) => entry.path === worktree),
-      ).toMatchObject({ outcome: "kept", reason: expect.stringContaining("remote-tracking") });
-      expect(yield* fs.readFileString(`${child}/tracked.txt`)).toBe("unpublished work\n");
-
-      yield* command(child, ["checkout", "main"]);
-      yield* recordSubmodules();
-      expect(
-        (yield* service.runNow).entries.find((entry) => entry.path === worktree),
-      ).toMatchObject({ outcome: "kept", reason: expect.stringContaining("remote-tracking") });
-      const childGit = (yield* command(child, ["rev-parse", "--absolute-git-dir"])).stdout.trim();
-      yield* command(submodule, ["submodule", "deinit", "child"]);
-      expect(
-        (yield* service.runNow).entries.find((entry) => entry.path === worktree),
-      ).toMatchObject({ outcome: "kept", reason: expect.stringContaining("remote-tracking") });
-      expect(
-        (yield* command(worktree, [
-          "--git-dir",
-          childGit,
-          "rev-parse",
-          "refs/heads/local-only",
-        ])).stdout.trim(),
-      ).toBe(local);
-      expect(
-        (yield* command(worktree, ["--git-dir", childGit, "show", "local-only:tracked.txt"]))
-          .stdout,
-      ).toBe("unpublished work\n");
-      yield* command(worktree, ["--git-dir", childGit, "branch", "-D", "local-only"]);
-      expect(
-        (yield* service.runNow).entries.find((entry) => entry.path === worktree),
-      ).toMatchObject({ outcome: "kept", reason: expect.stringContaining("remote-tracking") });
-      expect(
-        (yield* command(worktree, ["--git-dir", childGit, "show", `${local}:tracked.txt`])).stdout,
-      ).toBe("unpublished work\n");
-    }),
-  ),
-);
-
-it.live("keeps submodules when stored repository metadata is malformed", () =>
-  runCleanupTest(
-    Effect.gen(function* () {
-      const { service, fs, worktree, submodule, child, command, setPolicy } =
-        yield* submoduleCleanupFixture();
-      setPolicy("tracked-changes");
-      const childGit = (yield* command(child, ["rev-parse", "--absolute-git-dir"])).stdout.trim();
-      yield* command(submodule, ["submodule", "deinit", "child"]);
-      yield* fs.writeFileString(`${childGit}/HEAD`, "not a ref\n");
-      yield* fs.writeFileString(`${worktree}/notes.txt`, "keep while the worktree stays\n");
-      expect(
-        (yield* service.runNow).entries.find((entry) => entry.path === worktree),
-      ).toMatchObject({ outcome: "kept", reason: expect.stringContaining("inspected") });
-      expect(yield* fs.exists(worktree)).toBe(true);
-      expect(yield* fs.readFileString(`${childGit}/HEAD`)).toBe("not a ref\n");
-      expect(yield* fs.readFileString(`${worktree}/notes.txt`)).toBe(
-        "keep while the worktree stays\n",
-      );
-    }),
-  ),
-);
-
-it.live("preserves late tracked edits when submodules were never initialized", () =>
-  runCleanupTest(
-    Effect.gen(function* () {
-      const fixture = yield* cleanupFixture();
-      const { service, fs, worktree, command } = fixture;
-      const head = (yield* command(worktree, ["rev-parse", "HEAD"])).stdout.trim();
-      yield* fs.writeFileString(
-        `${worktree}/.gitmodules`,
-        '[submodule "module"]\n\tpath = module\n\turl = /unused\n',
-      );
-      yield* command(worktree, ["add", ".gitmodules"]);
-      yield* command(worktree, ["update-index", "--add", "--cacheinfo", `160000,${head},module`]);
-      yield* command(worktree, ["commit", "-m", "record uninitialized module"]);
-      yield* fs.makeDirectory(`${worktree}/module`);
-      fixture.editBeforeRemoval();
-      expect(
-        (yield* service.runNow).entries.find((entry) => entry.path === worktree),
-      ).toMatchObject({ outcome: "failed" });
-      expect(yield* fs.readFileString(`${worktree}/tracked.txt`)).toBe("late edit\n");
-    }),
-  ),
-);
-

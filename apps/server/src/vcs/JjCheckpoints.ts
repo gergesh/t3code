@@ -98,15 +98,13 @@ export const makeJjCheckpointOps = (deps: JjCheckpointDeps): VcsDriver.VcsCheckp
 
               const retried = yield* restoreFrom(operation, cwd, commitId);
               if (retried.exitCode !== 0) {
-                return yield* Effect.fail(
-                  new VcsProcessExitError({
-                    operation,
-                    command: "jj restore",
-                    cwd,
-                    exitCode: retried.exitCode,
-                    detail: retried.stderr.trim() || "jj restore failed.",
-                  }),
-                );
+                return yield* new VcsProcessExitError({
+                  operation,
+                  command: "jj restore",
+                  cwd,
+                  exitCode: retried.exitCode,
+                  detail: retried.stderr.trim() || "jj restore failed.",
+                });
               }
             }),
           ).pipe(Effect.exit);
@@ -134,39 +132,45 @@ export const makeJjCheckpointOps = (deps: JjCheckpointDeps): VcsDriver.VcsCheckp
     },
   );
 
+  const captureCheckpoint = Effect.fn("JjVcsDriver.checkpoints.captureCheckpoint")(function* (
+    input: VcsDriver.VcsCaptureCheckpointInput,
+  ) {
+    const operation = JJ_CHECKPOINT_CAPTURE_OPERATION;
+    const gitDir = yield* deps.ensureGitDir(operation, input.cwd);
+
+    // Reading `@` without `--ignore-working-copy` is the snapshot: jj writes a new commit id
+    // under the same change id, moving neither `@` nor any bookmark.
+    const change = yield* deps.currentChange(input.cwd);
+    if (change.conflict) {
+      yield* Effect.logWarning("jj checkpoint captured a conflicted working copy", {
+        cwd: input.cwd,
+        checkpointRef: input.checkpointRef,
+      });
+    }
+
+    yield* colocatedGitCommand(
+      deps.process,
+      operation,
+      { gitDir, cwd: input.cwd },
+      [
+        "-c",
+        "core.fsync=objects,reference",
+        "-c",
+        "core.fsyncMethod=fsync",
+        "update-ref",
+        "--create-reflog",
+        input.checkpointRef,
+        change.commitId,
+      ],
+      { retryTransientFailures: true },
+    );
+  });
+
   return {
-    captureCheckpoint: Effect.fn("JjVcsDriver.checkpoints.captureCheckpoint")(function* (input) {
-      const operation = JJ_CHECKPOINT_CAPTURE_OPERATION;
-      const gitDir = yield* deps.ensureGitDir(operation, input.cwd);
-
-      // Reading `@` without `--ignore-working-copy` is the snapshot: jj writes a new commit id
-      // under the same change id, moving neither `@` nor any bookmark.
-      const change = yield* deps.currentChange(input.cwd);
-      if (change.conflict) {
-        yield* Effect.logWarning("jj checkpoint captured a conflicted working copy", {
-          cwd: input.cwd,
-          checkpointRef: input.checkpointRef,
-        });
-      }
-
-      yield* colocatedGitCommand(
-        deps.process,
-        operation,
-        { gitDir, cwd: input.cwd },
-        [
-          "-c",
-          "core.fsync=objects,reference",
-          "-c",
-          "core.fsyncMethod=fsync",
-          "update-ref",
-          "--create-reflog",
-          input.checkpointRef,
-          change.commitId,
-        ],
-        { retryTransientFailures: true },
-      );
-    }),
-
+    captureCheckpoint,
+    // jj snapshots the working copy on every read, so it has no cheaper clean-HEAD path.
+    resolveCleanHead: () => Effect.succeed(null),
+    captureHeadCheckpoint: ({ cwd, checkpointRef }) => captureCheckpoint({ cwd, checkpointRef }),
     hasCheckpointRef: Effect.fn("JjVcsDriver.checkpoints.hasCheckpointRef")(function* (input) {
       const gitDir = yield* deps.ensureGitDir(
         "JjVcsDriver.checkpoints.hasCheckpointRef",
@@ -188,15 +192,13 @@ export const makeJjCheckpointOps = (deps: JjCheckpointDeps): VcsDriver.VcsCheckp
       }
 
       if (!MISSING_REVISION_PATTERN.test(restored.stderr)) {
-        return yield* Effect.fail(
-          new VcsProcessExitError({
-            operation,
-            command: "jj restore",
-            cwd: input.cwd,
-            exitCode: restored.exitCode,
-            detail: restored.stderr.trim() || "jj restore failed.",
-          }),
-        );
+        return yield* new VcsProcessExitError({
+          operation,
+          command: "jj restore",
+          cwd: input.cwd,
+          exitCode: restored.exitCode,
+          detail: restored.stderr.trim() || "jj restore failed.",
+        });
       }
 
       yield* restoreThroughGitObject(operation, gitDir, input.cwd, captured);
@@ -223,15 +225,13 @@ export const makeJjCheckpointOps = (deps: JjCheckpointDeps): VcsDriver.VcsCheckp
       ]);
 
       if (fromOid === null || toOid === null) {
-        return yield* Effect.fail(
-          new VcsProcessExitError({
-            operation,
-            command: "git diff",
-            cwd: input.cwd,
-            exitCode: 1,
-            detail: CHECKPOINT_REF_UNAVAILABLE_DETAIL,
-          }),
-        );
+        return yield* new VcsProcessExitError({
+          operation,
+          command: "git diff",
+          cwd: input.cwd,
+          exitCode: 1,
+          detail: CHECKPOINT_REF_UNAVAILABLE_DETAIL,
+        });
       }
 
       const result = yield* colocatedGitCommand(
@@ -264,15 +264,13 @@ export const makeJjCheckpointOps = (deps: JjCheckpointDeps): VcsDriver.VcsCheckp
       );
 
       if (result.exitCode !== 0) {
-        return yield* Effect.fail(
-          new VcsProcessExitError({
-            operation,
-            command: "git diff",
-            cwd: input.cwd,
-            exitCode: result.exitCode,
-            detail: result.stderr.trim() || CHECKPOINT_REF_UNAVAILABLE_DETAIL,
-          }),
-        );
+        return yield* new VcsProcessExitError({
+          operation,
+          command: "git diff",
+          cwd: input.cwd,
+          exitCode: result.exitCode,
+          detail: result.stderr.trim() || CHECKPOINT_REF_UNAVAILABLE_DETAIL,
+        });
       }
 
       return result.stdout;

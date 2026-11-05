@@ -193,7 +193,14 @@ describe("named web/mobile action policies", () => {
           ).toBe(reason);
         }
         for (const hasOriginRemote of [false, true]) {
-          const quickAction = resolveQuickAction(status, false, false, hasOriginRemote, undefined, surface);
+          const quickAction = resolveQuickAction(
+            status,
+            false,
+            false,
+            hasOriginRemote,
+            undefined,
+            surface,
+          );
           expect(quickAction.disabled).toBe(true);
           expect(quickAction.kind).toBe("show_hint");
           expect(quickAction.hint).toBe(reason);

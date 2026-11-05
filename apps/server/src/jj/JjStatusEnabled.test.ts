@@ -40,6 +40,7 @@ describeJj("JjStatus enabled broadcaster refresh reads", () => {
         Effect.gen(function* () {
           let segments = 0;
           let workspaces = 0;
+          let lastRefName: string | null = null;
           const status = yield* makeStatus(
             {
               ...repo.driver,
@@ -71,10 +72,20 @@ describeJj("JjStatus enabled broadcaster refresh reads", () => {
             ),
             Layer.provide(
               Layer.mock(GitWorkflowService.GitWorkflowService)({
-                localStatus: status.localStatus,
+                localStatus: (input) =>
+                  status.localStatus(input).pipe(
+                    Effect.tap((local) =>
+                      Effect.sync(() => {
+                        lastRefName = local.refName;
+                      }),
+                    ),
+                  ),
+                // The real jj branch read is a status read; this test counts status reads only.
+                currentBranch: () => Effect.sync(() => lastRefName),
                 remoteStatus: status.remoteStatus,
                 invalidateStatus: repo.driver.invalidateRepoCaches,
                 invalidateLocalStatus: repo.driver.invalidateRepoCaches,
+                invalidateRemoteStatus: () => Effect.void,
               }),
             ),
             Layer.provide(

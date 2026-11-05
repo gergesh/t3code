@@ -114,12 +114,24 @@ export const makeJjPullRequestThread = (deps: JjPullRequestThreadDeps): JjPullRe
         reference: normalizePullRequestReference(input.reference),
       });
       const pullRequest = toResolvedPullRequest(summary);
-      const localBranch = resolvePullRequestWorktreeLocalBranchName({
-        ...pullRequest,
-        ...(summary.isCrossRepository !== undefined
-          ? { isCrossRepository: summary.isCrossRepository }
-          : {}),
-      });
+      const localBookmarks = summary.isCrossRepository
+        ? new Set(
+            (yield* driver
+              .listBookmarks(input.cwd)
+              .pipe(mapJjFailure(operation, input.cwd, "Could not list Jujutsu bookmarks.")))
+              .filter((bookmark) => bookmark.remote === null)
+              .map((bookmark) => bookmark.name),
+          )
+        : new Set<string>();
+      const localBranch = resolvePullRequestWorktreeLocalBranchName(
+        {
+          ...pullRequest,
+          ...(summary.isCrossRepository !== undefined
+            ? { isCrossRepository: summary.isCrossRepository }
+            : {}),
+        },
+        localBookmarks,
+      );
 
       const remoteName = yield* driver
         .resolvePrimaryRemoteName(input.cwd)
@@ -305,72 +317,71 @@ export const makeJjPullRequestThread = (deps: JjPullRequestThreadDeps): JjPullRe
         // ref backwards, when jj's default would abandon commits during the import; the global
         // config prevents that.
         if (remoteName === null) {
-          return yield* Effect.fail(
-            jjFailure(operation, input.cwd, "This repository has no remote to fetch from."),
+          return yield* jjFailure(
+            operation,
+            input.cwd,
+            "This repository has no remote to fetch from.",
           );
         }
-        yield* changeRequestHeadRef
-          .pipe(
-            Effect.flatMap((ref) =>
-              JjProcess.colocatedGitCommand(
-                process,
-                operation,
-                { gitDir: paths.gitDir, cwd: paths.mainWorkspaceRoot },
-                ["fetch", "--", remoteName, `+${ref}:refs/heads/${localBranch}`],
-                { timeoutMs: FETCH_TIMEOUT_MS },
-              ),
+        yield* changeRequestHeadRef.pipe(
+          Effect.flatMap((ref) =>
+            JjProcess.colocatedGitCommand(
+              process,
+              operation,
+              { gitDir: paths.gitDir, cwd: paths.mainWorkspaceRoot },
+              ["fetch", "--", remoteName, `+${ref}:refs/heads/${localBranch}`],
+              { timeoutMs: FETCH_TIMEOUT_MS },
             ),
-          )
-          .pipe(
-            Effect.catch((cause) =>
-              summary.isCrossRepository === true || pullRequest.state !== "open"
-                ? Effect.fail(cause)
-                : Effect.gen(function* () {
-                    const remote = yield* JjProcess.colocatedGitCommand(
-                      process,
-                      operation,
-                      { gitDir: paths.gitDir, cwd: paths.mainWorkspaceRoot },
-                      ["config", "--get", `remote.${remoteName}.url`],
-                    );
-                    const remoteUrl = remote.stdout.trim();
-                    const pullRequestKey = pullRequestRepositoryKey(pullRequest.url);
-                    if (
-                      remoteUrl.length === 0 ||
-                      pullRequestKey === null ||
-                      sourceControlDefinitions.canonicalRepositoryKey(pullRequestKey) !==
-                        sourceControlDefinitions.canonicalRepositoryKey(
-                          sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl),
-                        )
-                    ) {
-                      return yield* Effect.fail(cause);
-                    }
-                    // Some hosts publish no pull ref. Only an open PR in this repository can
-                    // safely use its named branch: a closed head may have moved since closing.
-                    yield* run(
-                      operation,
-                      input.cwd,
-                      [
-                        "git",
-                        "fetch",
-                        "--remote",
-                        exactStringPattern(remoteName),
-                        "--branch",
-                        exactStringPattern(pullRequest.headBranch),
-                      ],
-                      { timeoutMs: FETCH_TIMEOUT_MS },
-                    );
-                    yield* trackRemoteBookmark({
-                      process,
-                      operation,
-                      cwd: input.cwd,
-                      gitDir: paths.gitDir,
-                      remoteName,
-                      name: pullRequest.headBranch,
-                    });
-                  }),
-            ),
-            mapJjFailure(operation, input.cwd, "Could not fetch the pull request head."),
-          );
+          ),
+          Effect.catch((cause) =>
+            summary.isCrossRepository === true || pullRequest.state !== "open"
+              ? Effect.fail(cause)
+              : Effect.gen(function* () {
+                  const remote = yield* JjProcess.colocatedGitCommand(
+                    process,
+                    operation,
+                    { gitDir: paths.gitDir, cwd: paths.mainWorkspaceRoot },
+                    ["config", "--get", `remote.${remoteName}.url`],
+                  );
+                  const remoteUrl = remote.stdout.trim();
+                  const pullRequestKey = pullRequestRepositoryKey(pullRequest.url);
+                  if (
+                    remoteUrl.length === 0 ||
+                    pullRequestKey === null ||
+                    sourceControlDefinitions.canonicalRepositoryKey(pullRequestKey) !==
+                      sourceControlDefinitions.canonicalRepositoryKey(
+                        sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl),
+                      )
+                  ) {
+                    return yield* cause;
+                  }
+                  // Some hosts publish no pull ref. Only an open PR in this repository can
+                  // safely use its named branch: a closed head may have moved since closing.
+                  yield* run(
+                    operation,
+                    input.cwd,
+                    [
+                      "git",
+                      "fetch",
+                      "--remote",
+                      exactStringPattern(remoteName),
+                      "--branch",
+                      exactStringPattern(pullRequest.headBranch),
+                    ],
+                    { timeoutMs: FETCH_TIMEOUT_MS },
+                  );
+                  yield* trackRemoteBookmark({
+                    process,
+                    operation,
+                    cwd: input.cwd,
+                    gitDir: paths.gitDir,
+                    remoteName,
+                    name: pullRequest.headBranch,
+                  });
+                }),
+          ),
+          mapJjFailure(operation, input.cwd, "Could not fetch the pull request head."),
+        );
         yield* run(operation, input.cwd, ["git", "import"], { timeoutMs: FETCH_TIMEOUT_MS }).pipe(
           mapJjFailure(operation, input.cwd, "Could not import the pull request head."),
         );

@@ -24,7 +24,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
-import { isWithinRoot } from "./KnownWorkspaces.ts";
+import { isWithinRoot } from "./pathContainment.ts";
 import * as TaskFolderStore from "./TaskFolderStore.ts";
 
 /** A tracked folder a thread works in, besides its own cwd. */

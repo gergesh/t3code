@@ -19,6 +19,7 @@ import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Secrets from "../secrets/SecretRequests.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as Git from "../vcs/GitVcsDriver.ts";
+import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
 import * as Mcp from "./OrchestratorMcpService.ts";
 
@@ -38,6 +39,7 @@ const dependencies = Layer.mergeAll(
   Layer.mock(Threads.ThreadManagementService)({}),
   Layer.mock(Launch.ThreadLaunchService)({}),
   Layer.mock(Git.GitVcsDriver)({}),
+  Layer.mock(GitWorkflow.GitWorkflowService)({}),
   Layer.mock(Secrets.SecretRequests)({}),
   Layer.mock(RemoteDelegation.RemoteDelegation)({}),
   Layer.mock(Scheduler.Scheduler)({ register: () => Effect.void }),

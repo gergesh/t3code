@@ -43,6 +43,7 @@ import * as SourceControlProviderRegistry from "../../../sourceControl/SourceCon
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as JjVcsDriver from "../../../vcs/JjVcsDriver.ts";
+import * as JjWorkflow from "../../../jj/JjWorkflow.ts";
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
 import * as VcsProcess from "../../../vcs/VcsProcess.ts";
 import * as VcsDriverRegistry from "../../../vcs/VcsDriverRegistry.ts";
@@ -188,7 +189,6 @@ const clientLaunchHarness = (input: {
       workspaceScanDirectory: Effect.succeed,
     }),
     Layer.mock(PeerForwarding.PeerForwarding)({}),
-    VcsDriverRegistry.layer,
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
       namedProjectsRoot: "/projects",
       isScratchProject: () => Effect.succeed(false),
@@ -213,6 +213,7 @@ const clientLaunchHarness = (input: {
     ),
     DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer)),
   ).pipe(
+    Layer.provideMerge(VcsDriverRegistry.layer),
     Layer.provideMerge(GitVcsDriver.layer),
     Layer.provideMerge(VcsProcess.layer),
     Layer.provideMerge(
@@ -1271,6 +1272,10 @@ it.effect("an agent's clone is not cut off while git is still transferring", () 
             ),
         }),
       ),
+      Layer.provide(
+        Layer.succeed(JjVcsDriver.JjVcsDriver, {} as JjVcsDriver.JjVcsDriver["Service"]),
+      ),
+      Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({})),
       Layer.provideMerge(dependencies),
     );
     const toolkit = yield* ProjectToolkit.pipe(

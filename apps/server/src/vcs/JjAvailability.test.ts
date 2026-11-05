@@ -312,6 +312,7 @@ describe("makeJjAvailability", () => {
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
+          NodeServices.layer,
           Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
             get: () => Effect.succeed({} as VcsDriver.VcsDriver["Service"]),
           }),
@@ -403,7 +404,9 @@ describeJj("availability refresh with a real jj binary", () => {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const resolve = yield* SpawnExecutableResolution;
-        const binary = resolve("jj", yield* HostProcess.Platform, yield* HostProcess.Environment);
+        const platform = yield* HostProcess.Platform;
+        const hostEnvironment = yield* HostProcess.Environment;
+        const binary = yield* Effect.promise(async () => resolve("jj", platform, hostEnvironment));
         assert.isDefined(binary);
         const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-jj-probe-refresh-" });
         const executable = path.join(directory, "jj");

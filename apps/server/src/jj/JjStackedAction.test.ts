@@ -4,7 +4,6 @@ import * as DateTime from "effect/DateTime";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 
@@ -63,6 +62,13 @@ const textGeneration: TextGeneration.TextGeneration["Service"] = {
   generateReviewGuide: () =>
     Effect.fail(
       new TextGenerationError({ operation: "generateReviewGuide", detail: "not exercised" }),
+    ),
+  generateTranscriptionPostProcessing: () =>
+    Effect.fail(
+      new TextGenerationError({
+        operation: "generateTranscriptionPostProcessing",
+        detail: "not exercised",
+      }),
     ),
 };
 
@@ -826,7 +832,7 @@ describeJj("JjStackedAction pull request thread history", () => {
                 headBranchProbe: ({ headSelectors }) => ({ headSelectors, limit: 1 }),
                 getDefaultBranch: () => Effect.succeed("main"),
                 listChangeRequests: () => Effect.succeed([]),
-                readChangeRequestTemplate: () => Effect.succeed(Option.none()),
+                readChangeRequestTemplate: () => Effect.succeedNone,
                 createChangeRequest: ({ bodyFile }) =>
                   fileSystem.readFileString(bodyFile).pipe(
                     Effect.tap((body) =>

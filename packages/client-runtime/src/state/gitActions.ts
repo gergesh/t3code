@@ -360,8 +360,7 @@ export function getGitActionDisabledReason(
     return resolve(
       msg("View {shortLabel} is currently unavailable.", { shortLabel: terminology.shortLabel }),
     );
-  if (gitStatus.refName === null)
-    return vcs.noRefHint(`creating ${phrase.changeRequest}`, surface);
+  if (gitStatus.refName === null) return vcs.noRefHint(`creating ${phrase.changeRequest}`, surface);
   if (surface === "mobile" && gitStatus.vcs?.kind === "jj" && hasChanges) return vcs.dirtyPushHint;
   if (!gitStatus.hasUpstream && !hasOriginRemote)
     return resolve(

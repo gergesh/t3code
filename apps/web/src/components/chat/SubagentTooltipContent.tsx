@@ -64,10 +64,7 @@ export function SubagentTooltipContent(props: {
     modelLabel,
     modelSlug,
     workspace: metadata,
-  } = resolveSubagentMetadata(
-    { ...props, modelSelection: childSelection, terminology },
-    messages,
-  );
+  } = resolveSubagentMetadata({ ...props, modelSelection: childSelection, terminology }, messages);
   const preview = subagentDetailPreview(props);
   const providerModel = props.provider?.models.find((candidate) => candidate.slug === modelSlug);
   const childModel = props.provider

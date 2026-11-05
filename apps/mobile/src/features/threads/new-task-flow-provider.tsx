@@ -402,6 +402,17 @@ export function NewTaskFlowProvider(
         })
       : null,
   );
+  // Keyed on the draft's own choice so the query sits with the other hooks; React Compiler
+  // drops the memoization of values computed across a later hook call.
+  const draftWorktreePath = selectedProjectDraft.workspaceSelection?.worktreePath ?? null;
+  const selectedWorkspaceStatus = useEnvironmentQuery(
+    selectedProject !== null && draftWorktreePath !== null
+      ? vcsEnvironment.status({
+          environmentId: selectedProject.environmentId,
+          input: { cwd: draftWorktreePath, includeRemote: false },
+        })
+      : null,
+  );
   const currentCheckoutBranchName = projectGitStatus.data?.refName ?? null;
   const vcsTerminology = resolveVcsTerminology(projectGitStatus.data);
   // The unfiltered ref list also provides repository capability while offline.
@@ -450,14 +461,6 @@ export function NewTaskFlowProvider(
   const selectedEnvironmentServerConfig = serverConfigForCwd(
     projectDefaults.serverConfig,
     workspaceCwd,
-  );
-  const selectedWorkspaceStatus = useEnvironmentQuery(
-    selectedProject !== null && selectedWorktreePath !== null
-      ? vcsEnvironment.status({
-          environmentId: selectedProject.environmentId,
-          input: { cwd: selectedWorktreePath, includeRemote: false },
-        })
-      : null,
   );
   const vcsActionsSupported =
     supportsVcsActions(projectGitStatus.data) && supportsVcsActions(selectedWorkspaceStatus.data);

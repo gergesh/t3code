@@ -47,6 +47,10 @@ vi.mock("@t3tools/client-runtime/state/vcs", () => ({
 vi.mock("react-native", () => {
   const Surface = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    AccessibilityInfo: {
+      addEventListener: () => ({ remove: () => {} }),
+      isReduceMotionEnabled: async () => false,
+    },
     View: ({
       children,
       accessibilityLabel,
@@ -93,7 +97,13 @@ vi.mock("react-native-screens", () => ({
 vi.mock("@react-navigation/native", async () => {
   const { useEffect } = await import("react");
   return {
-    useNavigation: () => ({ navigate: () => {}, canGoBack: () => false }),
+    useNavigation: () => ({
+      navigate: () => {},
+      canGoBack: () => false,
+      getState: () => undefined,
+    }),
+    useRoute: () => ({ name: "Thread", params: {} }),
+    StackActions: { push: () => ({}) },
     useIsFocused: () => true,
     useFocusEffect: (effect: () => void | (() => void)) => useEffect(effect, [effect]),
   };
@@ -106,21 +116,38 @@ vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 vi.mock("expo-haptics", () => ({ selectionAsync: async () => {} }));
+vi.mock("expo", () => ({
+  requireNativeModule: () => ({}),
+  requireOptionalNativeModule: () => null,
+  requireNativeView: () => () => null,
+}));
+vi.mock("uniwind", () => ({
+  useResolveClassNames: () => ({}),
+  withUniwind: <C,>(component: C) => component,
+}));
 vi.mock("expo-clipboard", () => ({ setStringAsync: async () => {} }));
 vi.mock("../components/ProviderIcon", () => ({ ProviderIcon: () => null }));
 vi.mock("./preferences", async () => {
   const { Atom, AsyncResult } = await import("effect/reactivity");
+  const Effect = await import("effect/Effect");
   let current: Preferences = {};
   const mobilePreferencesAtom = Atom.make(AsyncResult.success(current));
   return {
     mobilePreferencesAtom,
-    updateMobilePreferencesAtom: Atom.writable(
-      () => null,
-      (context, input: { transform: (preferences: Preferences) => Partial<Preferences> }) => {
-        current = { ...current, ...input.transform(current) };
-        context.set(mobilePreferencesAtom, AsyncResult.success(current));
-      },
-    ),
+    saveMobilePreferences: {
+      label: "test:preferences:save",
+      run: (
+        registry: AtomRegistry.AtomRegistry,
+        input:
+          | Partial<Preferences>
+          | { transform: (preferences: Preferences) => Partial<Preferences> },
+      ) =>
+        Effect.sync(() => {
+          current = { ...current, ...("transform" in input ? input.transform(current) : input) };
+          registry.set(mobilePreferencesAtom, AsyncResult.success(current));
+          return current;
+        }),
+    },
   };
 });
 vi.mock("react-native-keyboard-controller", () => ({
@@ -144,7 +171,10 @@ vi.mock("react-native-reanimated", async () => {
     return useSharedValue(derive());
   }
   return {
-    default: { View: ({ children }: { children?: ReactNode }) => <>{children}</> },
+    default: {
+      View: ({ children }: { children?: ReactNode }) => <>{children}</>,
+      createAnimatedComponent: <C,>(component: C) => component,
+    },
     Easing: { out: () => {}, cubic: () => {} },
     FadeInDown: { duration: () => undefined },
     FadeOut: { duration: () => undefined },
@@ -170,15 +200,31 @@ vi.mock("@legendapp/list/keyboard", async () => {
       useRef({ freeze: { set: () => {} }, scrollMessageToEnd: async () => {} }).current,
   };
 });
+vi.mock("../native/NativeScrollViewMarker", () => ({ NativeScrollView: "div" }));
+vi.mock("../components/RenderErrorBoundary", () => ({
+  RenderErrorBoundary: ({ children }: { children: ReactNode }) => children,
+}));
+vi.mock("../components/ComposerEditor", () => ({ ComposerEditor: () => null }));
+vi.mock("../features/threads/FreshSessionNotice", () => ({ FreshSessionNotice: () => null }));
+vi.mock("expo-glass-effect", () => ({
+  isGlassEffectAPIAvailable: () => false,
+  GlassView: () => null,
+}));
 vi.mock("../components/ui/AppBar", () => ({ AppBar: () => null }));
 vi.mock("../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
 vi.mock("../components/ui/AndroidScreenHeader", () => ({ AndroidScreenHeader: () => null }));
 vi.mock("../connection/catalog", async () => {
-  const { AsyncResult } = await import("effect/reactivity");
+  const { AsyncResult, Atom } = await import("effect/reactivity");
   return {
     environmentCatalog: {
+      catalogValueAtom: Atom.make({ entries: new Map() }),
+      sessionGenerationAtom: Atom.family((_environmentId: string) => Atom.make(0)),
       retryNow: {
         label: "retry connection",
+        run: vi.fn(async () => AsyncResult.success(undefined)),
+      },
+      setEnabled: {
+        label: "toggle connection",
         run: vi.fn(async () => AsyncResult.success(undefined)),
       },
     },
@@ -216,7 +262,12 @@ vi.mock("./edit-pending-thread-message", () => ({ editPendingThreadMessage: asyn
 vi.mock("./threads", async () => {
   const { AsyncResult, Atom } = await import("effect/reactivity");
   return {
-    environmentThreadDetails: { threadAtom: () => Atom.make(null) },
+    environmentThreadShells: { threadShellAtom: () => Atom.make(null) },
+    environmentThreadDetails: {
+      threadAtom: () => Atom.make(null),
+      runStopAtom: () => Atom.make(null),
+      workspaceMutationIdAtom: () => Atom.make(null),
+    },
     threadEnvironment: {
       closeGuestShare: { label: "stop guest sharing", run: vi.fn() },
       interruptTurn: {
@@ -247,7 +298,10 @@ vi.mock("./use-thread-composer-state", () => ({
 }));
 vi.mock("../lib/useUniwindTheme", () => ({ useUniwindTheme: () => ({ "--color-icon": "black" }) }));
 vi.mock("../features/settings/appearance/AppearancePreferencesProvider", () => ({
-  useAppearancePreferences: () => ({ themeAppearance: "light" }),
+  useAppearancePreferences: () => ({
+    themeAppearance: "light",
+    appearance: { baseFontSize: 16 },
+  }),
 }));
 vi.mock("../features/settings/appearance/useAppearanceCodeSurface", async () => {
   const { useLayoutEffect } = await import("react");
@@ -269,6 +323,10 @@ vi.mock("../features/layout/AdaptiveWorkspaceLayout", () => ({
     toggleAuxiliaryPane: () => {},
   }),
   useRegisterWorkspaceInspector: () => {},
+  useWorkspacePaneState: () => ({
+    fileInspector: { supported: false },
+    panes: { supportsAuxiliaryPane: false, auxiliaryPaneVisible: false },
+  }),
 }));
 vi.mock("../features/voice-input/VoiceInputProvider", () => ({
   useGlobalVoiceInput: () => ({ session: {} }),
@@ -289,6 +347,12 @@ vi.mock("../features/threads/ThreadComposer", () => ({
   ThreadComposer: () => null,
 }));
 vi.mock("../features/threads/ThreadFeed", () => ({ ThreadFeed: () => null }));
+vi.mock("../features/threads/ManagedRuntimeModeNotice", () => ({
+  ManagedRuntimeModeNotice: () => null,
+}));
+vi.mock("../features/threads/ThreadSideChatsRow", () => ({ ThreadSideChatsRow: () => null }));
+vi.mock("../features/threads/ChildThreadApprovals", () => ({ ChildThreadApprovals: () => null }));
+vi.mock("../features/threads/ProviderSubagentBar", () => ({ ProviderSubagentBar: () => null }));
 vi.mock("../features/threads/ThreadAgentsSheet", () => ({ useThreadTurnSubagents: () => null }));
 vi.mock("../features/threads/ComposerQueuedEdit", () => ({ ComposerQueuedEditBanner: () => null }));
 vi.mock("../features/threads/ThreadQueueControl", () => ({ useThreadQueuedCount: () => 0 }));
@@ -366,17 +430,16 @@ const threadProps: ThreadDetailScreenProps = {
   onChangeDraftMessage: noop,
   onPickDraftMedia: asyncNoop,
   onPickDraftFiles: asyncNoop,
-  onNativePasteImages: asyncNoop,
+  onNativePasteImages: async () => false,
   onNativePasteText: asyncNoop,
   onRemoveDraftImage: noop,
   onStopThread: noop,
   onResumeQueue: null,
   onSendMessage: async () => null,
+  onSendCommand: async () => null,
   onReconnectEnvironment: noop,
   canSwitchThreadProvider: false,
-  onUpdateThreadModelSelection: noop,
-  onUpdateThreadRuntimeMode: noop,
-  onUpdateThreadInteractionMode: noop,
+  offersSideChat: false,
   onRespondToApproval: async () => undefined,
   onSelectUserInputOption: noop,
   onChangeUserInputCustomAnswer: noop,

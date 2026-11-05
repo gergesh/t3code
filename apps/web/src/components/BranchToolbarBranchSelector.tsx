@@ -829,7 +829,8 @@ export function BranchToolbarBranchSelector({
         >
           <span className="truncate">
             <T>
-              Create new <Var>{vcsTerminology.genericRefNoun}</Var> &quot;<Var>{newRefName}</Var>&quot;
+              Create new <Var>{vcsTerminology.genericRefNoun}</Var> &quot;<Var>{newRefName}</Var>
+              &quot;
             </T>
           </span>
         </ComboboxItem>

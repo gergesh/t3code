@@ -24,6 +24,9 @@ import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Context from "effect/Context";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Deferred from "effect/Deferred";
 import * as Layer from "effect/Layer";
 import * as Clock from "effect/Clock";
@@ -323,6 +326,10 @@ export class StorageCleanup extends Context.Service<
 >()("t3/storageCleanup") {}
 
 const make = Effect.gen(function* () {
+  // Jujutsu detection runs its own process layer, which task-folder callbacks cannot require.
+  const detectionServices = yield* Effect.context<
+    ChildProcessSpawner.ChildProcessSpawner | Digest.Digest | SecureRandom.SecureRandom
+  >();
   const config = yield* ServerConfig.ServerConfig;
   const settingsService = yield* Settings.ServerSettingsService;
   const projectStore = yield* ProjectStore.ProjectStoreV2;
@@ -1606,6 +1613,7 @@ const make = Effect.gen(function* () {
                     ),
                     Effect.provideService(FileSystem.FileSystem, fs),
                     Effect.provideService(Path.Path, path),
+                    Effect.provide(detectionServices),
                   ),
               });
               for (const removedPath of result.removed)
@@ -1643,17 +1651,23 @@ const make = Effect.gen(function* () {
               registry.detect({ cwd: worktreePath, jjOnly: true }),
             ).pipe(Effect.provide(cleanupDetectionLayer))
           : null;
+        const jjBookmark = detectedJj?.kind === "jj" ? thread.branch : null;
+        if (detectedJj?.kind === "jj" && jjBookmark === null)
+          return keep("no bookmark is recorded for this Jujutsu workspace");
         let jjInspection =
-          detectedJj?.kind === "jj"
-            ? yield* inspectJjStorageCleanup(
-                worktreePath,
-                thread.branch,
-                settings.worktreeKeepWhen,
-                false,
-                defaultBranches,
-                !eligible,
-              )
-            : null;
+          jjBookmark === null
+            ? null
+            : {
+                bookmark: jjBookmark,
+                ...(yield* inspectJjStorageCleanup(
+                  worktreePath,
+                  jjBookmark,
+                  settings.worktreeKeepWhen,
+                  false,
+                  defaultBranches,
+                  !eligible,
+                )),
+              };
         if (jjInspection !== null) {
           if (jjInspection.reason !== null) return keep(jjInspection.reason);
         } else {
@@ -1674,14 +1688,14 @@ const make = Effect.gen(function* () {
             if (!refreshedJjDefaults.has(refreshKey)) {
               const inspected = yield* inspectJjStorageCleanup(
                 worktreePath,
-                thread.branch,
+                jjInspection.bookmark,
                 settings.worktreeKeepWhen,
                 true,
                 defaultBranches,
               );
               if (inspected.reason !== null) return keep(inspected.reason);
               if (inspected.commitId !== head.commitSha) return keep("commit changed since check");
-              jjInspection = inspected;
+              jjInspection = { bookmark: jjInspection.bookmark, ...inspected };
               refreshedJjDefaults.add(refreshKey);
             }
             if (jjInspection.defaultBranch === null) return keep("default branch is unavailable");
@@ -1689,11 +1703,11 @@ const make = Effect.gen(function* () {
             if (eligible) removalReason = "no commits beyond the default branch";
             if (!eligible && settings.worktreeOnMerge) {
               const pullRequest = yield* gitManager.branchPullRequest(
-                { cwd: jjInspection.mainWorkspaceRoot, branch: thread.branch },
+                { cwd: jjInspection.mainWorkspaceRoot, branch: jjInspection.bookmark },
                 { refresh: true, includeHeadRepository: true },
               );
               eligible = storageCleanupPullRequestMerged(pullRequest, {
-                branch: thread.branch,
+                branch: jjInspection.bookmark,
                 defaultBranch: jjInspection.defaultBranch,
                 headSha: head.commitSha,
                 integrated: jjInspection.integrated,
@@ -1790,7 +1804,12 @@ const make = Effect.gen(function* () {
                 remote === null
                   ? "no commits beyond the project branch"
                   : "no commits beyond the default branch";
-            if (!eligible && remote !== null && settings.worktreeOnMerge && thread.branch !== null) {
+            if (
+              !eligible &&
+              remote !== null &&
+              settings.worktreeOnMerge &&
+              thread.branch !== null
+            ) {
               const pullRequest = yield* gitManager.branchPullRequest(
                 { cwd: worktreePath, branch: thread.branch },
                 { refresh: true, includeHeadRepository: true },
@@ -1841,7 +1860,7 @@ const make = Effect.gen(function* () {
             if (jjInspection !== null) {
               const reason = yield* removeJjStorageCleanup(
                 worktreePath,
-                thread.branch,
+                jjInspection.bookmark,
                 jjInspection.commitId,
                 settings.worktreeKeepWhen,
               );

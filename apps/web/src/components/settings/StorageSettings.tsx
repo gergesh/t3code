@@ -767,7 +767,7 @@ export function WorktreeCleanupSection() {
               description={
                 vcsKind === "jj"
                   ? gt(
-                      "Remove unused workspaces when active or archived threads are deleted. Working-copy changes, conflicts, and commits not reachable from a bookmark or remote bookmark are kept. Local files follow the keep rule below.",
+                      "Remove unused workspaces when threads are deleted. Working-copy changes, conflicts, and commits not on a bookmark or remote bookmark are kept. Local files follow the keep rule below.",
                     )
                   : gt(
                       "Remove unused worktrees when active or archived threads are deleted. Worktrees with local changes are kept.",

@@ -2005,8 +2005,10 @@ export const make = Effect.gen(function* () {
         return path.isAbsolute(expanded) ? [path.resolve(expanded)] : [];
       }),
     );
-    // Secondary jj workspaces are offered only once imported, like linked git worktrees.
+    // Secondary jj workspaces are offered only once imported, like linked git worktrees. An
+    // imported one stays its own project rather than folding into its main workspace.
     const unimportedJjWorkspaces = new Set<string>();
+    const importedJjWorkspaceKeys = new Map<string, string>();
     for (const [directory, project] of directoryProjects) {
       if (project === null) continue;
       const handle = yield* vcsRegistry
@@ -2018,13 +2020,10 @@ export const make = Effect.gen(function* () {
               Effect.orElseSucceed(() => null),
             )
           : null;
-      if (
-        jjPaths !== null &&
-        jjPaths.workspaceRoot !== jjPaths.mainWorkspaceRoot &&
-        !importedProjectsByRoot.has(yield* directoryIdentity(directory))
-      ) {
-        unimportedJjWorkspaces.add(directory);
-      }
+      if (jjPaths === null || jjPaths.workspaceRoot === jjPaths.mainWorkspaceRoot) continue;
+      const key = yield* directoryIdentity(directory);
+      if (importedProjectsByRoot.has(key)) importedJjWorkspaceKeys.set(directory, key);
+      else unimportedJjWorkspaces.add(directory);
     }
 
     for (const candidate of raw) {
@@ -2032,8 +2031,10 @@ export const make = Effect.gen(function* () {
       if (!path.isAbsolute(expanded)) continue;
       const resolved = path.resolve(expanded);
       if (unimportedJjWorkspaces.has(resolved)) continue;
-      const project = directoryProjects.get(resolved);
-      if (project === undefined || project === null) continue;
+      const found = directoryProjects.get(resolved);
+      if (found === undefined || found === null) continue;
+      const ownKey = importedJjWorkspaceKeys.get(resolved);
+      const project = ownKey === undefined ? found : { ...found, key: ownKey, path: resolved };
 
       const existing = merged.get(project.key);
       if (!existing) {

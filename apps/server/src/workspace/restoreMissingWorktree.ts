@@ -12,7 +12,7 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { scratchFolderRoot } from "../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
-import { isWithinRoot } from "./KnownWorkspaces.ts";
+import { isWithinRoot } from "./pathContainment.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 import * as TaskFolders from "./TaskFolders.ts";
 import { TerminalCwdRecovery } from "../terminal/Manager.ts";

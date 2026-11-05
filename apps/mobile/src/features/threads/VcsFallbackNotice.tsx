@@ -1,8 +1,9 @@
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
+import { useAtomCommand } from "../../state/use-atom-command";
 
 export function VcsFallbackNotice(props: {
   environmentId: string;
@@ -11,7 +12,7 @@ export function VcsFallbackNotice(props: {
   reason: string | null;
 }) {
   const preferences = useAtomValue(mobilePreferencesAtom);
-  const updatePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const savePreferences = useAtomCommand(saveMobilePreferences);
   const key = JSON.stringify([props.environmentId, props.repository]);
   const fingerprint = JSON.stringify([props.notice, props.reason]);
   if (
@@ -25,13 +26,13 @@ export function VcsFallbackNotice(props: {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Dismiss repository fallback notice"
-        onPress={() =>
-          updatePreferences({
+        onPress={() => {
+          void savePreferences({
             transform: (current) => ({
               dismissedVcsNotices: { ...current.dismissedVcsNotices, [key]: fingerprint },
             }),
-          })
-        }
+          });
+        }}
       >
         <Text className="text-sm text-primary">Dismiss</Text>
       </Pressable>

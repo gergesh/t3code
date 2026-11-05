@@ -107,7 +107,9 @@ export const makeJjAvailability = Effect.gen(function* () {
         executableResolution.expiresAt <= now ||
         executableResolution.invalidationVersion !== invalidationVersion
       ) {
-        const path = resolveExecutable("jj", platform, environment);
+        const path = yield* Effect.promise(async () =>
+          resolveExecutable("jj", platform, environment),
+        );
         executableResolution =
           path === undefined
             ? undefined

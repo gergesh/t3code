@@ -40,9 +40,9 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
 
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
-      ? vcsEnvironment.branch({
+      ? vcsEnvironment.status({
           environmentId: selectedThread.environmentId,
-          input: { cwd: selectedThreadCwd },
+          input: { cwd: selectedThreadCwd, includeRemote: false },
         })
       : null,
   );

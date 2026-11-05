@@ -432,7 +432,7 @@ export function isCommitAction(
   return action === "commit" || action === "commit_push" || action === "commit_push_pr";
 }
 
-function formatCommitMessage(subject: string, body: string): string {
+export function formatCommitMessage(subject: string, body: string): string {
   const trimmedBody = body.trim();
   if (trimmedBody.length === 0) {
     return subject;
@@ -440,7 +440,7 @@ function formatCommitMessage(subject: string, body: string): string {
   return `${subject}\n\n${trimmedBody}`;
 }
 
-function parseCustomCommitMessage(raw: string): { subject: string; body: string } | null {
+export function parseCustomCommitMessage(raw: string): { subject: string; body: string } | null {
   const normalized = raw.replace(/\r\n/g, "\n").trim();
   if (normalized.length === 0) {
     return null;
@@ -1346,6 +1346,7 @@ export const resolveTextGenerationSettings = Effect.fn("resolveTextGenerationSet
       if (projectSettings.sourceControlWriterModelSelection === null) {
         return {
           modelSelection: projectSettings.textGenerationModelSelection,
+          projectId,
           style: projectSettings.sourceControlWritingStyle,
         };
       }
@@ -1356,6 +1357,7 @@ export const resolveTextGenerationSettings = Effect.fn("resolveTextGenerationSet
           providers,
           projectId,
         ),
+        projectId,
         style: projectSettings.sourceControlWritingStyle,
       };
     }).pipe(

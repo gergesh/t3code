@@ -103,7 +103,8 @@ describe("mobile preferences state", () => {
             secureItems.delete(key);
           }),
       });
-      const makeState = MobilePreferences.make().pipe(
+      const makeState = Effect.service(MobilePreferences.MobilePreferencesStore).pipe(
+        Effect.provide(MobilePreferences.layer),
         Effect.provideService(MobileDatabase.MobileDatabase, database),
         Effect.provideService(MobileSecureStorage.MobileSecureStorage, secureStorage),
         Effect.map((store) => makePreferencesState(store)),
@@ -111,23 +112,18 @@ describe("mobile preferences state", () => {
       const state = yield* makeState;
       const registry = AtomRegistry.make();
       const unmountPreferences = registry.mount(state.preferencesAtom);
-      const unmountUpdate = registry.mount(state.updatePreferencesAtom);
       try {
         yield* AtomRegistry.getResult(registry, state.preferencesAtom, { suspendOnWaiting: true });
-        registry.set(state.updatePreferencesAtom, {
+        yield* state.savePreferences.run(registry, {
           transform: (current) => ({
             dismissedVcsNotices: { ...current.dismissedVcsNotices, [repository]: fingerprint },
           }),
-        });
-        yield* AtomRegistry.getResult(registry, state.updatePreferencesAtom, {
-          suspendOnWaiting: true,
         });
         expect(JSON.parse(saved.payload)).toEqual({
           baseFontSize: 17,
           dismissedVcsNotices: { [repository]: fingerprint },
         });
       } finally {
-        unmountUpdate();
         unmountPreferences();
         registry.dispose();
       }

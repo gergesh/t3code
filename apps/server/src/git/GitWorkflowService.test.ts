@@ -27,6 +27,7 @@ import * as GitManager from "./GitManager.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
 
 import {
+  unusedCheckpointOps,
   describeJj,
   runJj,
   withJjRepo,
@@ -68,6 +69,7 @@ function makeLayer(input: {
     Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)(input.jj ?? {})),
     Layer.provide(
       Layer.mock(JjVcsDriver.JjVcsDriver)({
+        checkpoints: unusedCheckpointOps,
         ...input.jjDriver,
         capabilities: input.jjDriver?.capabilities ?? jjCapabilities,
       }),
@@ -1149,7 +1151,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
           ),
           Layer.provide(Layer.mock(GitManager.GitManager)({})),
           Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({})),
-          Layer.provide(Layer.mock(JjVcsDriver.JjVcsDriver)({ capabilities: jjCapabilities })),
+          Layer.provide(
+            Layer.mock(JjVcsDriver.JjVcsDriver)({
+              checkpoints: unusedCheckpointOps,
+              capabilities: jjCapabilities,
+            }),
+          ),
           Layer.provideMerge(GitVcsDriver.layer),
           Layer.provideMerge(VcsProcess.layer),
           Layer.provideMerge(
@@ -1176,6 +1183,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
         GitWorkflowService.layer.pipe(
           Layer.provide(Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({})),
           Layer.provide(Layer.mock(GitManager.GitManager)({})),
+          Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({})),
+          Layer.provide(
+            Layer.mock(JjVcsDriver.JjVcsDriver)({
+              checkpoints: unusedCheckpointOps,
+              capabilities: jjCapabilities,
+            }),
+          ),
           Layer.provide(
             Layer.mock(GitVcsDriver.GitVcsDriver)({
               execute: (input) => Effect.die(`spawned Git in ${input.cwd}`),

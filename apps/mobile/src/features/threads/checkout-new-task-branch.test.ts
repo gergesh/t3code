@@ -35,14 +35,16 @@ const picker = vi.hoisted(() => {
   };
 });
 vi.mock("../../native/NativeScrollViewMarker", () => ({ NativeScrollView: "div" }));
-vi.mock("../../components/ui/Toolbar", () => ({ Toolbar: () => null }));
-vi.mock("../../components/ui/SearchField", () => ({ SearchField: () => null }));
+vi.mock("../../components/ui/AppBar", () => ({ AppBar: () => null }));
+vi.mock("../../components/ui/ScreenContent", () => ({
+  ScreenContent: ({ children }: { children: import("react").ReactNode }) => children,
+}));
+vi.mock("../../components/ui/useBarInset", () => ({ useSearchToolbarInset: () => 0 }));
 vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
 vi.mock("../../components/ui/NavigationRow", () => ({
   NavigationRow: (props: { title: string; disabled?: boolean; onPress: () => void }) =>
     createElement("button", { disabled: props.disabled, onClick: props.onPress }, props.title),
 }));
-vi.mock("../../components/ui/AndroidScreenHeader", () => ({ AndroidScreenHeader: () => null }));
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
 vi.mock("../../components/ui/ThemedSwitch", () => ({ ThemedSwitch: () => null }));
 vi.mock("../../native/StackHeader", () => ({ NativeStackScreenOptions: () => null }));
