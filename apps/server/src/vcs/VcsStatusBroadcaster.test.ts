@@ -1,5 +1,6 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it, describe } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Deferred from "effect/Deferred";
 import * as DateTime from "effect/DateTime";
@@ -109,7 +110,7 @@ function layerTestFor(state: {
     Layer.provideMerge(
       state.fileSystem
         ? Layer.merge(Layer.succeed(FileSystem.FileSystem, state.fileSystem), Path.layer)
-        : NodeServices.layer,
+        : Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
     ),
     Layer.provide(layerBackgroundPolicy(() => state.backgroundWorkEnabled !== false)),
     Layer.provide(
@@ -924,7 +925,7 @@ describe("VcsStatusBroadcaster", () => {
         refName: "main",
       };
       const layerTest = layerBroadcaster.pipe(
-        Layer.provideMerge(NodeServices.layer),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
           Layer.succeed(VcsStatusBroadcaster.VcsAutoPullPolicy, {
@@ -987,7 +988,7 @@ describe("VcsStatusBroadcaster", () => {
       };
       let remoteStatus = { ...baseRemoteStatus, behindCount: 1 };
       const testLayer = layerBroadcaster.pipe(
-        Layer.provideMerge(NodeServices.layer),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
           Layer.succeed(VcsStatusBroadcaster.VcsAutoPullPolicy, {
@@ -997,6 +998,7 @@ describe("VcsStatusBroadcaster", () => {
         Layer.provide(
           Layer.mock(GitWorkflowService.GitWorkflowService)({
             localStatus: () => Effect.succeed(localStatus),
+            currentBranch: () => Effect.succeed(localStatus.refName),
             remoteStatus: () => Effect.succeed(remoteStatus),
             invalidateLocalStatus: () => Effect.void,
             invalidateRemoteStatus: () => Effect.void,
@@ -1054,8 +1056,8 @@ describe("VcsStatusBroadcaster", () => {
         vcs: { kind: "jj" },
       };
       const remoteStatus = { ...baseRemoteStatus, behindCount: 2 };
-      const layerTest = VcsStatusBroadcaster.layer.pipe(
-        Layer.provideMerge(NodeServices.layer),
+      const layerTest = layerBroadcaster.pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
           Layer.succeed(VcsStatusBroadcaster.VcsAutoPullPolicy, {
@@ -1097,7 +1099,7 @@ describe("VcsStatusBroadcaster", () => {
       Effect.provide(
         VcsDriverRegistry.layer.pipe(
           Layer.provideMerge(VcsProcess.layer),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     ),
@@ -1154,7 +1156,7 @@ describe("VcsStatusBroadcaster", () => {
     const firstPollStarted = Deferred.makeUnsafe<void>();
     let remoteReads = 0;
     const layer = layerBroadcaster.pipe(
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
@@ -1201,7 +1203,7 @@ describe("VcsStatusBroadcaster", () => {
     let remoteReads = 0;
     const layer = layerBroadcaster.pipe(
       Layer.provide(FileSystem.layerNoop({ realPath: (path) => Effect.succeed(path) })),
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
@@ -1251,7 +1253,7 @@ describe("VcsStatusBroadcaster", () => {
       failRemoteStatus: false,
     };
     const layerTest = layerBroadcaster.pipe(
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
@@ -1335,7 +1337,7 @@ describe("VcsStatusBroadcaster", () => {
         remoteInvalidationCalls: 0,
       };
       const layerTest = layerBroadcaster.pipe(
-        Layer.provideMerge(NodeServices.layer),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
           Layer.mock(GitWorkflowService.GitWorkflowService)({
@@ -1591,8 +1593,8 @@ describe("VcsStatusBroadcaster", () => {
       let cachedLocal: VcsStatusLocalResult | undefined;
       let refSnapshot = "before";
       const readLocalStatus = () => Effect.sync(() => (cachedLocal ??= local));
-      const layerTest = VcsStatusBroadcaster.layer.pipe(
-        Layer.provideMerge(NodeServices.layer),
+      const layerTest = layerBroadcaster.pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
           Layer.mock(GitWorkflowService.GitWorkflowService)({
@@ -2286,7 +2288,7 @@ describe("VcsStatusBroadcaster", () => {
     let remoteInterruptedDeferred: Deferred.Deferred<void, never> | null = null;
     let remoteStartedDeferred: Deferred.Deferred<void, never> | null = null;
     const layerTest = layerBroadcaster.pipe(
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({

@@ -312,6 +312,7 @@ describe("makeJjAvailability", () => {
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
+          NodeServices.layer,
           Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
             get: () => Effect.succeed({} as VcsDriver.VcsDriver["Service"]),
           }),

@@ -261,7 +261,7 @@ it.each(["draft", "branchless", "sidebar-hidden"] as const)(
     state.branch = scenario === "branchless" ? null : "main";
     // No Sidebar is mounted: every case must work without its local-status consumer.
     // The branchless case supplies an actual null thread branch through the entity hook.
-    await using screen = await render(h.wrap(<BranchToolbar {...toolbarProps} />), {
+    await using _screen = await render(h.wrap(<BranchToolbar {...toolbarProps} />), {
       router: false,
     });
     expect([...h.startedKeys]).toEqual([

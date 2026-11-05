@@ -35,6 +35,7 @@ import {
   type VcsStatusRemoteResult,
   VcsStatusResult,
   SourceControlProviderError,
+  type ProjectId,
   type ThreadId,
   type ThreadPullRequestKey,
   type VcsCreateWorktreeInput,
@@ -46,10 +47,7 @@ import {
   sanitizeFeatureBranchName,
 } from "@t3tools/shared/git";
 import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
-import {
-  type ChangeRequestTerminology,
-  UNKNOWN_SOURCE_CONTROL_CLIENT,
-} from "@t3tools/source-control-core/shared/definition";
+import { UNKNOWN_SOURCE_CONTROL_CLIENT } from "@t3tools/source-control-core/shared/definition";
 import {
   normalizeThreadPullRequestKey,
   threadPullRequestKeyOf,
@@ -69,7 +67,6 @@ import * as ServerSettings from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@t3tools/contracts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { isNonRepositoryGitStderr } from "../vcs/GitVcsDriverCore.ts";
-import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import {
@@ -1478,6 +1475,8 @@ export const make = Effect.gen(function* () {
     status: { branch: string; upstreamRef: string | null; hasUpstream: boolean },
     changeRequestLabel: string,
   ) {
+    // An unavailable provider is reported by the change-request step, before any Git work there.
+    if (Option.isNone(yield* sourceControlProvider(cwd).pipe(Effect.option))) return;
     const target = yield* gitCore.resolvePushTarget(cwd, status);
     if (!target) return;
     const headContext = yield* withChangeRequestServices(
@@ -2657,6 +2656,7 @@ export const make = Effect.gen(function* () {
             operation: "runStackedAction",
             cwd: input.cwd,
             ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
+            ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
           }),
         );
 

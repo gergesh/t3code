@@ -1233,7 +1233,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
           const dependencies = Layer.mergeAll(
             Layer.mock(Orchestrator.OrchestratorV2)({
               streamDomainEvents: Stream.never,
-              getShellSnapshot: () =>
+              getPullRequestSnapshot: () =>
                 Effect.succeed({
                   schemaVersion: 2,
                   snapshotSequence: 1,
@@ -1247,7 +1247,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             }),
             Layer.mock(ProjectStore.ProjectStoreV2)({
               listShells: () => Effect.succeed([project]),
-              getShell: () => Effect.succeed(Option.some(project)),
+              getShell: () => Effect.succeedSome(project),
             }),
             Layer.mock(GitManager.GitManager)({
               branchPullRequest: (input) =>
@@ -1263,7 +1263,6 @@ describe("ThreadPullRequestServiceV2 reads", () => {
               },
             }),
             Layer.mock(BackgroundPolicy.BackgroundPolicy)({
-              hasDemand: () => Effect.succeed(true),
               shouldRunScopeWork: () => Effect.succeed(true),
               shouldRunOpportunisticWork: Effect.succeed(true),
             }),
@@ -1273,13 +1272,11 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             }),
             Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
             Layer.succeed(
-              Crypto.Crypto,
-              Crypto.make({
-                randomBytes: (size) => new Uint8Array(size).fill(1),
-                digest: (_algorithm, data) => Effect.succeed(data),
-              }),
+              SecureRandom.SecureRandom,
+              SecureRandom.make((size) => new Uint8Array(size).fill(1)),
             ),
             FileSystem.layerNoop({ exists: () => Effect.succeed(true) }),
+            Path.layer,
           );
           yield* Effect.gen(function* () {
             const service = yield* ThreadPullRequestService.make;

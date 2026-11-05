@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - realpathSync.native resolves Windows 8.3 short names, which the Effect realPath does not.
 import * as NodeFS from "node:fs";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -49,7 +50,7 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
     });
   }).pipe(Effect.provide(ProcessRunner.layer));
 
-it.layer(NodeServices.layer)("RepositoryIdentityResolver activation", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("RepositoryIdentityResolver activation", (it) => {
   it.effect(
     "resolves marker identity from the real directory, not a symlink's lexical parent",
     () =>

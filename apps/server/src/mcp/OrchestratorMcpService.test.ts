@@ -66,6 +66,7 @@ import {
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { buildUnavailableProviderSnapshot } from "../provider/unavailableProviderSnapshot.ts";
@@ -86,6 +87,7 @@ const decodeTarget = Schema.decodeUnknownEffect(OrchestratorMcpTarget);
 const layerOrchestratorService = OrchestratorMcpService.layer.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitWorkflowService.GitWorkflowService)({})),
+  Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
 );
 
 describe("OrchestratorMcpService", () => {
@@ -3886,6 +3888,8 @@ describe("OrchestratorMcpService provider resolution", () => {
       OrchestratorMcpService.layer.pipe(
         Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
         Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)(git)),
+        Layer.provide(Layer.mock(GitWorkflowService.GitWorkflowService)({})),
+        Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
         Layer.provide(
           Layer.mergeAll(
             NodeServices.layer,
@@ -4733,6 +4737,9 @@ describe("OrchestratorMcpService provider resolution", () => {
                 ),
             }),
             Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+            Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+            Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+            NodeCrypto.layer,
             Layer.mock(GitWorkflowService.GitWorkflowService)({
               committedBase: (cwd) => {
                 assert.equal(cwd, parentCwd);
@@ -4762,13 +4769,11 @@ describe("OrchestratorMcpService provider resolution", () => {
             adapterRegistryLayer([codexInstanceId, antigravityInstanceId]),
             Layer.mock(ProjectService.ProjectService)({
               getById: () =>
-                Effect.succeed(
-                  Option.some({
-                    id: projectId,
-                    title: "Parent project",
-                    workspaceRoot: "/parent/main",
-                  } as unknown as ProjectRecord),
-                ),
+                Effect.succeedSome({
+                  id: projectId,
+                  title: "Parent project",
+                  workspaceRoot: "/parent/main",
+                } as unknown as ProjectRecord),
             }),
             Layer.mock(SecretRequests.SecretRequests)({}),
             Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),

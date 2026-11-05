@@ -1307,7 +1307,7 @@ export default function GitActionsControl({
     )
       return false;
     const actionStatus = statusOverride ?? gitStatusForActions;
-    if (!supportsVcsActions(actionStatus) || !vcsActionsSupported) return;
+    if (!supportsVcsActions(actionStatus) || !vcsActionsSupported) return false;
     const actionBranch = actionStatus?.refName ?? null;
     const actionIsDefaultBranch = featureBranch ? false : isDefaultRef;
     const actionCanCommit =

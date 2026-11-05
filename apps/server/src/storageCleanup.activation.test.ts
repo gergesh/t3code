@@ -1,3 +1,4 @@
+// @effect-diagnostics processEnvInEffect:off -- the jj subprocess must find a fake jj on PATH.
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -206,6 +207,10 @@ describeJj("Jujutsu storage cleanup policies", () => {
         yield* fixture.command(remote, ["init", "--bare", "-b", "main"]);
         yield* runJj(fixture.repo, ["git", "remote", "add", "origin", remote]);
         yield* runJj(fixture.repo, ["git", "push", "--bookmark", "main", "--remote", "origin"]);
+        // The unchanged rule only removes finished threads' workspaces.
+        fixture.setThreads([
+          shell({ branch: "feature", worktreePath: fixture.worktree, settledAt: at(0) }),
+        ]);
         const report = yield* fixture.service.runNow;
         expect(report.entries[0]).toMatchObject({
           outcome: "removed",

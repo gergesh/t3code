@@ -26,7 +26,7 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as GitManager from "./GitManager.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
 
-import {
+import { unusedCheckpointOps,
   describeJj,
   runJj,
   withJjRepo,
@@ -68,6 +68,7 @@ function makeLayer(input: {
     Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)(input.jj ?? {})),
     Layer.provide(
       Layer.mock(JjVcsDriver.JjVcsDriver)({
+  checkpoints: unusedCheckpointOps,
         ...input.jjDriver,
         capabilities: input.jjDriver?.capabilities ?? jjCapabilities,
       }),
@@ -1149,7 +1150,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
           ),
           Layer.provide(Layer.mock(GitManager.GitManager)({})),
           Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({})),
-          Layer.provide(Layer.mock(JjVcsDriver.JjVcsDriver)({ capabilities: jjCapabilities })),
+          Layer.provide(Layer.mock(JjVcsDriver.JjVcsDriver)({
+  checkpoints: unusedCheckpointOps, capabilities: jjCapabilities })),
           Layer.provideMerge(GitVcsDriver.layer),
           Layer.provideMerge(VcsProcess.layer),
           Layer.provideMerge(

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -1049,5 +1050,8 @@ it.effect("repeated imports reach linked-worktree sessions behind the scan budge
       ),
     );
     expect(oldest.worktreePath).toBe(worktree);
-  }).pipe(Effect.scoped, Effect.provide(Layer.merge(persistence, NodeServices.layer))),
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(Layer.mergeAll(persistence, NodeServices.layer, NodeCrypto.layer)),
+  ),
 );

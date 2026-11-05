@@ -1332,6 +1332,7 @@ export const resolveTextGenerationSettings = Effect.fn("resolveTextGenerationSet
       if (projectSettings.sourceControlWriterModelSelection === null) {
         return {
           modelSelection: projectSettings.textGenerationModelSelection,
+          projectId,
           style: projectSettings.sourceControlWritingStyle,
         };
       }
@@ -1342,6 +1343,7 @@ export const resolveTextGenerationSettings = Effect.fn("resolveTextGenerationSet
           providers,
           projectId,
         ),
+        projectId,
         style: projectSettings.sourceControlWritingStyle,
       };
     }).pipe(
