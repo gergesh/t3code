@@ -45,6 +45,8 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
   };
 });
 
+const CLAUDE_BASH_MAX_TIMEOUT_MS = String(2 ** 31 - 1);
+
 // A Claude Code session that launched T3 exports these. A claude spawned with them acts as part of
 // that session: its session id, messaging socket and token, and effort.
 const CLAUDE_HOST_SESSION_VARIABLES = [
@@ -72,6 +74,8 @@ export const mergeClaudeProcessEnvironment = Effect.fn("mergeClaudeProcessEnviro
   hostEnvironment: NodeJS.ProcessEnv,
 ) {
   const baseEnvironment: NodeJS.ProcessEnv = {
+    // Claude Code stops background shells at max(2h, this); its own ceiling is 2^31-1 ms.
+    BASH_MAX_TIMEOUT_MS: CLAUDE_BASH_MAX_TIMEOUT_MS,
     ...hostEnvironment,
     CLAUDE_CODE_ENTRYPOINT: "t3-code",
   };

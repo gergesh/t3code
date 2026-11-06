@@ -40,6 +40,9 @@ state. Claude does not have Codex's shared-home and shadow-home arrangement.
 For presets that differ only in API keys or endpoints, use the instance's
 **Environment variables**. Variable assignments do not belong in **Launch arguments**.
 
+Commands Claude runs in the background are not stopped after Claude Code's usual two hours.
+To cap them, set `BASH_MAX_TIMEOUT_MS` (milliseconds) in the instance's **Environment variables**.
+
 Claude Code's verbose mode can stay enabled when you use Claude for text generation, including
 thread titles, branch names, commit messages, and pull request descriptions. On a remote connection,
 T3 Code uses the Claude configuration on the connected server.

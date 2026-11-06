@@ -82,13 +82,28 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
 
         expect(yield* mergeClaudeProcessEnvironment({ homePath }, undefined, host)).toEqual({
           CLAUDE_CODE_ENTRYPOINT: "t3-code",
+          BASH_MAX_TIMEOUT_MS: "2147483647",
           KEEP: "1",
         });
         expect(yield* mergeClaudeProcessEnvironment({ homePath }, instance, host)).toEqual({
           CLAUDE_CODE_ENTRYPOINT: "instance",
+          BASH_MAX_TIMEOUT_MS: "2147483647",
           CLAUDE_EFFORT: "low",
           KEEP: "1",
         });
+        expect(
+          (yield* mergeClaudeProcessEnvironment(
+            { homePath },
+            [{ name: "BASH_MAX_TIMEOUT_MS", value: "600000", sensitive: false }],
+            { ...host, BASH_MAX_TIMEOUT_MS: "3600000" },
+          )).BASH_MAX_TIMEOUT_MS,
+        ).toBe("600000");
+        expect(
+          (yield* mergeClaudeProcessEnvironment({ homePath }, undefined, {
+            ...host,
+            BASH_MAX_TIMEOUT_MS: "3600000",
+          })).BASH_MAX_TIMEOUT_MS,
+        ).toBe("3600000");
 
         yield* fileSystem.writeFileString(
           path.join(homePath, "settings.json"),
