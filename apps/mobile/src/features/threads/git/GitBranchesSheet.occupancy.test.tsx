@@ -13,6 +13,7 @@ vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({}),
 }));
 vi.mock("../../../components/ui/SheetHeader", () => ({ SheetHeader: () => null }));
+vi.mock("../../../components/ui/AppText", () => ({ AppText: () => null }));
 vi.mock("../../../components/ui/FitSheet", () => ({
   FitSheet: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -55,7 +56,7 @@ vi.mock("../../../state/use-selected-thread-git-actions", () => ({
   useSelectedThreadGitActions: () => ({ canChangeThreadBranch: true }),
 }));
 vi.mock("../../../state/query", () => ({ useEnvironmentQuery: () => ({ data: null }) }));
-vi.mock("../../../state/vcs", () => ({ vcsEnvironment: { branch: () => null } }));
+vi.mock("../../../state/vcs", () => ({ vcsEnvironment: { status: () => null } }));
 
 import { GitBranchesSheet } from "./GitBranchesSheet";
 

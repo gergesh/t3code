@@ -1,11 +1,7 @@
 /**
- * The bookmark a T3 workspace's thread works on, recorded in the colocated git config.
- *
- * A new workspace gets no bookmark: it is created the first time the work is committed or pushed.
- * Until then nothing in jj names the workspace's line of work, and the workspace name is a digest
- * of the bookmark name, so this record is the only way back from a workspace to its thread's name.
- *
- * @module JjWorkspaceBookmark
+ * The bookmark a T3 workspace's thread works on, recorded in the colocated git config. A new
+ * workspace has no bookmark until its first commit or push, and its name is a digest of the
+ * bookmark, so this record is the only way back from a workspace to its thread's name.
  */
 import * as Effect from "effect/Effect";
 

@@ -719,7 +719,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
       }).pipe(
         Effect.provide(
           makeLayer({
-            detect: () => Effect.succeed(kind === null ? null : { ...handleFor("git"), kind }),
+            detect: () =>
+              Effect.succeed(
+                kind === null
+                  ? null
+                  : ({
+                      ...handleFor("git"),
+                      kind,
+                      repository: { rootPath: "/repo" },
+                    } as unknown as VcsDriverRegistry.VcsDriverHandle),
+              ),
           }),
         ),
       ),
