@@ -893,6 +893,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "worktree-create-command",
+    title: msg("Worktree create command"),
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: ["custom script workspace provider git worktree add clone t3.json"],
+  },
+  {
+    id: "worktree-remove-command",
+    title: msg("Worktree remove command"),
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: ["custom script workspace provider delete cleanup teardown t3.json"],
+  },
+  {
     id: "add-project-starts-in",
     title: msg("Add project starts in"),
     to: "/settings/threads",
