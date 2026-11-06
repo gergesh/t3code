@@ -55,7 +55,9 @@ vi.mock("../../../components/ui/FormSection", () => ({
     return null;
   },
 }));
-vi.mock("../../../components/ui/ListSection", () => ({ ListSection: () => null }));
+vi.mock("../../../components/ui/ListSection", () => ({
+  ListSection: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock("../../../components/ui/ListChoiceRow", () => ({
   ListChoiceRow: (props: ActionProps) => {
     state.checkout = props;
@@ -105,7 +107,7 @@ vi.mock("../../../state/use-selected-thread-git-actions", () => ({
     },
   }),
 }));
-vi.mock("../../../state/vcs", () => ({ vcsEnvironment: { branch: () => null } }));
+vi.mock("../../../state/vcs", () => ({ vcsEnvironment: { status: () => null } }));
 vi.mock("./gitSheetComponents", () => ({
   SheetActionButton: (props: ActionProps) => {
     state.actions.set(props.label, props);

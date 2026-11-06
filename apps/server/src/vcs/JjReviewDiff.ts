@@ -353,22 +353,22 @@ export const makeJjReviewDiff = (deps: JjReviewDiffDeps): JjReviewDiffOps => {
       Effect.catchIf(
         (error) => error._tag === "VcsProcessExitError" && error.exitCode === 128,
         (error) => {
-        // Only diagnose a failed triple-dot diff. Unrelated histories have no optional totals;
-        // malformed commands, missing objects, timeouts and all other failures remain failures.
-        return colocatedGitCommand(
-          deps.process,
-          operation,
-          { gitDir, cwd: input.cwd },
-          ["merge-base", baseChange.commitId, input.change.commitId],
-          { allowNonZeroExit: true },
-        ).pipe(
-          Effect.mapError(() => error),
-          Effect.flatMap((diagnostic) =>
-            diagnostic.exitCode === 1 && diagnostic.stdout === "" && diagnostic.stderr === ""
-              ? Effect.undefined
-              : Effect.fail(error),
-          ),
-        );
+          // Only diagnose a failed triple-dot diff. Unrelated histories have no optional totals;
+          // malformed commands, missing objects, timeouts and all other failures remain failures.
+          return colocatedGitCommand(
+            deps.process,
+            operation,
+            { gitDir, cwd: input.cwd },
+            ["merge-base", baseChange.commitId, input.change.commitId],
+            { allowNonZeroExit: true },
+          ).pipe(
+            Effect.mapError(() => error),
+            Effect.flatMap((diagnostic) =>
+              diagnostic.exitCode === 1 && diagnostic.stdout === "" && diagnostic.stderr === ""
+                ? Effect.undefined
+                : Effect.fail(error),
+            ),
+          );
         },
       ),
     );
@@ -494,10 +494,10 @@ export const makeJjReviewDiff = (deps: JjReviewDiffDeps): JjReviewDiffOps => {
     );
     if (result.stdout.includes("\0")) {
       return yield* new VcsUnsupportedOperationError({
-          operation,
-          kind: "jj",
-          detail: `Cannot expand binary file '${relativePath}'.`,
-        });
+        operation,
+        kind: "jj",
+        detail: `Cannot expand binary file '${relativePath}'.`,
+      });
     }
     return result.stdout;
   });
@@ -512,12 +512,12 @@ export const makeJjReviewDiff = (deps: JjReviewDiffDeps): JjReviewDiffOps => {
     const headRef = input.headRef ?? (input.sourceKind === "working-tree" ? "@" : null);
     if (baseRef === null || headRef === null) {
       return yield* new VcsProcessExitError({
-          operation,
-          command: "git show",
-          cwd: input.cwd,
-          exitCode: 1,
-          detail: "Diff file expansion requires both base and head refs.",
-        });
+        operation,
+        command: "git show",
+        cwd: input.cwd,
+        exitCode: 1,
+        detail: "Diff file expansion requires both base and head refs.",
+      });
     }
 
     // `@` and `@-` both read the working copy, and every read snapshots it, so share one.
@@ -549,10 +549,10 @@ export const makeJjReviewDiff = (deps: JjReviewDiffDeps): JjReviewDiffOps => {
         );
         if (/^Binary files /m.test(patch.stdout)) {
           return yield* new VcsUnsupportedOperationError({
-              operation,
-              kind: "jj",
-              detail: `Cannot expand binary file '${input.newPath}'.`,
-            });
+            operation,
+            kind: "jj",
+            detail: `Cannot expand binary file '${input.newPath}'.`,
+          });
         }
         const contents = fullContextContents(patch.stdout);
         if (contents !== null) return contents;
@@ -579,12 +579,12 @@ export const makeJjReviewDiff = (deps: JjReviewDiffDeps): JjReviewDiffOps => {
     ]);
     if (baseOid === null || headOid === null) {
       return yield* new VcsProcessExitError({
-          operation,
-          command: "git show",
-          cwd: input.cwd,
-          exitCode: 1,
-          detail: "Diff file expansion could not resolve the comparison revisions.",
-        });
+        operation,
+        command: "git show",
+        cwd: input.cwd,
+        exitCode: 1,
+        detail: "Diff file expansion could not resolve the comparison revisions.",
+      });
     }
     let comparisonBase = baseOid;
     if (input.sourceKind === "branch-range") {

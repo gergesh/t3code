@@ -24,10 +24,7 @@ import {
   withManagedRuntimeModeLimits,
 } from "../threads/thread-settings-options";
 import { SettingsScreen } from "./components/SettingsScreen";
-import {
-  useSettingsEnvironmentMenu,
-  SettingsEnvironmentFilterHeader,
-} from "./components/SettingsEnvironmentFilterHeader";
+import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
 import { useVcsTerminology } from "../../state/vcs";
 import { BranchNamingSettings } from "./components/BranchNamingSettings";
 import { DatabaseStorageNotice } from "./components/DatabaseStorageNotice";

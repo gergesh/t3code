@@ -544,7 +544,8 @@ export const make = Effect.gen(function* () {
               )
             : Effect.succeed(cwd),
         ),
-      )),
+      ),
+    ),
     committedBase: Effect.fn("GitWorkflowService.committedBase")((cwd) =>
       detectForFacade(cwd).pipe(
         Effect.flatMap((handle) =>
@@ -566,7 +567,8 @@ export const make = Effect.gen(function* () {
                 .resolveCommit({ cwd, revision: "HEAD" })
                 .pipe(Effect.map((commit) => commit.commitSha)),
         ),
-      )),
+      ),
+    ),
     listWorkspacePaths: Effect.fn("GitWorkflowService.listWorkspacePaths")((cwd) =>
       detectForFacade(cwd).pipe(
         Effect.flatMap((handle) =>
@@ -593,7 +595,8 @@ export const make = Effect.gen(function* () {
               })
             : git.listWorktreePaths(cwd).pipe(Effect.orElseSucceed(() => [])),
         ),
-      )),
+      ),
+    ),
     currentRefName: Effect.fn("GitWorkflowService.currentRefName")((cwd) =>
       detectForFacade(cwd).pipe(
         Effect.flatMap((handle) =>
@@ -601,7 +604,8 @@ export const make = Effect.gen(function* () {
             ? jjWorkflow.localStatus({ cwd }).pipe(Effect.map((status) => status.refName))
             : git.resolveBranchName(cwd, "HEAD"),
         ),
-      )),
+      ),
+    ),
     currentBranch: Effect.fn("GitWorkflowService.currentBranch")(function* (cwd) {
       const handle = yield* detectForFacade(cwd);
       if (handle?.kind === "jj") {
@@ -674,23 +678,26 @@ export const make = Effect.gen(function* () {
                 }),
             ),
           ),
-      })({ cwd })),
-    validateWorkspace: Effect.fn("GitWorkflowService.validateWorkspace")((projectCwd, workspacePath) =>
-      registry.detect({ cwd: projectCwd, jjOnly: true }).pipe(
-        undetectableWorkflow("GitWorkflowService.validateWorkspace", projectCwd, true),
-        Effect.flatMap((project) => {
-          if (project?.kind !== "jj") return Effect.succeed(true);
-          if (workspacePath === null) return Effect.succeed(false);
-          return registry.detect({ cwd: workspacePath, jjOnly: true }).pipe(
-            undetectableWorkflow("GitWorkflowService.validateWorkspace", workspacePath, true),
-            Effect.map(
-              (workspace) =>
-                workspace?.kind === "jj" &&
-                workspace.repository.rootPath !== project.repository.rootPath,
-            ),
-          );
-        }),
-      )),
+      })({ cwd }),
+    ),
+    validateWorkspace: Effect.fn("GitWorkflowService.validateWorkspace")(
+      (projectCwd, workspacePath) =>
+        registry.detect({ cwd: projectCwd, jjOnly: true }).pipe(
+          undetectableWorkflow("GitWorkflowService.validateWorkspace", projectCwd, true),
+          Effect.flatMap((project) => {
+            if (project?.kind !== "jj") return Effect.succeed(true);
+            if (workspacePath === null) return Effect.succeed(false);
+            return registry.detect({ cwd: workspacePath, jjOnly: true }).pipe(
+              undetectableWorkflow("GitWorkflowService.validateWorkspace", workspacePath, true),
+              Effect.map(
+                (workspace) =>
+                  workspace?.kind === "jj" &&
+                  workspace.repository.rootPath !== project.repository.rootPath,
+              ),
+            );
+          }),
+        ),
+    ),
     repositoryRoot: Effect.fn("GitWorkflowService.repositoryRoot")((cwd) =>
       registry.detect({ cwd }).pipe(
         Effect.map((handle) =>
@@ -705,7 +712,8 @@ export const make = Effect.gen(function* () {
               cause,
             }),
         ),
-      )),
+      ),
+    ),
     hasCommit: route("GitWorkflowService.hasCommit", commandRouting, {
       git: (input: { readonly cwd: string; readonly refName: string }) =>
         git
@@ -765,7 +773,8 @@ export const make = Effect.gen(function* () {
       routeOr("GitWorkflowService.remoteStatus", statusRouting, () => Effect.succeed(null), {
         git: (statusInput: VcsStatusInput) => gitManager.remoteStatus(statusInput, options),
         jj: (statusInput: VcsStatusInput) => jjWorkflow.remoteStatus(statusInput, options),
-      })(input)),
+      })(input),
+    ),
     invalidateLocalStatus: invalidate("invalidateLocalStatus"),
     invalidateRemoteStatus: invalidate("invalidateRemoteStatus"),
     // Colocated jj repositories keep Git refs, so the Git snapshot covers both.
@@ -775,7 +784,8 @@ export const make = Effect.gen(function* () {
       route("GitWorkflowService.pullCurrentBranch", commandRouting, {
         git: () => git.pullCurrentBranch(cwd),
         jj: () => jjWorkflow.pullCurrentBranch(cwd),
-      })({ cwd })),
+      })({ cwd }),
+    ),
     runStackedAction: Effect.fn("GitWorkflowService.runStackedAction")((input, options) =>
       route("GitWorkflowService.runStackedAction", workflowRouting, {
         git: (actionInput: GitRunStackedActionInput) =>
@@ -789,7 +799,8 @@ export const make = Effect.gen(function* () {
           ),
         jj: (actionInput: GitRunStackedActionInput) =>
           jjWorkflow.runStackedAction(actionInput, options),
-      })(input)),
+      })(input),
+    ),
     resolvePullRequest: route("GitWorkflowService.resolvePullRequest", workflowRouting, {
       git: gitManager.resolvePullRequest,
       jj: jjWorkflow.resolvePullRequest,
@@ -849,7 +860,8 @@ export const make = Effect.gen(function* () {
       route("GitWorkflowService.listLocalBranchNames", commandRouting, {
         git: () => git.listLocalBranchNames(cwd),
         jj: () => jjWorkflow.listLocalBranchNames(cwd),
-      })({ cwd })),
+      })({ cwd }),
+    ),
     fetchRemote: route("GitWorkflowService.fetchRemote", commandRouting, {
       git: git.fetchRemote,
       jj: jjWorkflow.fetchRemote,
@@ -919,7 +931,8 @@ export const make = Effect.gen(function* () {
                   ),
                 ),
         ),
-      )),
+      ),
+    ),
     mergeWorktree: Effect.fn("GitWorkflowService.mergeWorktree")((input) =>
       resolveWorkspaceKind(input.cwd, input.path).pipe(
         undetectableCommand("GitWorkflowService.mergeWorktree", input.cwd),
@@ -941,7 +954,8 @@ export const make = Effect.gen(function* () {
                 ),
               ),
         ),
-      )),
+      ),
+    ),
     pruneWorktrees: route("GitWorkflowService.pruneWorktrees", commandRouting, {
       git: git.pruneWorktrees,
       jj: jjWorkflow.pruneWorktrees,
