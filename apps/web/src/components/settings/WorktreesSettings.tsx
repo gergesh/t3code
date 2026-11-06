@@ -15,6 +15,7 @@ import {
 } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
 import { WorktreeCleanupSection, WorktreesDirectoryRow } from "./StorageSettings";
+import { WorktreeCommandsSettings } from "./WorktreeCommandsSettings";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 function StartFromRemoteRow() {
@@ -81,6 +82,7 @@ export function WorktreesSettingsPanel() {
       >
         {!isProjectScope && <WorktreesDirectoryRow />}
         <StartFromRemoteRow />
+        <WorktreeCommandsSettings />
         <AdvancedSettings targetIds={[searchableSetting("worktree-submodules").id]}>
           <WorktreeSubmodulesRow />
         </AdvancedSettings>

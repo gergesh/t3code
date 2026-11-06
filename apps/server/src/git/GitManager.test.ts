@@ -75,6 +75,7 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitManager from "./GitManager.ts";
 import { unusedCheckpointOps } from "../vcs/testing/JjTestSupport.ts";
+import * as WorktreeCommands from "../vcs/WorktreeCommands.ts";
 
 /** A change request the fake host reports. Omitted fields read as an open, undated request. */
 type FakeChangeRequest = Omit<ChangeRequest, "provider" | "state" | "updatedAt"> & {
@@ -818,6 +819,11 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             Layer.provide(
               GitWorkflowService.layer.pipe(
                 Layer.provide(Layer.succeed(GitManager.GitManager, manager)),
+                Layer.provide(
+                  Layer.mock(WorktreeCommands.WorktreeCommands)({
+                    resolve: () => Effect.succeed({ create: "", remove: "", merge: "" }),
+                  }),
+                ),
                 Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({})),
               ),
             ),
@@ -5457,6 +5463,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             Effect.provide(
               Layer.mergeAll(
                 Layer.mock(JjWorkflow.JjWorkflow)({}),
+                Layer.mock(WorktreeCommands.WorktreeCommands)({
+                  resolve: () => Effect.succeed({ create: "", remove: "", merge: "" }),
+                }),
                 Layer.mock(JjVcsDriver.JjVcsDriver)({
   checkpoints: unusedCheckpointOps,
                   capabilities: {

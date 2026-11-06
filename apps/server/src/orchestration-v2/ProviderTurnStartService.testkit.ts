@@ -60,6 +60,11 @@ export const layerRealGit = GitWorkflow.layer.pipe(
     ),
   ),
   Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({})),
+  Layer.provide(
+    Layer.mock(WorktreeCommands.WorktreeCommands)({
+      resolve: () => Effect.succeed({ create: "", remove: "", merge: "" }),
+    }),
+  ),
   Layer.provide(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer))),
   Layer.provide(JjVcsDriver.layer),
   Layer.provideMerge(GitVcsDriver.layer),

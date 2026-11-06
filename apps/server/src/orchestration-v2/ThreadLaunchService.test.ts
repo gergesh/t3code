@@ -88,6 +88,7 @@ import * as ThreadTitleRegeneration from "./ThreadTitleRegenerationService.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as WorktreeCommands from "../vcs/WorktreeCommands.ts";
 
 const projectId = ProjectId.make("project:launch-test");
 const otherProjectId = ProjectId.make("project:launch-other");
@@ -408,6 +409,11 @@ describeJj("unsupported Jujutsu draft launches", () => {
             Effect.provide(
               GitWorkflow.layer.pipe(
                 Layer.provide(
+                  Layer.mock(WorktreeCommands.WorktreeCommands)({
+                    resolve: () => Effect.succeed({ create: "", remove: "", merge: "" }),
+                  }),
+                ),
+                Layer.provide(
                   Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
                     detect: () =>
                       repo.driver.detectRepository(repo.root).pipe(
@@ -507,6 +513,11 @@ describeJj("broken pinned Jujutsu draft launches", () => {
         const workflow = yield* GitWorkflow.GitWorkflowService.pipe(
           Effect.provide(
             GitWorkflow.layer.pipe(
+              Layer.provide(
+                Layer.mock(WorktreeCommands.WorktreeCommands)({
+                  resolve: () => Effect.succeed({ create: "", remove: "", merge: "" }),
+                }),
+              ),
               Layer.provide(VcsDriverRegistry.layer),
               Layer.provide(Layer.succeed(JjVcsDriver.JjVcsDriver, repo.driver)),
               Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
