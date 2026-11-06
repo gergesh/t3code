@@ -285,19 +285,17 @@ describeJj("JjWorkspaces.createWorktree", () => {
           const process = {
             ...repo.process,
             run: (input: Parameters<typeof repo.process.run>[0]) =>
-              repo.process
-                .run(input)
-                .pipe(
-                  Effect.filterOrElse(
-                    () =>
-                      !(
-                        input.command === "jj" &&
-                        input.args.includes("workspace") &&
-                        input.args.includes("add")
-                      ),
-                    () => Deferred.succeed(added, undefined).pipe(Effect.andThen(Effect.never)),
-                  ),
+              repo.process.run(input).pipe(
+                Effect.filterOrElse(
+                  () =>
+                    !(
+                      input.command === "jj" &&
+                      input.args.includes("workspace") &&
+                      input.args.includes("add")
+                    ),
+                  () => Deferred.succeed(added, undefined).pipe(Effect.andThen(Effect.never)),
                 ),
+              ),
           };
           const remotes = makeJjRemotes({ driver: repo.driver, process });
           const ops = makeJjWorkspaces({

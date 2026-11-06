@@ -319,7 +319,7 @@ export function shouldCompactBeforeSend(input: {
 }
 
 /** When Claude's prompt cache for the latest request expires, or null when unknown. */
-export function claudePromptCacheExpiry(input: {
+function claudePromptCacheExpiry(input: {
   readonly provider: string | null | undefined;
   readonly updatedAt: string | null | undefined;
   readonly promptCacheTtlMs?: number | undefined;

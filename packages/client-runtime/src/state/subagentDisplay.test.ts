@@ -28,15 +28,15 @@ it("normalizes Unicode whitespace and ignores a large hidden suffix", () => {
   expect(subagentDetailPreview({ status: "running", progress })).toBe(
     "Reading files " + "x".repeat(266) + "…",
   );
-  expect(
-    subagentDetailPreview({ status: "completed", result: "x".repeat(280) + " \n " }),
-  ).toBe("x".repeat(280));
+  expect(subagentDetailPreview({ status: "completed", result: "x".repeat(280) + " \n " })).toBe(
+    "x".repeat(280),
+  );
   expect(subagentDetailPreview({ status: "completed", result: "x".repeat(279) + " \n y" })).toBe(
     "x".repeat(279) + "…",
   );
-  expect(
-    subagentDetailPreview({ status: "running", progress: "﻿ ", result: " Done " }),
-  ).toBe("Done");
+  expect(subagentDetailPreview({ status: "running", progress: "﻿ ", result: " Done " })).toBe(
+    "Done",
+  );
   expect(subagentDetailPreview({ status: "failed", result: "x".repeat(279) + "😀" })).toBe(
     "x".repeat(279) + "…",
   );

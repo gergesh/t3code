@@ -135,16 +135,20 @@ vi.mock("../state/vcs", () => ({
     refreshStatus: "refreshStatus",
   },
 }));
-vi.mock("../rpc/atomRegistry", () => ({
-  appAtomRegistry: {
-    get: (atom: unknown) =>
-      atom === "vcsStatus"
-        ? state.statusPending
-          ? AsyncResult.initial()
-          : AsyncResult.success({ vcs: { kind: state.vcsKind } })
-        : new Map(),
-  },
-}));
+vi.mock("../rpc/atomRegistry", async () => {
+  const { AtomRegistry } = await import("effect/reactivity");
+  const registry = AtomRegistry.make();
+  return {
+    appAtomRegistry: {
+      get: (atom: unknown) =>
+        atom === "vcsStatus"
+          ? state.statusPending
+            ? AsyncResult.initial()
+            : AsyncResult.success({ vcs: { kind: state.vcsKind } })
+          : registry.get(atom as never),
+    },
+  };
+});
 vi.mock("../previewStateStore", () => ({
   clearThreadPreviewState: () => state.localEffects.push("clear-preview"),
 }));
@@ -410,6 +414,7 @@ describe("thread action permissions", () => {
       "clear-draft:side-chat",
       "refresh-archive",
       "clear-terminal-ui",
+      "clear-preview",
     ]);
     expect(state.localEffects).not.toContain("clear-draft:fork");
     expect(state.localEffects).not.toContain("clear-draft:other-side-chat");

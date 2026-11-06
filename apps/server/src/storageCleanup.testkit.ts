@@ -1,6 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -8,7 +7,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import type * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -42,7 +40,6 @@ import {
 } from "@t3tools/contracts";
 const encodeSessionPayload = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
-
 export const NOW_MS = Date.parse("2026-06-10T12:00:00.000Z");
 export const DAY_MS = 24 * 60 * 60 * 1_000;
 
@@ -50,7 +47,9 @@ export function at(offsetMs: number): DateTime.Utc {
   return DateTime.makeUnsafe(NOW_MS + offsetMs);
 }
 
-export function shell(overrides: Partial<OrchestrationV2ThreadShell> = {}): OrchestrationV2ThreadShell {
+export function shell(
+  overrides: Partial<OrchestrationV2ThreadShell> = {},
+): OrchestrationV2ThreadShell {
   return {
     id: ThreadId.make("thread-1"),
     projectId: ProjectId.make("project-1"),
@@ -411,11 +410,7 @@ export const cleanupTestLayer = GitVcsDriver.layer.pipe(
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 export const runCleanupTest = <A, E>(
-  effect: Effect.Effect<
-    A,
-    E,
-    Layer.Success<typeof cleanupTestLayer> | Scope.Scope
-  >,
+  effect: Effect.Effect<A, E, Layer.Success<typeof cleanupTestLayer> | Scope.Scope>,
 ) => effect.pipe(Effect.provide(cleanupTestLayer), Effect.scoped);
 
 export const submoduleCleanupFixture = () =>

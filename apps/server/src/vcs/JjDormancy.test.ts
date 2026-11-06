@@ -86,7 +86,9 @@ it.effect("keeps Git checkpoints with an explicit Git selection and jj markers",
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-jj-config-dormancy-" });
-    const processLayer = VcsProcess.layer.pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
+    const processLayer = VcsProcess.layer.pipe(
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    );
     const registryLayer = VcsDriverRegistry.layer.pipe(Layer.provide(processLayer));
     const checkpointLayer = CheckpointStore.layer.pipe(Layer.provideMerge(registryLayer));
     yield* Effect.gen(function* () {

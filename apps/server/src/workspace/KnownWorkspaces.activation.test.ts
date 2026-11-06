@@ -113,7 +113,7 @@ const withWorkspace = (scenario: Scenario) =>
       detail: "unavailable",
     });
     const jjLayer = Layer.mock(JjVcsDriver.JjVcsDriver)({
-  checkpoints: unusedCheckpointOps,
+      checkpoints: unusedCheckpointOps,
       capabilities: {
         kind: "jj",
         supportsWorktrees: true,

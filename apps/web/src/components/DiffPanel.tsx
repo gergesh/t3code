@@ -392,11 +392,7 @@ export default function DiffPanel({
         }
       : undefined;
   const canRefreshGitDiff =
-    vcsActionsSupported &&
-    isGitRepo &&
-    isGitSelection &&
-    activeThread != null &&
-    activeCwd != null;
+    vcsActionsSupported && isGitRepo && isGitSelection && activeThread != null && activeCwd != null;
   // Read under the workspace mutation id, so each mutation refetches the diff; the panel stays
   // mounted while hidden, so a mutation made then is already reflected when it shows.
   const branchDiffPreview = useEnvironmentQuery(

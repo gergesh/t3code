@@ -793,9 +793,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({})),
               ),
             ),
-            Layer.provideMerge(
-              VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer)),
-            ),
+            Layer.provideMerge(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer))),
             Layer.provide(JjVcsDriver.layer),
             Layer.provide(VcsProcess.layer),
             Layer.provide(
@@ -3482,6 +3480,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
       yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/pr-snapshot"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/pr-snapshot"]);
       const directory = yield* makeTempDir("t3code-pr-snapshot-");
       const { service } = createFakeSourceControlProvider();
       let createdBodyFile: string | undefined;
@@ -4919,7 +4919,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                   resolve: () => Effect.succeed({ create: "", remove: "", merge: "" }),
                 }),
                 Layer.mock(JjVcsDriver.JjVcsDriver)({
-  checkpoints: unusedCheckpointOps,
+                  checkpoints: unusedCheckpointOps,
                   capabilities: {
                     kind: "jj",
                     supportsWorktrees: false,

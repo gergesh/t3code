@@ -1,7 +1,8 @@
 import { DEFAULT_SERVER_SETTINGS, EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { AsyncResult } from "effect/reactivity";
+import { RegistryContext } from "@effect/atom-react";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { ComposerDraft, ComposerDraftSettingsUpdate } from "../../state/use-composer-drafts";
 import type { QueuedThreadMessage } from "../../state/thread-outbox";
@@ -17,8 +18,11 @@ import {
 } from "./new-task-project-selection";
 
 const flowState = vi.hoisted(() => {
+  // Assigned once the imports are live; the mocks only read it when a test runs.
+  const registry = null as unknown as import("effect/reactivity").AtomRegistry.AtomRegistry;
   const draft: ComposerDraft = { text: "Keep chatting", attachments: [] };
   return {
+    registry,
     draft,
     status: {
       branchName: "main",
@@ -53,7 +57,13 @@ vi.mock("../../lib/modelOptions", () => ({
   resolveSelectableModelSelection: () => flowState.model,
 }));
 vi.mock("../../state/atom-registry", () => ({
-  appAtomRegistry: { get: () => AsyncResult.success(flowState.status) },
+  appAtomRegistry: {
+    get: (atom: unknown) =>
+      atom === "status"
+        ? AsyncResult.success(flowState.status)
+        : flowState.registry.get(atom as never),
+    set: (atom: unknown, value: unknown) => flowState.registry.set(atom as never, value as never),
+  },
 }));
 vi.mock("../../state/projects", () => ({
   projectEnvironment: { readFile: vi.fn(), openScratch: vi.fn() },
@@ -73,6 +83,19 @@ vi.mock("../../state/use-composer-drafts", () => ({
     flowState.draft = { ...flowState.draft, ...settings };
   },
   useStickyComposerModelSelection: () => null,
+  composerDraftsLoadedAtom: Atom.make(true),
+  retargetNewTaskDraft: vi.fn(),
+  setComposerDraftText: vi.fn(),
+  isNewTaskDraftKey: (key: string) => key.startsWith("new-task:"),
+  clearComposerDraft: vi.fn(),
+  appendComposerDraftAttachments: vi.fn(),
+  removeComposerDraftAttachment: vi.fn(),
+  replaceComposerDraftAttachments: vi.fn(),
+  setStickyComposerModelSelection: vi.fn(),
+  setComposerDraftContext: vi.fn(),
+  scheduleUnusedComposerAttachmentCleanup: vi.fn(),
+  isComposerDraftEmpty: (draft: ComposerDraft) =>
+    draft.text === "" && draft.attachments.length === 0,
 }));
 vi.mock("../../state/queries", () => ({
   useBranches: () => ({ data: { isRepo: true }, isPending: false }),
@@ -108,7 +131,26 @@ vi.mock("./use-legacy-plan-mode-enabled", () => ({
   useLegacyPlanModeState: () => ({ enabled: false, loaded: true }),
 }));
 
+vi.mock("../../state/orchestration", () => ({ orchestrationEnvironment: {} }));
+vi.mock("../../state/threads", () => ({ olderSettledThreads: {}, threadFamilies: {} }));
+vi.mock("../../state/pull-requests", () => ({ composerPullRequests: {} }));
+vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
+vi.mock("../../state/use-model-option-memory", () => ({
+  rememberModelOptions: vi.fn(),
+  withRememberedModelOptions: (value: unknown) => value,
+}));
+vi.mock("../../state/peerLinks", () => ({ useLinkedEnvironments: () => new Map() }));
+vi.mock("../../state/project-has-threads", () => ({ useProjectHasThreads: () => false }));
+vi.mock("../../state/workspace", () => ({
+  useConnectionsReady: () => true,
+  useWorkspaceEnvironments: () => [],
+}));
+vi.mock("../../state/shell", () => ({ useEnvironmentShellReadiness: () => ({}) }));
+vi.mock("../../lib/clock", () => ({ useNowMinuteMs: () => 0 }));
+
 import { NewTaskFlowProvider, useNewTaskFlow } from "./new-task-flow-provider";
+
+flowState.registry = AtomRegistry.make();
 
 describe("unsupported new-task workspace recovery", () => {
   it.each(["saved", "default"])(
@@ -162,7 +204,17 @@ describe("unsupported new-task workspace recovery", () => {
       }
       try {
         await act(async () =>
-          root.render(createElement(NewTaskFlowProvider, null, createElement(CaptureFlow))),
+          root.render(
+            createElement(
+              RegistryContext.Provider,
+              { value: flowState.registry },
+              createElement(
+                NewTaskFlowProvider,
+                { active: true, flowKey: "test-flow" },
+                createElement(CaptureFlow),
+              ),
+            ),
+          ),
         );
         expect(container.querySelector("[data-mode]")?.textContent).toBe("worktree");
         expect(container.querySelector("[data-supported]")?.textContent).toBe("false");
@@ -170,7 +222,17 @@ describe("unsupported new-task workspace recovery", () => {
         expect(container.querySelector("[data-message]")?.textContent).toBe("blocked");
         await act(async () => {
           container.querySelector<HTMLButtonElement>("[data-local]")!.click();
-          root.render(createElement(NewTaskFlowProvider, null, createElement(CaptureFlow)));
+          root.render(
+            createElement(
+              RegistryContext.Provider,
+              { value: flowState.registry },
+              createElement(
+                NewTaskFlowProvider,
+                { active: true, flowKey: "test-flow" },
+                createElement(CaptureFlow),
+              ),
+            ),
+          );
         });
         expect(container.querySelector("[data-mode]")?.textContent).toBe("local");
         await act(async () => container.querySelector<HTMLButtonElement>("[data-create]")!.click());
@@ -178,7 +240,17 @@ describe("unsupported new-task workspace recovery", () => {
         expect(container.querySelector("[data-created-mode]")?.textContent).toBe("local");
         await act(async () => {
           container.querySelector<HTMLButtonElement>("[data-worktree]")!.click();
-          root.render(createElement(NewTaskFlowProvider, null, createElement(CaptureFlow)));
+          root.render(
+            createElement(
+              RegistryContext.Provider,
+              { value: flowState.registry },
+              createElement(
+                NewTaskFlowProvider,
+                { active: true, flowKey: "test-flow" },
+                createElement(CaptureFlow),
+              ),
+            ),
+          );
         });
         expect(container.querySelector("[data-mode]")?.textContent).toBe("local");
       } finally {

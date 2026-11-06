@@ -14,7 +14,13 @@ import { isGitLinkedWorktree } from "./JjRepo.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./VcsProjectConfig.ts";
-import { unusedCheckpointOps, describeJj, runGit, runJj, seedJjRepo } from "./testing/JjTestSupport.ts";
+import {
+  unusedCheckpointOps,
+  describeJj,
+  runGit,
+  runJj,
+  seedJjRepo,
+} from "./testing/JjTestSupport.ts";
 
 const processOutput = (stdout: string): VcsProcess.VcsProcessOutput => ({
   exitCode: ChildProcessSpawner.ExitCode(0),
@@ -72,7 +78,7 @@ describe("VcsDriverRegistry activation", () => {
       Layer.provide(
         failJjDetection
           ? Layer.mock(JjVcsDriver.JjVcsDriver)({
-  checkpoints: unusedCheckpointOps,
+              checkpoints: unusedCheckpointOps,
               capabilities: {
                 kind: "jj",
                 supportsWorktrees: true,
@@ -119,7 +125,10 @@ describe("VcsDriverRegistry activation", () => {
                 );
               }
               return processOutput("");
-            }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.orDie),
+            }).pipe(
+              Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+              Effect.orDie,
+            ),
         }),
       ),
     );
@@ -190,7 +199,13 @@ describeJj("VcsDriverRegistry shared jj driver", () => {
           }
         }
       }).pipe(Effect.provide(VcsDriverRegistry.layer.pipe(Layer.provideMerge(JjVcsDriver.layer))));
-    }).pipe(Effect.provide(VcsProcess.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))))),
+    }).pipe(
+      Effect.provide(
+        VcsProcess.layer.pipe(
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
+      ),
+    ),
   );
   it.effect("never routes a nested bare Git repository to the outer jj driver", () =>
     Effect.gen(function* () {
@@ -216,7 +231,13 @@ describeJj("VcsDriverRegistry shared jj driver", () => {
           assert.equal(refusal._tag, "VcsUnsupportedOperationError");
         }
       }).pipe(Effect.provide(VcsDriverRegistry.layer));
-    }).pipe(Effect.provide(VcsProcess.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))))),
+    }).pipe(
+      Effect.provide(
+        VcsProcess.layer.pipe(
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
+      ),
+    ),
   );
   it.effect("keeps Git available when jj is initialized inside a linked Git worktree", () =>
     Effect.gen(function* () {
@@ -257,7 +278,13 @@ describeJj("VcsDriverRegistry shared jj driver", () => {
         separate,
       ]);
       assert.isFalse(yield* isGitLinkedWorktree(fs, path, separate));
-    }).pipe(Effect.provide(VcsProcess.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))))),
+    }).pipe(
+      Effect.provide(
+        VcsProcess.layer.pipe(
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
+      ),
+    ),
   );
   it.effect(
     "skips jj-only detection without subprocesses for a colocated project-file Git pin",
@@ -292,7 +319,13 @@ describeJj("VcsDriverRegistry shared jj driver", () => {
             ),
           ),
         );
-      }).pipe(Effect.provide(VcsProcess.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))))),
+      }).pipe(
+        Effect.provide(
+          VcsProcess.layer.pipe(
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
+        ),
+      ),
   );
   it.effect.each(["git", "jj", "unknown"] as const)(
     "honors the project-file %s pin with unusable jj",
@@ -333,7 +366,13 @@ describeJj("VcsDriverRegistry shared jj driver", () => {
             ),
           ),
         );
-      }).pipe(Effect.provide(VcsProcess.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))))),
+      }).pipe(
+        Effect.provide(
+          VcsProcess.layer.pipe(
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
+        ),
+      ),
   );
   it.effect("falls back to Git with the error rather than a config migration warning", () =>
     Effect.gen(function* () {
@@ -379,7 +418,13 @@ describeJj("VcsDriverRegistry shared jj driver", () => {
           ),
         ),
       );
-    }).pipe(Effect.provide(VcsProcess.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))))),
+    }).pipe(
+      Effect.provide(
+        VcsProcess.layer.pipe(
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
+      ),
+    ),
   );
   it.effect.each(["missing", "old", "broken", "empty"] as const)(
     "selects usable colocated Git only for %s and recovers on rescan",
@@ -466,7 +511,13 @@ describeJj("VcsDriverRegistry shared jj driver", () => {
             ),
           ),
         );
-      }).pipe(Effect.provide(VcsProcess.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))))),
+      }).pipe(
+        Effect.provide(
+          VcsProcess.layer.pipe(
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
+        ),
+      ),
   );
   it.effect.each([false, true])(
     "caches unavailable-jj fallback with a canonical Git root (alias=%s)",
@@ -520,7 +571,13 @@ describeJj("VcsDriverRegistry shared jj driver", () => {
             ),
           ),
         );
-      }).pipe(Effect.provide(VcsProcess.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))))),
+      }).pipe(
+        Effect.provide(
+          VcsProcess.layer.pipe(
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
+        ),
+      ),
   );
   it.effect(
     "refreshes registry review refs after the workflow driver invalidates remote caches",

@@ -99,12 +99,12 @@ export const makeJjCheckpointOps = (deps: JjCheckpointDeps): VcsDriver.VcsCheckp
               const retried = yield* restoreFrom(operation, cwd, commitId);
               if (retried.exitCode !== 0) {
                 return yield* new VcsProcessExitError({
-                    operation,
-                    command: "jj restore",
-                    cwd,
-                    exitCode: retried.exitCode,
-                    detail: retried.stderr.trim() || "jj restore failed.",
-                  });
+                  operation,
+                  command: "jj restore",
+                  cwd,
+                  exitCode: retried.exitCode,
+                  detail: retried.stderr.trim() || "jj restore failed.",
+                });
               }
             }),
           ).pipe(Effect.exit);
@@ -187,12 +187,12 @@ export const makeJjCheckpointOps = (deps: JjCheckpointDeps): VcsDriver.VcsCheckp
 
       if (!MISSING_REVISION_PATTERN.test(restored.stderr)) {
         return yield* new VcsProcessExitError({
-            operation,
-            command: "jj restore",
-            cwd: input.cwd,
-            exitCode: restored.exitCode,
-            detail: restored.stderr.trim() || "jj restore failed.",
-          });
+          operation,
+          command: "jj restore",
+          cwd: input.cwd,
+          exitCode: restored.exitCode,
+          detail: restored.stderr.trim() || "jj restore failed.",
+        });
       }
 
       yield* restoreThroughGitObject(operation, gitDir, input.cwd, captured);
@@ -220,12 +220,12 @@ export const makeJjCheckpointOps = (deps: JjCheckpointDeps): VcsDriver.VcsCheckp
 
       if (fromOid === null || toOid === null) {
         return yield* new VcsProcessExitError({
-            operation,
-            command: "git diff",
-            cwd: input.cwd,
-            exitCode: 1,
-            detail: CHECKPOINT_REF_UNAVAILABLE_DETAIL,
-          });
+          operation,
+          command: "git diff",
+          cwd: input.cwd,
+          exitCode: 1,
+          detail: CHECKPOINT_REF_UNAVAILABLE_DETAIL,
+        });
       }
 
       const result = yield* colocatedGitCommand(
@@ -259,12 +259,12 @@ export const makeJjCheckpointOps = (deps: JjCheckpointDeps): VcsDriver.VcsCheckp
 
       if (result.exitCode !== 0) {
         return yield* new VcsProcessExitError({
-            operation,
-            command: "git diff",
-            cwd: input.cwd,
-            exitCode: result.exitCode,
-            detail: result.stderr.trim() || CHECKPOINT_REF_UNAVAILABLE_DETAIL,
-          });
+          operation,
+          command: "git diff",
+          cwd: input.cwd,
+          exitCode: result.exitCode,
+          detail: result.stderr.trim() || CHECKPOINT_REF_UNAVAILABLE_DETAIL,
+        });
       }
 
       return result.stdout;

@@ -191,11 +191,10 @@ export const resolveWorkspaceRefName = Effect.fn("JjStatus.resolveWorkspaceRefNa
     ) ?? [];
   if (count > 1 || names.length > 1) {
     return yield* new VcsUnsupportedOperationError({
-        operation: "JjStatus.resolveWorkspaceRefName",
-        kind: "jj",
-        detail:
-          "Ambiguous descendant bookmarks. Switch to the intended bookmark before continuing.",
-      });
+      operation: "JjStatus.resolveWorkspaceRefName",
+      kind: "jj",
+      detail: "Ambiguous descendant bookmarks. Switch to the intended bookmark before continuing.",
+    });
   }
   if (names.length === 1) return names[0]!;
   return refNameFromSegment(segment, otherManagedWorkspaces);
@@ -475,54 +474,52 @@ export const makeJjStatus = Effect.fn("JjStatus.makeJjStatus")(function* (
   const upstreamRefreshCache = yield* Cache.makeWith<string, true, GitCommandError>(
     (key) => {
       const [cwd = "", remoteName = ""] = key.split("\0");
-      return driver
-        .repoPaths(cwd)
-        .pipe(
-          Effect.flatMap((paths) =>
-            Effect.gen(function* () {
-              if (paths.gitDir === null)
-                return yield* new GitCommandError({
-                  operation: "JjStatus.refreshUpstream",
-                  command: "git",
-                  cwd,
-                  detail: "The Jujutsu repository has no colocated Git repository.",
-                });
-              return yield* JjProcess.colocatedGitCommand(
-                process,
-                "JjStatus.refreshUpstream",
-                { gitDir: paths.gitDir, cwd },
-                [
-                  // Disable configured opportunistic remote-tracking updates as well.
-                  "fetch",
-                  "--no-tags",
-                  "--no-write-fetch-head",
-                  "--prune",
-                  "--refmap=",
-                  "--",
-                  remoteName,
-                  `+refs/heads/*:refs/t3/remotes/${encodeURIComponent(remoteName)}/*`,
-                ],
-                {
-                  env: STATUS_UPSTREAM_REFRESH_ENV,
-                  timeoutMs: Duration.toMillis(STATUS_UPSTREAM_REFRESH_TIMEOUT),
-                },
-              );
-            }),
-          ),
-          Effect.as(true as const),
-          Effect.mapError(
-            (cause) =>
-              new GitCommandError({
+      return driver.repoPaths(cwd).pipe(
+        Effect.flatMap((paths) =>
+          Effect.gen(function* () {
+            if (paths.gitDir === null)
+              return yield* new GitCommandError({
                 operation: "JjStatus.refreshUpstream",
                 command: "git",
                 cwd,
-                detail: "Background Jujutsu remote refresh failed.",
-                cause,
-              }),
-          ),
-          Effect.tap(() => Effect.sync(() => upstreamRefreshFailureCounts.delete(key))),
-          Effect.tapError(() => Effect.sync(() => recordUpstreamRefreshFailure(key))),
-        );
+                detail: "The Jujutsu repository has no colocated Git repository.",
+              });
+            return yield* JjProcess.colocatedGitCommand(
+              process,
+              "JjStatus.refreshUpstream",
+              { gitDir: paths.gitDir, cwd },
+              [
+                // Disable configured opportunistic remote-tracking updates as well.
+                "fetch",
+                "--no-tags",
+                "--no-write-fetch-head",
+                "--prune",
+                "--refmap=",
+                "--",
+                remoteName,
+                `+refs/heads/*:refs/t3/remotes/${encodeURIComponent(remoteName)}/*`,
+              ],
+              {
+                env: STATUS_UPSTREAM_REFRESH_ENV,
+                timeoutMs: Duration.toMillis(STATUS_UPSTREAM_REFRESH_TIMEOUT),
+              },
+            );
+          }),
+        ),
+        Effect.as(true as const),
+        Effect.mapError(
+          (cause) =>
+            new GitCommandError({
+              operation: "JjStatus.refreshUpstream",
+              command: "git",
+              cwd,
+              detail: "Background Jujutsu remote refresh failed.",
+              cause,
+            }),
+        ),
+        Effect.tap(() => Effect.sync(() => upstreamRefreshFailureCounts.delete(key))),
+        Effect.tapError(() => Effect.sync(() => recordUpstreamRefreshFailure(key))),
+      );
     },
     {
       capacity: STATUS_UPSTREAM_REFRESH_CACHE_CAPACITY,

@@ -312,5 +312,3 @@ describe("sortActiveThreadsByLatestMessage", () => {
     ).toEqual(["thread-a:env-a", "thread-a:env-b", "thread-b:env-a"]);
   });
 });
-
-});

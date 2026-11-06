@@ -19,7 +19,10 @@ import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib
 import { selectProjectGroupingSettings } from "@t3tools/client-runtime/state/project-grouping";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { buildSidebarProjectSnapshots, resolveSidebarScopedProjectRef } from "../sidebarProjectGrouping";
+import {
+  buildSidebarProjectSnapshots,
+  resolveSidebarScopedProjectRef,
+} from "../sidebarProjectGrouping";
 import { readProjects, readThreadShell } from "../state/entities";
 import { defaultProjectFallbackReadyAtom } from "../state/projects";
 import { environmentPresentations } from "../state/presentation";
@@ -138,13 +141,11 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       "chat.new": (event) => {
         const groups = readProjectGroups();
         // Filtered to one project: that's the answer the picker would ask for.
-        const scopedProjectRef = legacySidebarEnabled
-          ? null
-          : resolveSidebarScopedProjectRef({
-              groups,
-              scopeKey: readSidebarScopeKey(),
-              preferredProjectRef: resolveThreadActionProjectRef(readThreadContext()),
-            });
+        const scopedProjectRef = resolveSidebarScopedProjectRef({
+          groups,
+          scopeKey: readSidebarScopeKey(),
+          preferredProjectRef: resolveThreadActionProjectRef(readThreadContext()),
+        });
         if (scopedProjectRef) {
           claim(event);
           void handleNewThread(scopedProjectRef);

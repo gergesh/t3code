@@ -21,6 +21,7 @@ import * as Layer from "effect/Layer";
 
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as WorktreeCommands from "../vcs/WorktreeCommands.ts";
 
 export const layer = Layer.merge(
   Layer.mock(GitWorkflow.GitWorkflowService)({

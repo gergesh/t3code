@@ -29,7 +29,11 @@ const bookmark = "feature/cleanup";
 const withWorkspace = <A, E>(
   use: (
     repo: JjRepoFixture & { readonly cwd: string },
-  ) => Effect.Effect<A, E, Layer.Success<typeof NodeServices.layer> | Digest.Digest | SecureRandom.SecureRandom>,
+  ) => Effect.Effect<
+    A,
+    E,
+    Layer.Success<typeof NodeServices.layer> | Digest.Digest | SecureRandom.SecureRandom
+  >,
 ) =>
   withJjRepo({ prefix: "t3-jj-storage-cleanup-", seed: true }, (repo) =>
     Effect.gen(function* () {

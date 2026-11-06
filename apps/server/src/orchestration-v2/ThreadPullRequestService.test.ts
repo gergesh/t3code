@@ -253,6 +253,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             listShells: () => Effect.succeed([project]),
             getShell: () => Effect.succeedSome(project),
           }),
+          Layer.mock(GitWorkflowService.GitWorkflowService)({ providerCwd: Effect.succeed }),
           Layer.mock(GitManager.GitManager)({
             branchPullRequest: (input, options) =>
               Effect.gen(function* () {

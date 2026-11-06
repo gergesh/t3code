@@ -181,10 +181,10 @@ export const makeJjStackedAction = (deps: JjStackedActionDeps): JjStackedActionO
           );
         if (includesWorkingCopy > 0) {
           return yield* jjFailure(
-              "JjStackedAction.runStackedAction",
-              cwd,
-              "Commit this change before pushing it or creating a change request.",
-            );
+            "JjStackedAction.runStackedAction",
+            cwd,
+            "Commit this change before pushing it or creating a change request.",
+          );
         }
       }
       const upstream =
@@ -245,10 +245,10 @@ export const makeJjStackedAction = (deps: JjStackedActionDeps): JjStackedActionO
         .pipe(mapJjFailure("JjStackedAction.runStackedAction", cwd, "Could not read `@`."));
       if (change.conflict && (wantsCommit || wantsPush || wantsPr)) {
         return yield* jjFailure(
-            "JjStackedAction.runStackedAction",
-            cwd,
-            "Resolve conflicts in this change before committing or pushing.",
-          );
+          "JjStackedAction.runStackedAction",
+          cwd,
+          "Resolve conflicts in this change before committing or pushing.",
+        );
       }
 
       let branchStep: { status: "created" | "skipped_not_requested"; name?: string } = {
@@ -288,10 +288,10 @@ export const makeJjStackedAction = (deps: JjStackedActionDeps): JjStackedActionO
         });
         if (suggestion === null) {
           return yield* jjFailure(
-              "JjStackedAction.branchPhase",
-              cwd,
-              "Cannot create a bookmark because there are no changes to commit.",
-            );
+            "JjStackedAction.branchPhase",
+            cwd,
+            "Cannot create a bookmark because there are no changes to commit.",
+          );
         }
         const bookmarks = yield* driver
           .listBookmarks(cwd)
@@ -335,10 +335,10 @@ export const makeJjStackedAction = (deps: JjStackedActionDeps): JjStackedActionO
             yield* emit({ kind: "phase_started", phase: "push", label: "Pushing..." });
             if (refName === null) {
               return yield* jjFailure(
-                  "JjStackedAction.pushPhase",
-                  cwd,
-                  "This change is not on a bookmark yet. Create one before pushing.",
-                );
+                "JjStackedAction.pushPhase",
+                cwd,
+                "This change is not on a bookmark yet. Create one before pushing.",
+              );
             }
             const remoteName = yield* remotes.requirePrimaryRemoteName(
               "JjStackedAction.pushPhase",

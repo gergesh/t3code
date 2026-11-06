@@ -113,10 +113,10 @@ export const make = Effect.gen(function* () {
     const gitDir = paths.gitDir;
     if (gitDir === null) {
       return yield* jjFailure(
-          input.operation,
-          input.cwd,
-          "This Jujutsu repository has no colocated Git store.",
-        );
+        input.operation,
+        input.cwd,
+        "This Jujutsu repository has no colocated Git store.",
+      );
     }
     // `colocatedGitCommand` picks the options it passes through; only the nullable timeout, which
     // it has no notion of, has to be dropped here.
@@ -175,10 +175,10 @@ export const make = Effect.gen(function* () {
       const directory = resolveWorktreesDirectory(setting, config.worktreesDir, path, home);
       if ((input.path === undefined || input.path === null) && directory === null) {
         return yield* jjFailure(
-            "JjWorkflow.createWorktree",
-            input.cwd,
-            `The worktree location "${setting}" must be an absolute folder on this machine, not a drive root. Change it in Settings → Storage.`,
-          );
+          "JjWorkflow.createWorktree",
+          input.cwd,
+          `The worktree location "${setting}" must be an absolute folder on this machine, not a drive root. Change it in Settings → Storage.`,
+        );
       }
       const submodules =
         options?.submodules !== undefined
@@ -349,10 +349,14 @@ export const make = Effect.gen(function* () {
     invalidateStatus,
     pullCurrentBranch: remotes.pullCurrentBranch,
     runStackedAction: Effect.fn("JjWorkflow.runStackedAction")((input, options) =>
-      withChangeRequestServices(stackedAction.runStackedAction(input, options)).pipe(asUserAction)),
-    resolvePullRequest: Effect.fn("JjWorkflow.resolvePullRequest")((input) => pullRequestThread.resolvePullRequest(input).pipe(asUserAction)),
+      withChangeRequestServices(stackedAction.runStackedAction(input, options)).pipe(asUserAction),
+    ),
+    resolvePullRequest: Effect.fn("JjWorkflow.resolvePullRequest")((input) =>
+      pullRequestThread.resolvePullRequest(input).pipe(asUserAction),
+    ),
     preparePullRequestThread: Effect.fn("JjWorkflow.preparePullRequestThread")((input) =>
-      pullRequestThread.preparePullRequestThread(input).pipe(asUserAction)),
+      pullRequestThread.preparePullRequestThread(input).pipe(asUserAction),
+    ),
     listRefs: refs.listRefs,
     createWorktree: workspaces.createWorktree,
     removeWorktree: workspaces.removeWorktree,

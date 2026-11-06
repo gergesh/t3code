@@ -96,9 +96,7 @@ export function WorktreesDirectoryRow() {
   return (
     <SettingsRow
       {...searchableSetting("storage-worktrees-location")}
-      description={
-        `Folder where new ${terminology.workspaceNounPlural} are created, on any drive, such as D:\\${terminology.workspaceNounPlural} or ~/${terminology.workspaceNounPlural}. Existing ${terminology.workspaceNounPlural} stay where they are. Leave empty to use the T3 home folder.`
-      }
+      description={`Folder where new ${terminology.workspaceNounPlural} are created, on any drive, such as D:\\${terminology.workspaceNounPlural} or ~/${terminology.workspaceNounPlural}. Existing ${terminology.workspaceNounPlural} stay where they are. Leave empty to use the T3 home folder.`}
       serverScoped
       settingKeys={["worktreesDirectory"]}
       resetAction={
@@ -574,7 +572,10 @@ export function WorktreeCleanupSection() {
                     updateSettings({ worktreeCleanup: { mode: "custom", rules: {} } });
                 }}
               >
-                <SelectTrigger size="sm" aria-label={`Automatic ${terminology.workspaceNoun} cleanup`}>
+                <SelectTrigger
+                  size="sm"
+                  aria-label={`Automatic ${terminology.workspaceNoun} cleanup`}
+                >
                   <SelectValue>
                     {mixedModes
                       ? "Mixed"
@@ -602,7 +603,7 @@ export function WorktreeCleanupSection() {
               managedPaths={lockablePath("worktreeOnDelete")}
               description={
                 vcsKind === "jj"
-                  ? "Remove unused workspaces when active or archived threads are deleted. Working-copy changes, conflicts, and commits not reachable from a bookmark or remote bookmark are kept. Local files follow the keep rule below."
+                  ? "Remove unused workspaces when threads are deleted. Working-copy changes, conflicts, and commits not on a bookmark or remote bookmark are kept. Local files follow the keep rule below."
                   : "Remove unused worktrees when active or archived threads are deleted. Worktrees with local changes are kept."
               }
               serverScoped={!isProjectScope}
@@ -672,10 +673,10 @@ export function WorktreeCleanupSection() {
                       .filter(Boolean)
                       .join(". ")}
                     description={
-                vcsKind === "jj"
-                  ? "Remove workspaces this many days after their thread settles. Set 0 days to remove them at the next cleanup. Changes and thread history are kept."
-                  : "Remove worktrees this many days after their thread settles. Set 0 days to remove them at the next cleanup. Branches and thread history are kept."
-              }
+                      vcsKind === "jj"
+                        ? "Remove workspaces this many days after their thread settles. Set 0 days to remove them at the next cleanup. Changes and thread history are kept."
+                        : "Remove worktrees this many days after their thread settles. Set 0 days to remove them at the next cleanup. Branches and thread history are kept."
+                    }
                     serverScoped={!isProjectScope}
                     control={
                       <RetentionControl
@@ -694,10 +695,10 @@ export function WorktreeCleanupSection() {
                 status={ruleStatus("worktreeUnchanged")}
                 managedPaths={lockablePath("worktreeUnchanged")}
                 description={
-                vcsKind === "jj"
-                  ? "Remove workspaces with no changes beyond the default bookmark."
-                  : "Remove worktrees with no commits beyond the default branch."
-              }
+                  vcsKind === "jj"
+                    ? "Remove workspaces with no changes beyond the default bookmark."
+                    : "Remove worktrees with no commits beyond the default branch."
+                }
                 serverScoped={!isProjectScope}
                 control={
                   <Switch
@@ -741,7 +742,10 @@ export function WorktreeCleanupSection() {
                           updateWorktree({ worktreeKeepWhen: next });
                       }}
                     >
-                      <SelectTrigger size="sm" aria-label={`Keep ${terminology.workspaceNounPlural} with local changes`}>
+                      <SelectTrigger
+                        size="sm"
+                        aria-label={`Keep ${terminology.workspaceNounPlural} with local changes`}
+                      >
                         <SelectValue>
                           {ruleStatus("worktreeKeepWhen")
                             ? "Mixed"

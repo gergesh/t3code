@@ -243,30 +243,30 @@ describeJj("JjCheckpoints restore", () => {
                     .pipe(Effect.orDie);
                   if (multipleFailures)
                     return yield* new VcsProcessExitError({
-                        operation: input.operation,
-                        command: "primary restore",
-                        cwd: repo.root,
-                        exitCode: 9,
-                        detail: "primary restore failure",
-                      });
+                      operation: input.operation,
+                      command: "primary restore",
+                      cwd: repo.root,
+                      exitCode: 9,
+                      detail: "primary restore failure",
+                    });
                 }
                 if (multipleFailures && input.args.includes("forget")) {
                   return yield* new VcsProcessExitError({
-                      operation: input.operation,
-                      command: "bookmark cleanup",
-                      cwd: repo.root,
-                      exitCode: 8,
-                      detail: "bookmark cleanup failure",
-                    });
+                    operation: input.operation,
+                    command: "bookmark cleanup",
+                    cwd: repo.root,
+                    exitCode: 8,
+                    detail: "bookmark cleanup failure",
+                  });
                 }
                 if (multipleFailures && input.args.includes("abandon")) {
                   return yield* new VcsProcessExitError({
-                      operation: input.operation,
-                      command: "abandon cleanup",
-                      cwd: repo.root,
-                      exitCode: 7,
-                      detail: "abandon cleanup failure",
-                    });
+                    operation: input.operation,
+                    command: "abandon cleanup",
+                    cwd: repo.root,
+                    exitCode: 7,
+                    detail: "abandon cleanup failure",
+                  });
                 }
                 return result;
               }),
@@ -332,19 +332,17 @@ describeJj("JjCheckpoints restore", () => {
           currentChange: repo.driver.currentChange,
           process: {
             run: (input) =>
-              repo.process
-                .run(input)
-                .pipe(
-                  Effect.filterOrElse(
-                    () =>
-                      !(
-                        interruptAfterImport &&
-                        input.command === "jj" &&
-                        input.args.includes("import")
-                      ),
-                    () => Effect.interrupt,
-                  ),
+              repo.process.run(input).pipe(
+                Effect.filterOrElse(
+                  () =>
+                    !(
+                      interruptAfterImport &&
+                      input.command === "jj" &&
+                      input.args.includes("import")
+                    ),
+                  () => Effect.interrupt,
                 ),
+              ),
           },
         });
         const result = yield* checkpoints

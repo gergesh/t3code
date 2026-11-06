@@ -16,7 +16,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 
-
 import * as ServerConfig from "../config.ts";
 import * as JjWorkflow from "../jj/JjWorkflow.ts";
 import { makeJjRemotes } from "../jj/JjRemotes.ts";
@@ -28,7 +27,8 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as GitManager from "./GitManager.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
 
-import { unusedCheckpointOps,
+import {
+  unusedCheckpointOps,
   describeJj,
   runJj,
   withJjRepo,
@@ -78,7 +78,7 @@ function makeLayer(input: {
     Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)(input.jj ?? {})),
     Layer.provide(
       Layer.mock(JjVcsDriver.JjVcsDriver)({
-  checkpoints: unusedCheckpointOps,
+        checkpoints: unusedCheckpointOps,
         ...input.jjDriver,
         capabilities: input.jjDriver?.capabilities ?? jjCapabilities,
       }),
@@ -719,7 +719,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
       }).pipe(
         Effect.provide(
           makeLayer({
-            detect: () => Effect.succeed(kind === null ? null : { ...handleFor("git"), kind }),
+            detect: () =>
+              Effect.succeed(
+                kind === null
+                  ? null
+                  : { ...handleFor("git"), kind, repository: { rootPath: "/repo" } },
+              ),
           }),
         ),
       ),
@@ -1160,8 +1165,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
           ),
           Layer.provide(Layer.mock(GitManager.GitManager)({})),
           Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({})),
-          Layer.provide(Layer.mock(JjVcsDriver.JjVcsDriver)({
-  checkpoints: unusedCheckpointOps, capabilities: jjCapabilities })),
+          Layer.provide(
+            Layer.mock(JjVcsDriver.JjVcsDriver)({
+              checkpoints: unusedCheckpointOps,
+              capabilities: jjCapabilities,
+            }),
+          ),
           Layer.provide(Layer.mock(WorktreeCommands.WorktreeCommands)({})),
           Layer.provideMerge(GitVcsDriver.layer),
           Layer.provideMerge(VcsProcess.layer),

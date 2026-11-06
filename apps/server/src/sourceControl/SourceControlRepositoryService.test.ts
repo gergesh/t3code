@@ -80,7 +80,7 @@ function layer(input: {
     Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)(input.jj ?? {})),
     Layer.provide(
       Layer.mock(JjVcsDriver.JjVcsDriver)({
-  checkpoints: unusedCheckpointOps,
+        checkpoints: unusedCheckpointOps,
         ensureUsable: (_operation, cwd) =>
           Effect.succeed({
             workspaceRoot: cwd,

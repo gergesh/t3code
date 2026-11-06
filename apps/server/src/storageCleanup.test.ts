@@ -1,44 +1,21 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
-import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import { ChildProcessSpawner } from "effect/process";
-import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
-import type * as Path from "effect/Path";
-import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { SCAN_CACHE_FILE_NAME } from "./usage/usageScanCache.ts";
 import { TestClock } from "effect/testing";
-import * as SqlClient from "effect/sql/SqlClient";
-import {
-  DEFAULT_SERVER_SETTINGS,
-  type WorktreeKeepWhen,
-  type StorageCleanupSettings,
-  type TerminalMetadataStreamEvent,
-  type TerminalSummary,
-} from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ServerConfig from "./config.ts";
-import * as StorageCleanup from "./storageCleanup.ts";
-import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
-import * as GitManager from "./git/GitManager.ts";
-import * as Settings from "./serverSettings.ts";
-import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
-import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
-import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
-import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
-import * as TerminalManager from "./terminal/Manager.ts";
 import { CodexProviderCapabilitiesV2 } from "./orchestration-v2/Adapters/CodexAdapterV2.ts";
-import { ServerActivation } from "./serverActivation.ts";
 import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
 import { describe, expect, it } from "@effect/vitest";
 import {
   EventId,
-  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionId,
@@ -139,7 +116,10 @@ describeJj("Jujutsu worktree cleanup default discovery", () => {
             expect(report.entries[0]?.outcome).toBe(scenario === "disabled" ? "kept" : "removed");
             expect(yield* fs.exists(worktree)).toBe(scenario === "disabled");
             expect(networkCalls).toBe(0);
-            expect(stageInspections).toBeGreaterThan(0);
+            // With no rule that could make the workspace eligible, it is never inspected.
+            expect(scenario === "disabled" ? stageInspections === 0 : stageInspections > 0).toBe(
+              true,
+            );
           }).pipe(
             Effect.provide(Layer.empty, { local: true }),
             Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, wrappedSpawner),

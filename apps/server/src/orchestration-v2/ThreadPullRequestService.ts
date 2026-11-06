@@ -192,8 +192,7 @@ export const make = Effect.gen(function* () {
           // A worktree folder can outlive its .git (or a jj workspace its .jj), and git there fails
           // with not_a_repository. An unreadable marker keeps the worktree rather than failing the group.
           const checkoutCwd =
-            first.worktreePath !== null &&
-            (yield* hasCheckoutMarker(first.worktreePath))
+            first.worktreePath !== null && (yield* hasCheckoutMarker(first.worktreePath))
               ? first.worktreePath
               : project.workspaceRoot;
           const cwd =

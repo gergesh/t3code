@@ -250,10 +250,10 @@ export const makeJjRefs = Effect.fn("JjRefs.makeJjRefs")(function* (
       (segment.length === 0 && !change.empty && change.localBookmarks.length === 0);
     if (stranded) {
       return yield* jjFailure(
-          input.operation,
-          input.cwd,
-          `This work is not on a bookmark yet. Create a bookmark for it (or commit and bookmark it) before switching to ${input.targetRefName}; \`jj new\` would hide it.`,
-        );
+        input.operation,
+        input.cwd,
+        `This work is not on a bookmark yet. Create a bookmark for it (or commit and bookmark it) before switching to ${input.targetRefName}; \`jj new\` would hide it.`,
+      );
     }
   });
 
@@ -364,8 +364,10 @@ export const makeJjRefs = Effect.fn("JjRefs.makeJjRefs")(function* (
       // before that only renames the workspace and its record.
       const bookmarkExists = localBookmarkNames.has(input.oldBranch);
       if (!bookmarkExists && !ownsWorkspace) {
-        return yield* Effect.fail(
-          jjFailure(operation, input.cwd, `Bookmark ${input.oldBranch} does not exist.`),
+        return yield* jjFailure(
+          operation,
+          input.cwd,
+          `Bookmark ${input.oldBranch} does not exist.`,
         );
       }
       // An unborn name must avoid taken names too, or the workspace would later resolve to
@@ -388,10 +390,10 @@ export const makeJjRefs = Effect.fn("JjRefs.makeJjRefs")(function* (
         }
         if (isTaken(targetBranch)) {
           return yield* jjFailure(
-              operation,
-              input.cwd,
-              `Could not find an available branch name for '${input.newBranch}'.`,
-            );
+            operation,
+            input.cwd,
+            `Could not find an available branch name for '${input.newBranch}'.`,
+          );
         }
       }
 

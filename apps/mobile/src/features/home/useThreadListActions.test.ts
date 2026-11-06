@@ -296,8 +296,9 @@ describe("pinned thread operation permissions", () => {
   });
 });
 
+// Active is ordered by latest message, so only Pinned has moves to plan.
 describe("thread reorder connection availability", () => {
-  it.each(["active", "pinned"] as const)(
+  it.each<"active" | "pinned">(["pinned"])(
     "rejects %s materialization involving a cached capable offline neighbor",
     async (section) => {
       const moved = makeThread({
@@ -329,7 +330,7 @@ describe("thread reorder connection availability", () => {
     },
   );
 
-  it.each(["active", "pinned"] as const)(
+  it.each<"active" | "pinned">(["pinned"])(
     "uses the latest connection state in a retained %s move callback",
     async (section) => {
       const moved = makeThread({

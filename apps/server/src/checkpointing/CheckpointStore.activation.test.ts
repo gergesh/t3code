@@ -19,7 +19,9 @@ import * as ServerConfig from "../config.ts";
 const layerServerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-checkpoint-store-test-",
 });
-const layerVcsProcessTest = VcsProcess.layer.pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
+const layerVcsProcessTest = VcsProcess.layer.pipe(
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 const layerVcsDriverTest = VcsDriverRegistry.layer.pipe(Layer.provide(layerVcsProcessTest));
 const layerCheckpointStoreTest = CheckpointStore.layer.pipe(
   Layer.provideMerge(layerVcsDriverTest),

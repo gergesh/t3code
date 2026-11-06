@@ -97,81 +97,86 @@ const writeTranscript = Effect.fn("AgentSessionScanner.test.writeTranscript")(fu
 const claudeSessionLine = (cwd: string) =>
   `${JSON.stringify({ type: "user", cwd, sessionId: "s1" })}\n${JSON.stringify({ type: "assistant" })}\n`;
 
-it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AgentSessionScanner activation", (it) => {
-  describeJj("secondary workspaces", () => {
-    it.effect("reports a non-colocated main workspace without a git marker", () =>
-      Effect.gen(function* () {
-        const path = yield* Path.Path;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
-        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
-        const main = yield* makeTempDir("t3code-non-colocated-jj-");
-        yield* runJj(main, ["git", "init", "--no-colocate"]);
-        expect(yield* fileSystem.exists(path.join(main, ".git"))).toBe(false);
-        expect(yield* fileSystem.exists(path.join(main, ".jj", "repo", "store", "git"))).toBe(true);
-        yield* writeTranscript({
-          filePath: path.join(claudeHomePath, "projects", "-non-colocated-jj", "a.jsonl"),
-          contents: claudeSessionLine(main),
-          mtimeMs: Date.parse("2026-01-01T00:00:00.000Z"),
-        });
-
-        const result = yield* runScan({ claudeHomePath, codexHomePath });
-
-        // Non-colocated stores have no supported Git remote identity, but are still repositories.
-        expect(
-          result.candidates.map((candidate) => ({ path: candidate.path, git: candidate.git })),
-        ).toEqual([{ path: main, git: { remoteKey: null, repository: null } }]);
-      }),
-    );
-
-    it.effect("excludes user-added workspaces and aliases unless registered as projects", () =>
-      Effect.gen(function* () {
-        const path = yield* Path.Path;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
-        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
-        const base = yield* makeTempDir("t3code-workspace-jj-");
-        const main = path.join(base, "project");
-        const workspace = path.join(base, "thread");
-
-        yield* fileSystem.makeDirectory(main, { recursive: true });
-        yield* createJjRepo(main);
-        yield* runGit(main, ["remote", "add", "origin", "git@github.com:pingdotgg/t3code.git"]);
-        yield* runJj(main, ["workspace", "add", workspace]);
-        const nested = path.join(workspace, "nested");
-        const alias = path.join(base, "alias");
-        yield* fileSystem.makeDirectory(nested);
-        yield* fileSystem.symlink(workspace, alias);
-
-        for (const [index, cwd] of [
-          workspace,
-          nested,
-          alias,
-          path.join(alias, "nested"),
-        ].entries()) {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
+  "AgentSessionScanner activation",
+  (it) => {
+    describeJj("secondary workspaces", () => {
+      it.effect("reports a non-colocated main workspace without a git marker", () =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+          const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+          const main = yield* makeTempDir("t3code-non-colocated-jj-");
+          yield* runJj(main, ["git", "init", "--no-colocate"]);
+          expect(yield* fileSystem.exists(path.join(main, ".git"))).toBe(false);
+          expect(yield* fileSystem.exists(path.join(main, ".jj", "repo", "store", "git"))).toBe(
+            true,
+          );
           yield* writeTranscript({
-            filePath: path.join(claudeHomePath, "projects", "-slug-jj", `${index}.jsonl`),
-            contents: claudeSessionLine(cwd),
+            filePath: path.join(claudeHomePath, "projects", "-non-colocated-jj", "a.jsonl"),
+            contents: claudeSessionLine(main),
             mtimeMs: Date.parse("2026-01-01T00:00:00.000Z"),
           });
-        }
 
-        expect((yield* runScan({ claudeHomePath, codexHomePath })).candidates).toEqual([]);
-        const result = yield* runScan({
-          claudeHomePath,
-          codexHomePath,
-          importedWorkspaceRoots: [workspace],
-        });
+          const result = yield* runScan({ claudeHomePath, codexHomePath });
 
-        expect(
-          result.candidates.map((candidate) => ({ path: candidate.path, git: candidate.git })),
-        ).toEqual([
-          {
-            path: workspace,
-            git: { remoteKey: "github.com/pingdotgg/t3code", repository: "pingdotgg/t3code" },
-          },
-        ]);
-      }),
-    );
-  });
-});
+          // Non-colocated stores have no supported Git remote identity, but are still repositories.
+          expect(
+            result.candidates.map((candidate) => ({ path: candidate.path, git: candidate.git })),
+          ).toEqual([{ path: main, git: { remoteKey: null, repository: null } }]);
+        }),
+      );
+
+      it.effect("excludes user-added workspaces and aliases unless registered as projects", () =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+          const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+          const base = yield* makeTempDir("t3code-workspace-jj-");
+          const main = path.join(base, "project");
+          const workspace = path.join(base, "thread");
+
+          yield* fileSystem.makeDirectory(main, { recursive: true });
+          yield* createJjRepo(main);
+          yield* runGit(main, ["remote", "add", "origin", "git@github.com:pingdotgg/t3code.git"]);
+          yield* runJj(main, ["workspace", "add", workspace]);
+          const nested = path.join(workspace, "nested");
+          const alias = path.join(base, "alias");
+          yield* fileSystem.makeDirectory(nested);
+          yield* fileSystem.symlink(workspace, alias);
+
+          for (const [index, cwd] of [
+            workspace,
+            nested,
+            alias,
+            path.join(alias, "nested"),
+          ].entries()) {
+            yield* writeTranscript({
+              filePath: path.join(claudeHomePath, "projects", "-slug-jj", `${index}.jsonl`),
+              contents: claudeSessionLine(cwd),
+              mtimeMs: Date.parse("2026-01-01T00:00:00.000Z"),
+            });
+          }
+
+          expect((yield* runScan({ claudeHomePath, codexHomePath })).candidates).toEqual([]);
+          const result = yield* runScan({
+            claudeHomePath,
+            codexHomePath,
+            importedWorkspaceRoots: [workspace],
+          });
+
+          expect(
+            result.candidates.map((candidate) => ({ path: candidate.path, git: candidate.git })),
+          ).toEqual([
+            {
+              path: workspace,
+              git: { remoteKey: "github.com/pingdotgg/t3code", repository: "pingdotgg/t3code" },
+            },
+          ]);
+        }),
+      );
+    });
+  },
+);

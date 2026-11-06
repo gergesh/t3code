@@ -970,6 +970,7 @@ const make = Effect.gen(function* () {
           !group.every((member) => storageCleanupThreadIdle(member, now, serverSettings))
         )
           return keep(waitForStop("thread is running or has pending work"));
+        const branch = thread.branch;
         if (group.some((member) => member.branch !== thread.branch))
           return keep("a subagent thread's branch differs from this worktree's branch");
         if (hasTerminal(worktreePath)) return keep(waitForStop("open terminal"));
@@ -1162,7 +1163,12 @@ const make = Effect.gen(function* () {
                 remote === null
                   ? "no commits beyond the project branch"
                   : "no commits beyond the default branch";
-            if (!eligible && remote !== null && settings.worktreeOnMerge && thread.branch !== null) {
+            if (
+              !eligible &&
+              remote !== null &&
+              settings.worktreeOnMerge &&
+              thread.branch !== null
+            ) {
               const pullRequest = yield* gitManager.branchPullRequest(
                 { cwd: worktreePath, branch: thread.branch },
                 { refresh: true },
@@ -1304,7 +1310,7 @@ const make = Effect.gen(function* () {
             if (jjInspection !== null) {
               const reason = yield* removeJjStorageCleanup(
                 worktreePath,
-                thread.branch,
+                branch,
                 jjInspection.commitId,
                 settings.worktreeKeepWhen,
               );

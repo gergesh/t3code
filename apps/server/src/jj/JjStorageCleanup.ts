@@ -458,14 +458,14 @@ export const removeJjStorageCleanup = Effect.fn("JjStorageCleanup.remove")(funct
           );
           if (!registered)
             return yield* new JjStorageCleanupRecoveryError({
-                message: `Workspace registration changed; recover preserved files from ${held}`,
-              });
+              message: `Workspace registration changed; recover preserved files from ${held}`,
+            });
           // Do not overwrite a concurrently recreated path. Leave the holding path intact
           // if restoration fails, and include its location in the reported error.
           if (yield* fileSystem.exists(paths.workspaceRoot))
             return yield* new JjStorageCleanupRecoveryError({
-                message: `Workspace path was recreated; recover preserved files from ${held}`,
-              });
+              message: `Workspace path was recreated; recover preserved files from ${held}`,
+            });
           yield* fileSystem.rename(held, paths.workspaceRoot).pipe(
             Effect.mapError(
               (error) =>

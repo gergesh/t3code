@@ -104,7 +104,7 @@ function outputTail(stdout: string, stderr: string): string {
   return output === "" ? "" : `\n${output}`;
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const projects = yield* ProjectService.ProjectService;

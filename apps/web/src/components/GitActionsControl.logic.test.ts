@@ -3,10 +3,7 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { resolveAutoFeatureBranchName } from "@t3tools/shared/git";
 import { JJ_VCS_TERMINOLOGY } from "@t3tools/shared/vcs";
 import { assert, describe, it } from "vite-plus/test";
-import {
-  resolveChangesTotals,
-  resolveLiveThreadBranchUpdate,
-} from "./GitActionsControl.logic";
+import { resolveChangesTotals, resolveLiveThreadBranchUpdate } from "./GitActionsControl.logic";
 import {
   buildMenuItems as buildSharedMenuItems,
   resolveQuickAction as resolveSharedQuickAction,
