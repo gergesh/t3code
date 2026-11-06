@@ -44,6 +44,9 @@ File paths in the `--settings` and `--append-system-prompt-file` launch argument
 can start with `~` for the home directory of the machine running T3 Code. Any
 other relative path is read from the thread's project folder, or its worktree.
 
+Commands Claude runs in the background are not stopped after Claude Code's usual two hours.
+To cap them, set `BASH_MAX_TIMEOUT_MS` (milliseconds) in the instance's **Environment variables**.
+
 Claude Code's verbose mode can stay enabled when you use Claude for text generation, including
 thread titles, branch names, commit messages, and pull request descriptions. On a remote connection,
 T3 Code uses the Claude configuration on the connected server.
