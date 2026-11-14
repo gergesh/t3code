@@ -2902,7 +2902,7 @@ describe("composerDraftStore checkout pull request", () => {
     expect(store().getDraftSession(draftId)?.checkoutPullRequest).toBeUndefined();
   });
 
-  it("persists the pull request and still restores drafts saved without one", async () => {
+  it("persists the pull request and orchestrator mode, and restores drafts saved without them", async () => {
     vi.useFakeTimers();
     try {
       await useComposerDraftStore.persist.clearStorage();
@@ -2928,7 +2928,11 @@ describe("composerDraftStore checkout pull request", () => {
         state: {
           draftsByThreadKey: {},
           draftThreadsByThreadKey: {
-            [draftId]: { ...persistedDraftThread(threadId), checkoutPullRequest: checkout },
+            [draftId]: {
+              ...persistedDraftThread(threadId),
+              checkoutPullRequest: checkout,
+              interactionMode: "orchestrate",
+            },
             [legacyDraftId]: persistedDraftThread(ThreadId.make("thread-legacy")),
           },
           logicalProjectDraftThreadKeyByLogicalProjectKey: {
@@ -2941,8 +2945,9 @@ describe("composerDraftStore checkout pull request", () => {
       await useComposerDraftStore.persist.rehydrate();
 
       expect(toLink()).toBe(url);
+      expect(store().getDraftSession(draftId)?.interactionMode).toBe("orchestrate");
       const legacy = store().getDraftSession(legacyDraftId);
-      expect(legacy).toMatchObject({ branch: checkout.branch });
+      expect(legacy).toMatchObject({ branch: checkout.branch, interactionMode: "default" });
       expect(checkoutPullRequestUrlToLink(legacy)).toBeNull();
       expect(
         partializeComposerDraftStoreState(store()).draftThreadsByThreadKey[draftId],

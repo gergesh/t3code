@@ -1,4 +1,5 @@
 import { Button } from "../../components/ui/Button";
+import { Chip } from "../../components/ui/Chip";
 import * as Dialog from "../../components/ui/Dialog";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
@@ -16,6 +17,7 @@ import {
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
+  type ProviderInteractionMode,
   type ServerConfig as T3ServerConfig,
   type UsageLimitsReport,
 } from "@t3tools/contracts";
@@ -189,6 +191,7 @@ export interface ThreadComposerProps {
   ) => Promise<MessageId | null>;
   readonly onShowUsageLimits: (report: UsageLimitsReport | null) => void;
   readonly canSwitchProvider: boolean;
+  readonly onUpdateInteractionMode?: (interactionMode: ProviderInteractionMode) => void;
   readonly onHeightChange?: (height: number) => void;
   readonly onEditorFocusChange?: (focused: boolean) => void;
 }
@@ -419,6 +422,13 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     undefined,
     props.selectedThread.projectId,
   );
+  const orchestrating = props.selectedThread.interactionMode === "orchestrate";
+  const onUpdateInteractionMode = props.onUpdateInteractionMode;
+  const toggleOrchestrator =
+    onUpdateInteractionMode !== undefined &&
+    (props.canOperateThread || props.connectionState !== "connected")
+      ? () => onUpdateInteractionMode(orchestrating ? "default" : "orchestrate")
+      : undefined;
   const composerMenu = useComposerCommandMenu({
     draftMessage: draftMessage,
     ownerKey: composerDraftKey,
@@ -445,6 +455,8 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     modelProviders: props.serverConfig?.providers,
     ...(props.onFreshSession === undefined ? {} : { onFreshSession: props.onFreshSession }),
     offersSideChat: props.offersSideChat === true,
+    orchestrating,
+    ...(toggleOrchestrator === undefined ? {} : { onToggleOrchestrator: toggleOrchestrator }),
   });
   const voiceInput = useVoiceInputController({
     ownerKey: composerDraftKey,
@@ -788,6 +800,24 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
             tone="text"
             onPress={openSettings}
           />
+        ) : null}
+        {orchestrating ? (
+          <View className="flex-row pb-1.5">
+            <Chip
+              label="Orchestrator"
+              icon="point.3.connected.trianglepath.dotted"
+              size="small"
+              selected
+              glass
+              {...(toggleOrchestrator === undefined
+                ? {}
+                : {
+                    trailingIcon: "xmark.circle.fill" as const,
+                    accessibilityLabel: "Turn off orchestrator mode",
+                    onPress: toggleOrchestrator,
+                  })}
+            />
+          </View>
         ) : null}
 
         <ComposerSurface

@@ -6,6 +6,7 @@ import {
   type ProviderInteractionMode,
   type RunId,
   type RuntimeMode,
+  nextTurnInteractionMode,
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
@@ -16,7 +17,6 @@ import {
 import { useState } from "react";
 import { newMessageId } from "~/lib/utils";
 import type { ComposerHandleRef } from "../../composerHandleContext";
-import { DEFAULT_INTERACTION_MODE } from "../../types";
 import { threadEnvironment } from "../../state/threads";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import type { makeThreadErrorSetter } from "../ChatView.logic";
@@ -102,6 +102,7 @@ export function useComposerResume(input: ComposerResumeInput) {
       return;
     }
     const threadId = activeThread.id;
+    const interactionMode = nextTurnInteractionMode(activeThread.interactionMode);
     sendInFlightRef.current = true;
     setResumingThreadKeys((current) => new Set(current).add(routeThreadKey));
     setThreadError(threadId, null);
@@ -121,7 +122,7 @@ export function useComposerResume(input: ComposerResumeInput) {
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
         runtimeMode,
-        interactionMode: DEFAULT_INTERACTION_MODE,
+        interactionMode,
       });
       if (settingsResult._tag === "Failure") return settingsResult;
       const turnResult = await startThreadTurn({
@@ -137,7 +138,7 @@ export function useComposerResume(input: ComposerResumeInput) {
             attachments: [],
           },
           runtimeMode,
-          interactionMode: DEFAULT_INTERACTION_MODE,
+          interactionMode,
           dispatchMode: "start",
         },
       });

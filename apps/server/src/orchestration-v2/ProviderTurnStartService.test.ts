@@ -81,6 +81,7 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import { T3_CODE_ORCHESTRATOR_MODE_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
@@ -453,6 +454,7 @@ it.each([
 
 function makeLocalCommandHarness(input: {
   readonly text: string;
+  readonly interactionMode?: OrchestrationV2ThreadProjection["thread"]["interactionMode"];
   readonly manualContinuation?: boolean;
   readonly nativeResumeUnsupported?: boolean;
   readonly steeringRestart?: boolean;
@@ -577,6 +579,7 @@ function makeLocalCommandHarness(input: {
       projectId: ProjectId.make("project-native-account-command"),
       branch: input.worktreePath === undefined ? null : "feature/restore",
       worktreePath: input.worktreePath ?? null,
+      interactionMode: input.interactionMode ?? "default",
       lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
     } as OrchestrationV2ThreadProjection["thread"],
     runs: [
@@ -1265,6 +1268,7 @@ function makeLocalCommandHarness(input: {
       Effect.succeed({
         cwd: thread.worktreePath ?? "/tmp/native-account-command",
         runtimeMode: thread.runtimeMode,
+        interactionMode: thread.interactionMode,
       } as never),
   );
   const createWorktree = vi.fn<GitWorkflow.GitWorkflowService["Service"]["createWorktree"]>(() =>
@@ -2253,6 +2257,29 @@ effectIt.effect("sends new steering text when restarting a manual continuation",
     expect(harness.startTurn.mock.calls[0]?.[0].message.text).toBe("New steering instruction");
     expect(harness.startRootRun.mock.calls[0]?.[0].resume).toBe(false);
   }),
+);
+
+effectIt.effect.each(["default", "orchestrate"] as const)(
+  "sends lead instructions and records them on the attempt only in orchestrator mode: %s",
+  (interactionMode) =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "Ship the feature",
+        interactionMode,
+        manualContinuation: true,
+        steeringRestart: true,
+        nativeResumeUnsupported: true,
+        sideChat: { contextRun: "delivered" },
+      });
+      yield* harness.start;
+      const orchestrating = interactionMode === "orchestrate";
+      expect(harness.startTurn.mock.calls[0]?.[0].message.text).toBe(
+        orchestrating
+          ? withInlineContext(T3_CODE_ORCHESTRATOR_MODE_INSTRUCTIONS, "Ship the feature")
+          : "Ship the feature",
+      );
+      expect(harness.projection().attempts.at(-1)?.leadNote).toBe(orchestrating ? "on" : undefined);
+    }),
 );
 
 effectIt.effect("refuses unsupported resume instead of manufacturing a user prompt", () =>

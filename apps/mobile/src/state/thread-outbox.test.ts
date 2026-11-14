@@ -349,7 +349,7 @@ describe("thread outbox", () => {
     });
   });
 
-  it("normalizes queued plan mode against the queued provider, not the current thread", () => {
+  it("normalizes queued plan mode against the queued provider and keeps orchestrate on any", () => {
     const codex = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" };
     const antigravity = {
       instanceId: ProviderInstanceId.make("google-personal"),
@@ -389,6 +389,13 @@ describe("thread outbox", () => {
         providers,
       ).interactionMode,
     ).toBe("plan");
+    expect(
+      resolveQueuedThreadSettings(
+        { ...message, interactionMode: "orchestrate" },
+        { modelSelection: codex, runtimeMode: "approval-required", interactionMode: "orchestrate" },
+        providers,
+      ).interactionMode,
+    ).toBe("orchestrate");
   });
 
   // regression: #29729 Cursor runs its own Fast default when the turn carries no fastMode

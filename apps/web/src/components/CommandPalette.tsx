@@ -73,6 +73,7 @@ import {
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
+  NetworkIcon,
   PaletteIcon,
   RotateCcwIcon,
   SettingsIcon,
@@ -85,6 +86,7 @@ import {
   UserPlusIcon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
+import { type OrchestratorModeTarget, useSetOrchestratorMode } from "./chat/useSetOrchestratorMode";
 import { dispatchPreviewAction } from "./preview/previewActionBus";
 import { previewBridge } from "./preview/previewBridge";
 import {
@@ -496,8 +498,19 @@ function OpenCommandPaletteDialog(props: {
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
-  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
+  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeDraftId } =
     useHandleNewThread();
+  const setOrchestratorMode = useSetOrchestratorMode();
+  const orchestratorModeTarget: OrchestratorModeTarget | null = activeThread
+    ? { kind: "server", threadRef: scopeThreadRef(activeThread.environmentId, activeThread.id) }
+    : routeDraftId !== null && activeDraftThread !== null
+      ? { kind: "draft", draftTarget: routeDraftId }
+      : null;
+  const orchestratorModeThread = activeThread ?? activeDraftThread;
+  const canChangeOrchestratorMode = useEnvironmentScope(
+    orchestratorModeThread?.environmentId ?? null,
+    AuthOrchestrationOperateScope,
+  );
   const paletteRouteTarget = useThreadRouteTarget();
   const projects = useProjects();
   const referenceThreadRef =
@@ -1572,6 +1585,22 @@ function OpenCommandPaletteDialog(props: {
         });
         if (refreshed._tag === "Failure") throw squashAtomCommandFailure(refreshed);
       },
+    });
+  }
+
+  if (orchestratorModeTarget !== null && orchestratorModeThread && canChangeOrchestratorMode) {
+    const target = orchestratorModeTarget;
+    const orchestrating = orchestratorModeThread.interactionMode === "orchestrate";
+    actionItems.push({
+      kind: "action",
+      value: "action:toggle-orchestrator-mode",
+      searchTerms: ["orchestrator", "orchestrate", "lead agent", "delegate", "subagents"],
+      title: orchestrating ? "Turn off orchestrator mode" : "Turn on orchestrator mode",
+      ...(orchestrating
+        ? {}
+        : { description: "Make this thread a lead agent that delegates the work" }),
+      icon: <NetworkIcon className={ITEM_ICON_CLASS} />,
+      run: () => setOrchestratorMode(target, !orchestrating),
     });
   }
 

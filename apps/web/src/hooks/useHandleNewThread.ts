@@ -151,11 +151,14 @@ export function createNewThreadHandler(router: AnyRouter) {
       ? (carrySourceComposer?.modelSelectionByProvider[composerActiveProvider] ?? null)
       : null;
     const carryModelSelection = composerModelSelection ?? carrySourceShell?.modelSelection ?? null;
-    const carryInteractionMode =
+    const sourceInteractionMode =
       carrySourceComposer?.interactionMode ??
       carrySourceShell?.interactionMode ??
       carrySourceDraft?.interactionMode ??
       null;
+    // One lead per request: a new thread from an orchestrator starts as a normal thread.
+    const carryInteractionMode =
+      sourceInteractionMode === "orchestrate" ? null : sourceInteractionMode;
     const project = projects.find(
       (candidate) =>
         candidate.id === projectRef.projectId &&

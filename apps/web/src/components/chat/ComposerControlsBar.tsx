@@ -9,6 +9,7 @@ import { ComposerControl } from "./ComposerControl";
 import {
   ComposerFooterModeControls,
   ComposerModelPicker,
+  ComposerOrchestratorControl,
   type RuntimeModeOption,
 } from "./ComposerFooterControls";
 import {
@@ -61,6 +62,9 @@ export function ComposerControlsBar(props: {
   defaultRuntimeMode: RuntimeMode | undefined;
   compatibleRuntimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
+  orchestrating: boolean;
+  /** Absent where this connection cannot change the thread. */
+  onToggleOrchestratorMode: (() => void) | undefined;
   composerControlsCollapsed: boolean;
   composerControlsHidden: boolean;
   restingHiddenBlockCount: number;
@@ -105,6 +109,8 @@ export function ComposerControlsBar(props: {
     defaultRuntimeMode,
     compatibleRuntimeModeOptions,
     handleRuntimeModeChange,
+    orchestrating,
+    onToggleOrchestratorMode,
     composerControlsCollapsed,
     composerControlsHidden,
     restingHiddenBlockCount: measuredHiddenBlockCount,
@@ -165,7 +171,18 @@ export function ComposerControlsBar(props: {
     onPromptEdit,
   });
   const effort = describeComposerEffort(traitsInput, props.effortDisplay, controlSize, m);
-  const restingBlockDefs = showModeBlock
+  // Leading, so it only loses its label: the overflow menu has no home for it.
+  const orchestratorBlockDefs = orchestrating
+    ? [
+        {
+          id: "orchestrator",
+          content: (
+            <ComposerOrchestratorControl size={controlSize} onTurnOff={onToggleOrchestratorMode} />
+          ),
+        },
+      ]
+    : [];
+  const modeBlockDefs = showModeBlock
     ? [
         {
           id: "mode",
@@ -183,6 +200,7 @@ export function ComposerControlsBar(props: {
         },
       ]
     : [];
+  const restingBlockDefs = [...orchestratorBlockDefs, ...modeBlockDefs];
   // Its own element, so typing (which rebuilds the controls around it) leaves it cached.
   const composerModelPicker = (
     <ComposerModelPicker

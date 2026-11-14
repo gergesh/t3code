@@ -29,11 +29,12 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   CommandId,
-  DEFAULT_PROVIDER_INTERACTION_MODE,
   MessageId,
+  nextTurnInteractionMode,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   type EnvironmentId,
   type ModelSelection,
+  type ProviderInteractionMode,
   type RuntimeMode,
   type ScopedThreadRef,
   type ThreadId,
@@ -252,6 +253,10 @@ export function useThreadComposerState(input: {
     label: "edit queued message",
     reportFailure: false,
   });
+  const setThreadInteractionMode = useAtomCommand(
+    threadEnvironment.setInteractionMode,
+    "change orchestrator mode",
+  );
   const [isSavingQueuedEdit, setIsSavingQueuedEdit] = useState(false);
   const savingQueuedEditRef = useRef(false);
   const startingSideChatRef = useRef(false);
@@ -362,8 +367,9 @@ export function useThreadComposerState(input: {
     serverConfig?.providers ?? [],
   );
   const runtimeMode = selectedDraft.runtimeMode ?? selectedThread?.runtimeMode ?? null;
-  // Plan mode is not offered to users; every send runs in build mode.
-  const interactionMode = selectedThread ? DEFAULT_PROVIDER_INTERACTION_MODE : null;
+  const interactionMode = selectedThread
+    ? nextTurnInteractionMode(selectedThread.interactionMode)
+    : null;
   const canSwitchThreadProvider = threadAllowsProviderSwitch({
     thread: selectedThreadShell,
     projection: selectedThreadProjection?.projection,
@@ -615,6 +621,19 @@ export function useThreadComposerState(input: {
       });
     }
     scheduleUnusedComposerAttachmentCleanup(draft.attachments);
+  };
+
+  // Unlike runtime mode, this applies at once so another client cannot see a stale choice.
+  const onUpdateInteractionMode = (mode: ProviderInteractionMode) => {
+    if (selectedThreadShell === null) return;
+    void setThreadInteractionMode({
+      environmentId: selectedThreadShell.environmentId,
+      input: {
+        threadId: selectedThreadShell.id,
+        interactionMode: mode,
+        createdAt: new Date().toISOString(),
+      },
+    });
   };
 
   const onSendMessage = async (
@@ -913,7 +932,7 @@ export function useThreadComposerState(input: {
       context: draft.context,
       modelSelection,
       runtimeMode: draft.runtimeMode ?? thread.runtimeMode,
-      interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      interactionMode: nextTurnInteractionMode(thread.interactionMode),
       ...(compactBeforeSend
         ? { compactBeforeSend, dispatchMode: "queue" as const }
         : followUpDispatchMode === null
@@ -1043,6 +1062,7 @@ export function useThreadComposerState(input: {
     canSwitchThreadProvider,
     runtimeMode,
     interactionMode,
+    onUpdateInteractionMode,
     activeThreadBusy,
     interruptibleRunId,
     onChangeDraftMessage,

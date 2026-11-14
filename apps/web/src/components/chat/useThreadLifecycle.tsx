@@ -25,6 +25,7 @@ import {
   type ThreadId,
   ProviderInteractionMode,
   RuntimeMode,
+  nextTurnInteractionMode,
 } from "@t3tools/contracts";
 import {
   effectiveSnoozed,
@@ -49,7 +50,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { useUiStateStore } from "../../uiStateStore";
-import { type ChatMessage, DEFAULT_INTERACTION_MODE } from "../../types";
+import { type ChatMessage } from "../../types";
 import { AlarmClockIcon, CheckCircle2Icon } from "lucide-react";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { titleRegenerationToast } from "../threadTitleRegenerationToast";
@@ -530,6 +531,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     if (!context?.providerAvailable) return;
 
     const threadId = activeThread.id;
+    const interactionMode = nextTurnInteractionMode(activeThread.interactionMode);
     const messageId = newMessageId();
     const createdAt = new Date().toISOString();
     sendInFlightRef.current = true;
@@ -554,7 +556,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       createdAt,
       ...(localCheckoutBranchMismatch ? { branch: localCheckoutBranchMismatch.currentBranch } : {}),
       runtimeMode,
-      interactionMode: DEFAULT_INTERACTION_MODE,
+      interactionMode,
     });
     const result =
       settingsResult._tag === "Failure"
@@ -566,7 +568,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
               message: { messageId, role: "user", text, attachments: [] },
               modelSelection: context.selectedModelSelection,
               runtimeMode,
-              interactionMode: DEFAULT_INTERACTION_MODE,
+              interactionMode,
               createdAt,
             },
           });

@@ -533,6 +533,14 @@ results use the latest assistant content from the final work turn.
   mode. It may not escalate privileges.
 - A child interaction mode may stay equal to or narrow from `default` to
   `plan`. It may not escalate from `plan` to `default`.
+- `orchestrate` grants what `default` does. It only adds lead-agent
+  instructions, sent as inline context because a session-level prompt cannot
+  change mid-thread. Each run attempt records the note it carried
+  (`leadNote`), so the instructions go once per native conversation, again
+  after a compaction item, and an "off" note follows when the mode ends
+  ([orchestratorLeadNote.ts](../../apps/server/src/orchestration-v2/orchestratorLeadNote.ts)).
+  An inherited mode turns `orchestrate` into `default`, so only an explicit
+  request nests orchestrators.
 - Thread tools take any thread in the environment as a target. For a thread
   caller, list and search cover one project: its own unless `projectId` is given.
 - A tool that changes another thread needs the calling thread's live run, and

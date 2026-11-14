@@ -109,12 +109,12 @@ export interface ThreadSettingsSnapshot {
   readonly interactionMode: ProviderInteractionModeType;
 }
 
-// Providers without a Build/Plan toggle always run in build mode.
+// Providers without a Build/Plan toggle never plan; orchestrate is T3's own and works on any.
 function resolveProviderInteractionMode(
   provider: Pick<ServerProvider, "showInteractionModeToggle"> | undefined,
   interactionMode: ProviderInteractionModeType,
 ): ProviderInteractionModeType {
-  return provider?.showInteractionModeToggle === false
+  return interactionMode === "plan" && provider?.showInteractionModeToggle === false
     ? DEFAULT_PROVIDER_INTERACTION_MODE
     : interactionMode;
 }

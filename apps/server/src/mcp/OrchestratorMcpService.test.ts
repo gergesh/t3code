@@ -76,7 +76,7 @@ import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
 import { idleThreadProjection, liveThreadShell } from "./McpToolAccess.testkit.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
-import { resolveRuntimeMode } from "./delegatedTaskModes.ts";
+import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
 import type { ProjectionRecordFilter } from "../orchestration-v2/ProjectionStore.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
@@ -4664,6 +4664,17 @@ describe("OrchestratorMcpService provider resolution", () => {
       }),
     );
   });
+
+  it.effect("gives an orchestrator's children default mode unless one asks to orchestrate", () =>
+    Effect.gen(function* () {
+      assert.equal(yield* resolveInteractionMode("orchestrate", undefined), "default");
+      assert.equal(yield* resolveInteractionMode("orchestrate", "inherit"), "default");
+      assert.equal(yield* resolveInteractionMode("orchestrate", "orchestrate"), "orchestrate");
+      assert.equal(yield* resolveInteractionMode("plan", "inherit"), "plan");
+      const error = yield* resolveInteractionMode("plan", "orchestrate").pipe(Effect.flip);
+      assert.equal(error.code, "interaction_mode_escalation_denied");
+    }),
+  );
 });
 
 describe("OrchestratorMcpService thread lookup", () => {

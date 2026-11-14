@@ -22,6 +22,7 @@ import {
 import { usePullRequestDraftThread } from "./chat/usePullRequestDraftThread";
 import { usePullRequestLinking } from "../hooks/usePullRequestLinking";
 import { useComposerSelection } from "./chat/useComposerSelection";
+import { type OrchestratorModeTarget, useSetOrchestratorMode } from "./chat/useSetOrchestratorMode";
 import { useComposerFocus } from "./chat/useComposerFocus";
 import { useProjectCloneBanner } from "./chat/useProjectCloneBanner";
 import { useAttachmentPreviewHandoff } from "./chat/useAttachmentPreviewHandoff";
@@ -78,6 +79,7 @@ import {
   type ScopedThreadRef,
   type ThreadId,
   ProviderInteractionMode,
+  nextTurnInteractionMode,
   resolveIdleCompaction,
   RuntimeMode,
 } from "@t3tools/contracts";
@@ -1910,6 +1912,19 @@ export default function ChatView(props: ChatViewProps) {
     scheduleComposerFocusStable();
   };
   const insertArtifactTemplateStable = useStableCallback(insertArtifactTemplate);
+  const interactionMode = activeThread?.interactionMode ?? DEFAULT_INTERACTION_MODE;
+  const setOrchestratorMode = useSetOrchestratorMode();
+  const orchestratorModeTarget: OrchestratorModeTarget | null = isServerThread
+    ? { kind: "server", threadRef: routeThreadRef }
+    : isLocalDraftThread
+      ? { kind: "draft", draftTarget: baseComposerDraftTarget }
+      : null;
+  const toggleOrchestratorMode = () => {
+    if (orchestratorModeTarget === null) return;
+    void setOrchestratorMode(orchestratorModeTarget, interactionMode !== "orchestrate");
+    scheduleComposerFocusStable();
+  };
+  const toggleOrchestratorModeStable = useStableCallback(toggleOrchestratorMode);
   const sendAppMessage = async (text: string) => {
     if (!isServerThread || activeThreadId === null) {
       throw new Error(gt("Messages from apps need a started thread."));
@@ -1920,7 +1935,7 @@ export default function ChatView(props: ChatViewProps) {
         threadId: activeThreadId,
         message: { messageId: newMessageId(), role: "user", text, attachments: [] },
         runtimeMode,
-        interactionMode: DEFAULT_INTERACTION_MODE,
+        interactionMode: nextTurnInteractionMode(interactionMode),
         dispatchMode: "queue",
       },
     });
@@ -3742,6 +3757,11 @@ export default function ChatView(props: ChatViewProps) {
                                 sideChatDisabledReason={sideChatDisabledReason}
                                 onFreshSession={
                                   freshSessionCommandAvailable ? armFreshSessionStable : undefined
+                                }
+                                onToggleOrchestratorMode={
+                                  canOperateThread && orchestratorModeTarget !== null
+                                    ? toggleOrchestratorModeStable
+                                    : undefined
                                 }
                                 onUsageLimitsCommand={
                                   usageLimitsOffered &&

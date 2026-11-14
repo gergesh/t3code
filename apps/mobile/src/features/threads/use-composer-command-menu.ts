@@ -115,6 +115,8 @@ export function buildComposerSlashCommandItems(
     /** T3's `/clear` replaces the provider's, which would clear a session T3 still treats as live. */
     readonly offersFreshSession?: boolean;
     readonly offersSideChat?: boolean;
+    /** The thread's orchestrator state; absent where `/orchestrate` is unavailable. */
+    readonly orchestrating?: boolean;
     readonly selectedProviderStatus: Pick<ServerProvider, "driver" | "slashCommands"> | null;
   },
   resolve: MessageResolver = m,
@@ -131,6 +133,17 @@ export function buildComposerSlashCommandItems(
         },
       ]
     : [];
+  if (input.orchestrating !== undefined && "orchestrate".includes(query)) {
+    items.push({
+      id: "cmd:orchestrate",
+      type: "slash-command",
+      command: "orchestrate",
+      label: "/orchestrate",
+      description: input.orchestrating
+        ? "Turn off orchestrator mode"
+        : "Make this thread a lead agent that delegates the work",
+    });
+  }
 
   // Providers expand commands only at the start of a message. T3 commands
   // change local state and do not have this restriction, except `/clear`.
@@ -272,6 +285,8 @@ export function useComposerCommandMenu({
   modelProviders,
   onFreshSession,
   offersSideChat = false,
+  orchestrating = false,
+  onToggleOrchestrator,
 }: {
   readonly draftMessage: string;
   readonly ownerKey: string | null;
@@ -299,6 +314,9 @@ export function useComposerCommandMenu({
   /** Arms a fresh session for the next message; absent where `/clear` is unavailable. */
   readonly onFreshSession?: () => void;
   readonly offersSideChat?: boolean;
+  readonly orchestrating?: boolean;
+  /** Absent where the thread's mode cannot be changed. */
+  readonly onToggleOrchestrator?: () => void;
 }) {
   const gt = useGT();
   const messages = useMessages();
@@ -408,6 +426,7 @@ export function useComposerCommandMenu({
           offersUsageLimits,
           offersFreshSession: onFreshSession !== undefined,
           offersSideChat,
+          ...(onToggleOrchestrator === undefined ? {} : { orchestrating }),
           selectedProviderStatus: selectedProviderStatus
             ? {
                 ...selectedProviderStatus,
@@ -674,6 +693,13 @@ export function useComposerCommandMenu({
     }
     if (item.type === "slash-command" && item.command === "clear" && onFreshSession) {
       clearTriggerThen(onFreshSession);
+      return;
+    }
+    if (item.type === "slash-command" && item.command === "orchestrate" && onToggleOrchestrator) {
+      const cleared = replaceTextRange(draftMessage, trigger.rangeStart, trigger.rangeEnd, "");
+      setSelection({ start: cleared.cursor, end: cleared.cursor });
+      onChangeDraftMessage(cleared.text);
+      onToggleOrchestrator();
       return;
     }
     if (

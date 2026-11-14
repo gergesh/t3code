@@ -1,6 +1,7 @@
 import type { ModelSelection, ProviderInstanceId, RuntimeMode } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { T, useGT, useMessages } from "gt-react";
+import { NetworkIcon } from "lucide-react";
 import { type ComponentProps, memo, useId, useRef, useState } from "react";
 
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
@@ -18,6 +19,42 @@ export type RuntimeModeOption = {
   mode: RuntimeMode;
   disabledReason?: string;
 } & (typeof runtimeModeConfig)[RuntimeMode];
+/** Shown only while the thread orchestrates; clicking turns the mode off. */
+export const ComposerOrchestratorControl = memo(function ComposerOrchestratorControl(props: {
+  size: "sm" | "xs";
+  /** Absent where this connection cannot change the thread. */
+  onTurnOff: (() => void) | undefined;
+}) {
+  const gt = useGT();
+  const tooltip = gt(
+    "Orchestrator mode: this thread delegates work to subagents. Click to turn off.",
+  );
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <ComposerControl
+            size={props.size}
+            aria-pressed
+            aria-label={tooltip}
+            disabled={props.onTurnOff === undefined}
+            onClick={props.onTurnOff}
+          />
+        }
+      >
+        <ComposerControlIcon icon={NetworkIcon} size={props.size} className="text-current" />
+        {/* The compacted row (xs) keeps this icon-only, like the other controls there. */}
+        <span
+          data-composer-control-label
+          className={props.size === "xs" ? "sr-only" : "sr-only sm:not-sr-only"}
+        >
+          {gt("Orchestrator", { $context: "composer mode label" })}
+        </span>
+      </TooltipTrigger>
+      <TooltipPopup side="top">{tooltip}</TooltipPopup>
+    </Tooltip>
+  );
+});
 export const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;

@@ -882,7 +882,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
       ...(cyberAccessProgram === undefined ? {} : { cyberAccessProgram }),
       // Codex supplies its own mode instructions; send both modes to clear Plan on exit.
       collaborationMode: {
-        mode: input.runtimePolicy.interactionMode,
+        mode: input.runtimePolicy.interactionMode === "plan" ? "plan" : "default",
         settings: {
           model: input.modelSelection.model,
           ...(effort === undefined ? {} : { reasoning_effort: effort }),

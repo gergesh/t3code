@@ -59,6 +59,11 @@ import {
 } from "@t3tools/provider-core/server/handoffBudget";
 import { deliverContextHandoffs, withInlineContext } from "./ContextHandoffDelivery.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import {
+  T3_CODE_ORCHESTRATOR_MODE_INSTRUCTIONS,
+  T3_CODE_ORCHESTRATOR_MODE_OFF_INSTRUCTIONS,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
+import { compactionRunOrdinals, latestLeadNote, leadNoteToSend } from "./orchestratorLeadNote.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import { unsentManualContinuationSource } from "@t3tools/shared/orchestrationV2ManualContinuation";
@@ -1773,11 +1778,47 @@ export const layer: Layer.Layer<
         status: "running",
         startedAt: run.startedAt ?? now,
       };
+      const latestLead = latestLeadNote({
+        nativeThreadId: runningProviderThread.nativeThreadRef?.nativeId ?? undefined,
+        runs: projection.runs,
+        attempts: projection.attempts,
+        providerTurns: projection.providerTurns,
+      });
+      const compactionRunIds =
+        latestLead?.note === "on"
+          ? yield* projectionStore
+              .getThreadRecords(projection.thread.id, ["turnItems"], {
+                turnItemTypes: ["compaction"],
+              })
+              .pipe(
+                Effect.map(({ turnItems }) => turnItems.map((item) => item.runId)),
+                // Resending the lead note is the safe side of an unreadable history.
+                Effect.orElseSucceed(() => [run.id]),
+              )
+          : [];
+      // A goal command reaches the provider without inline context.
+      const leadNote = goalCommand
+        ? undefined
+        : leadNoteToSend({
+            orchestrating: resolvedRuntimePolicy.interactionMode === "orchestrate",
+            latest: latestLead,
+            compactionRunOrdinals: compactionRunOrdinals(
+              [...projection.runs, run],
+              compactionRunIds,
+            ),
+          });
+      const leadNoteText =
+        leadNote === "on"
+          ? T3_CODE_ORCHESTRATOR_MODE_INSTRUCTIONS
+          : leadNote === "off"
+            ? T3_CODE_ORCHESTRATOR_MODE_OFF_INSTRUCTIONS
+            : "";
       const runningAttempt: OrchestrationV2RunAttempt = {
         ...attempt,
         ...(runningProviderThread.nativeThreadRef?.nativeId == null
           ? {}
           : { nativeThreadId: runningProviderThread.nativeThreadRef.nativeId }),
+        ...(leadNote === undefined ? {} : { leadNote }),
         status: "running",
         startedAt: now,
       };
@@ -1943,7 +1984,7 @@ export const layer: Layer.Layer<
             sideChatHandoff === undefined || compact || goalCommand
               ? ""
               : sideChatHandoff.summaryText;
-          const context = [delivery.context, sideChatContext, restartNote]
+          const context = [delivery.context, sideChatContext, leadNoteText, restartNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
@@ -2038,6 +2079,7 @@ export const layer: Layer.Layer<
         retryHandoff.attachments.length === 0 &&
         sideChatHandoff === undefined &&
         restartNote === "" &&
+        leadNote === undefined &&
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);

@@ -310,6 +310,20 @@ once the provider reports usage.
 Claude instances can also compact idle threads for you. See
 [compact long conversations](./providers-claude.md#compact-long-conversations).
 
+## Orchestrator mode
+
+Pick `/orchestrate` from the slash menu, or use the command palette on web and
+desktop, to make a thread a lead agent. You give it a task, and it splits the
+work into subagents, giving each one that changes code its own worktree. It
+then reviews their results, merges them back and runs your project's checks.
+You can follow the subagents in **Agents**. The lead still answers quick
+questions and makes small edits itself.
+
+While the mode is on, an **Orchestrator** chip sits by the composer. Click or
+tap it, or pick `/orchestrate` again, to turn the mode off. The subagents it
+starts are normal threads, and a new thread started from an orchestrator thread
+does not inherit the mode.
+
 ## Goals
 
 With Codex, Claude, and OpenCode 2.2.5 or later, send `/goal` followed by what "done" means, for example

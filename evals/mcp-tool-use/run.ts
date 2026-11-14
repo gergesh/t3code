@@ -53,6 +53,7 @@ import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { buildCodexAdditionalContext } from "../../apps/server/src/provider/CodexDeveloperInstructions.ts";
 import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/ContextHandoffService.ts";
 import { withInlineContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
+import { T3_CODE_ORCHESTRATOR_MODE_INSTRUCTIONS } from "../../packages/provider-core/src/server/orchestrationInstructions.ts";
 import { AttachmentToolkit } from "../../apps/server/src/mcp/toolkits/attachment/tools.ts";
 import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "../../apps/server/src/mcp/toolkits/environment/tools.ts";
@@ -323,6 +324,8 @@ export const McpToolUseCase = Schema.Struct({
     linkedEnvironments: Schema.optional(Schema.Boolean),
     /** false: the project is on no forge T3 reads, so T3 hides its forge tools. */
     forge: Schema.optional(Schema.Boolean),
+    /** The thread's mode; `orchestrate` puts T3's lead-agent note on this prompt, as on a first turn. */
+    interactionMode: Schema.optional(Schema.Literal("orchestrate")),
     /** delegate_task `role` for a delegated child. T3 builds the child's first message from it. */
     delegateRole: Schema.optional(OrchestratorMcpTaskRole),
     context: Schema.optional(Schema.String),
@@ -1170,8 +1173,13 @@ export const buildMessages = (sample: Sample) => {
     testCase.promptContext === undefined
       ? testCase.prompt
       : projectComposerContextForProvider({ text: testCase.prompt, ...testCase.promptContext });
-  const prompt =
-    sideChatContext === undefined ? userText : withInlineContext(sideChatContext, userText);
+  const turnContext = [
+    testCase.setup.interactionMode === "orchestrate" ? T3_CODE_ORCHESTRATOR_MODE_INSTRUCTIONS : "",
+    sideChatContext ?? "",
+  ]
+    .filter((part) => part !== "")
+    .join("\n\n");
+  const prompt = withInlineContext(turnContext, userText);
   const childPrompt = () => taskPrompt({ task: prompt, role: delegateRole });
   if (testCase.prompt !== "")
     push("user", text(role === "delegated-child" ? childPrompt() : prompt));

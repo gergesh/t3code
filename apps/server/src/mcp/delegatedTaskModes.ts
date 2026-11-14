@@ -23,7 +23,7 @@ export function runtimeModeRank(mode: RuntimeMode): number {
   }
 }
 
-/** How much an interaction mode allows: plan, then default. */
+/** How much an interaction mode allows: plan, then default and orchestrate. */
 export function interactionModeRank(mode: ProviderInteractionMode): number {
   return mode === "plan" ? 0 : 1;
 }
@@ -76,7 +76,9 @@ export function resolveInteractionMode(
   parentMode: ProviderInteractionMode,
   requested: OrchestratorMcpInteractionMode | undefined,
 ): Effect.Effect<ProviderInteractionMode, OrchestratorMcpFailure> {
-  const resolved = requested === undefined || requested === "inherit" ? parentMode : requested;
+  // A lead's children do the work themselves unless it asks for nested orchestration.
+  const inherited = parentMode === "orchestrate" ? "default" : parentMode;
+  const resolved = requested === undefined || requested === "inherit" ? inherited : requested;
   return interactionModeRank(resolved) > interactionModeRank(parentMode)
     ? Effect.fail(
         new OrchestratorMcpFailure({

@@ -105,6 +105,20 @@ describe("mobile slash commands", () => {
     expect(build(false)).toEqual(["pcmd:clear"]);
     expect(build(true, false)).toEqual([]);
   });
+
+  it("offers /orchestrate as a toggle only where the mode can change", () => {
+    const build = (orchestrating?: boolean) =>
+      buildComposerSlashCommandItems({
+        query: "orch",
+        atMessageStart: false,
+        hasThread: true,
+        ...(orchestrating === undefined ? {} : { orchestrating }),
+        selectedProviderStatus: null,
+      }).map((item) => item.description);
+    expect(build(false)).toEqual(["Make this thread a lead agent that delegates the work"]);
+    expect(build(true)).toEqual(["Turn off orchestrator mode"]);
+    expect(build()).toEqual([]);
+  });
 });
 
 describe("mobile model mentions", () => {

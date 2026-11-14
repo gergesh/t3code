@@ -399,6 +399,8 @@ export interface ChatComposerProps {
   sideChatDisabledReason?: string | null;
   /** Arms a fresh session for the next message; absent where `/clear` is unavailable. */
   onFreshSession?: (() => void) | undefined;
+  /** Turns orchestrator mode on or off; absent where this connection cannot change the thread. */
+  onToggleOrchestratorMode?: (() => void) | undefined;
   environmentUnavailable: {
     readonly label: string;
     readonly connection: EnvironmentConnectionPresentation;
@@ -1156,6 +1158,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     sideChatAvailable: props.sideChatAvailable === true,
     sideChatDisabledReason: props.sideChatDisabledReason ?? null,
     freshSessionAvailable: props.onFreshSession !== undefined,
+    orchestratorMode:
+      props.onToggleOrchestratorMode === undefined
+        ? "unavailable"
+        : activeThread?.interactionMode === "orchestrate"
+          ? "on"
+          : "off",
     compactSlashCommandAvailable,
     selectedProvider,
     selectedProviderSkills,
@@ -1989,6 +1997,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         return;
       }
+      if (item.command === "orchestrate") {
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+        });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+          props.onToggleOrchestratorMode?.();
+        }
+        return;
+      }
       if (item.command === "clear") {
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
           expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
@@ -2521,6 +2539,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       defaultRuntimeMode={props.defaultRuntimeMode}
       compatibleRuntimeModeOptions={compatibleRuntimeModeOptions}
       handleRuntimeModeChange={handleRuntimeModeChange}
+      orchestrating={activeThread?.interactionMode === "orchestrate"}
+      onToggleOrchestratorMode={props.onToggleOrchestratorMode}
       composerControlsCollapsed={composerControlsCollapsed}
       effortDisplay={settings.effortDisplay}
       permissionsShownInStrip={props.permissionsShownInStrip}

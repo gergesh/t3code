@@ -75,6 +75,7 @@ export function useComposerMenuItems({
   sideChatAvailable,
   sideChatDisabledReason,
   freshSessionAvailable,
+  orchestratorMode,
   compactSlashCommandAvailable,
   selectedProvider,
   selectedProviderSkills,
@@ -95,6 +96,7 @@ export function useComposerMenuItems({
   readonly sideChatAvailable: boolean;
   readonly sideChatDisabledReason: string | null;
   readonly freshSessionAvailable: boolean;
+  readonly orchestratorMode: "on" | "off" | "unavailable";
   readonly compactSlashCommandAvailable: boolean;
   readonly selectedProvider: ProviderDriverKind;
   readonly selectedProviderSkills: ServerProvider["skills"];
@@ -288,6 +290,20 @@ export function useComposerMenuItems({
               },
             ] as const)
           : []),
+        ...(orchestratorMode === "unavailable"
+          ? []
+          : ([
+              {
+                id: "slash:orchestrate",
+                type: "slash-command",
+                command: "orchestrate",
+                label: "/orchestrate",
+                description:
+                  orchestratorMode === "on"
+                    ? "Turn off orchestrator mode"
+                    : "Make this thread a lead agent that delegates the work",
+              },
+            ] as const)),
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
       const slashMenuSkills = getProviderSkillsForSlashMenu(
         selectedProviderSkills,
