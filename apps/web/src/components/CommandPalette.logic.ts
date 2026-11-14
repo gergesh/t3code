@@ -774,6 +774,56 @@ export function buildBrowseGroups(
   return [{ value: "directories", label: resolve(msg("Directories")), items }];
 }
 
+export const RECENT_DIRECTORIES_GROUP = "recent-directories";
+export const RECENT_DIRECTORY_VALUE_PREFIX = "browse:recent:";
+
+export function buildRecentDirectoryGroups(input: {
+  directories: ReadonlyArray<string>;
+  browseQuery: string;
+  icon: ReactNode;
+  browseTo: (directory: string) => void | Promise<void>;
+  /** Offered first, before anything is typed, to browse from the add-project base directory. */
+  base?: { path: string; icon: ReactNode };
+}): CommandPaletteGroup[] {
+  const base = input.base;
+  const baseGroups: CommandPaletteGroup[] =
+    base === undefined
+      ? []
+      : [
+          {
+            value: "browse-base",
+            label: "",
+            items: [
+              {
+                kind: "action",
+                value: `browse-base:${base.path}`,
+                searchTerms: [base.path],
+                title: `Browse ${base.path}`,
+                icon: base.icon,
+                keepOpen: true,
+                run: async () => {
+                  await input.browseTo(base.path);
+                },
+              },
+            ],
+          },
+        ];
+  if (input.directories.length === 0) return baseGroups;
+  const items = input.directories.map((directory): CommandPaletteActionItem => ({
+    kind: "action",
+    value: `${RECENT_DIRECTORY_VALUE_PREFIX}${directory}`,
+    searchTerms: [input.browseQuery, directory],
+    title: directory.split(/[\\/]/).findLast(Boolean) ?? directory,
+    description: directory,
+    icon: input.icon,
+    keepOpen: true,
+    run: async () => {
+      await input.browseTo(directory);
+    },
+  }));
+  return [...baseGroups, { value: RECENT_DIRECTORIES_GROUP, label: "Recent directories", items }];
+}
+
 export function filterPinnedBrowseEntries(input: {
   browseEntries: ReadonlyArray<FilesystemBrowseEntry>;
   filterQuery: string;

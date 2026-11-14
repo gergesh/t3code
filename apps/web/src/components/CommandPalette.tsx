@@ -39,6 +39,7 @@ import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
   filterFilesystemBrowseEntries,
+  filterFrecentDirectories,
   getFilesystemBrowsePath,
   getFilesystemBrowseTabCompletion,
 } from "@t3tools/client-runtime/state/filesystem";
@@ -70,6 +71,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
+  HistoryIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -129,6 +131,7 @@ import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
+import { AsyncResult } from "effect/reactivity";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useStartTriage } from "../hooks/useStartTriage";
 import { pickTriageEnvironment } from "../lib/triageTarget";
@@ -159,6 +162,7 @@ import {
 import {
   appendBrowsePathSegment,
   findProjectByPath,
+  ensureBrowseDirectoryPath,
   getBrowseDirectoryPath,
   hasTrailingPathSeparator,
   inferProjectTitleFromPath,
@@ -202,6 +206,7 @@ import {
   ADDON_ICON_CLASS,
   browseInputEndPaddingClass,
   buildBrowseGroups,
+  buildRecentDirectoryGroups,
   buildRootGroups,
   buildLinkedThreadActionItems,
   buildCommandPaletteRows,
@@ -217,6 +222,8 @@ import {
   filterCommandPaletteGroups,
   buildNestedSearchItems,
   filterPinnedBrowseEntries,
+  RECENT_DIRECTORIES_GROUP,
+  RECENT_DIRECTORY_VALUE_PREFIX,
   getCommandPaletteInputPlaceholder,
   getCommandPaletteMode,
   ITEM_ICON_CLASS,
@@ -290,6 +297,11 @@ import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { threadRecentUse } from "@t3tools/shared/paletteSearch";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
+const EMPTY_RECENT_DIRECTORIES: ReadonlyArray<string> = [];
+// Beside a directory listing a few recent ones are enough; a typed search shows more.
+const RECENT_DIRECTORIES_BESIDE_LISTING = 5;
+const RECENT_DIRECTORIES_SEARCH_LIMIT = 20;
+const RECENT_DIRECTORIES_BEFORE_TYPING = 10;
 const ADD_PROJECT_ENTRY_GROUP = "add-project";
 const NEW_THREAD_IN_GROUP = "projects";
 
@@ -480,6 +492,10 @@ function OpenCommandPaletteDialog(props: {
     reportFailure: false,
   });
   const loadBrowsePath = useAtomQueryRunner(filesystemEnvironment.browse, {
+    reportFailure: false,
+    reportDefect: false,
+  });
+  const loadFrecentDirectories = useAtomQueryRunner(filesystemEnvironment.listFrecentDirectories, {
     reportFailure: false,
     reportDefect: false,
   });
@@ -771,6 +787,19 @@ function OpenCommandPaletteDialog(props: {
         })
       : null,
   );
+  const showsRecentDirectories =
+    canBrowsePaths &&
+    addProjectCloneFlow === null &&
+    !relativePathNeedsActiveProject &&
+    (isBrowsing || currentView?.groups[0]?.value === RECENT_DIRECTORIES_GROUP);
+  const recentDirectoriesQuery = useEnvironmentQuery(
+    browseAccess.canReadFiles && showsRecentDirectories && browseEnvironmentId !== null
+      ? filesystemEnvironment.listFrecentDirectories({
+          environmentId: browseEnvironmentId,
+          input: {},
+        })
+      : null,
+  );
   const browseResult = browseQuery.data;
   const isBrowsePending = hasBrowseTarget && (browseAccess.isPending || browseQuery.isPending);
   const browseAccessError =
@@ -1015,25 +1044,43 @@ function OpenCommandPaletteDialog(props: {
     }
   }
 
+  const hostHasFrecentDirectories = async (environmentId: EnvironmentId): Promise<boolean> => {
+    const environment = environments.find((candidate) => candidate.environmentId === environmentId);
+    if (
+      !readEnvironmentScope(environmentId, AuthFilesystemReadScope) ||
+      !canPreloadBrowsePath(environment?.connection.phase)
+    ) {
+      return false;
+    }
+    const result = await loadFrecentDirectories({ environmentId, input: {} });
+    return AsyncResult.isSuccess(result) && result.value.directories.length > 0;
+  };
+
   const startAddProjectBrowse = async (environmentId: EnvironmentId): Promise<void> => {
-    const initialQuery = getAddProjectInitialQueryForEnvironment(environmentId);
-    const initialBrowsePath = getBrowseDirectoryPath(initialQuery);
+    const basePath = getAddProjectInitialQueryForEnvironment(environmentId);
     const browseCwd = getBrowseCwdForEnvironment(environmentId);
-    const view: CommandPaletteView = {
-      addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
-      groups: [],
-      initialQuery,
-    };
+    // With recent directories the field starts empty so typed words search the whole host;
+    // without them it starts browsing the base directory.
+    let initialQuery = "";
 
     await browseNavigation.run(
-      () =>
-        initialBrowsePath.length > 0
-          ? prefetchBrowsePath(initialBrowsePath, environmentId, browseCwd)
-          : Promise.resolve(),
+      async () => {
+        if (await hostHasFrecentDirectories(environmentId)) return;
+        initialQuery = basePath;
+        const initialBrowsePath = getBrowseDirectoryPath(basePath);
+        if (initialBrowsePath.length > 0) {
+          await prefetchBrowsePath(initialBrowsePath, environmentId, browseCwd);
+        }
+      },
       () => {
         setAddProjectEnvironmentId(environmentId);
         setAddProjectCloneFlow(null);
-        pushPaletteView(view);
+        pushPaletteView({
+          addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
+          // Marks the add-project path view; its rows come from browsing and recent directories.
+          groups: [{ value: RECENT_DIRECTORIES_GROUP, label: "", items: [] }],
+          initialQuery,
+        });
       },
     );
   };
@@ -2378,6 +2425,18 @@ function OpenCommandPaletteDialog(props: {
     );
   };
 
+  const browseToRecentDirectory = async (directory: string): Promise<void> => {
+    const nextQuery = ensureBrowseDirectoryPath(directory);
+    await browseNavigation.run(
+      () => prefetchBrowsePath(nextQuery),
+      () => {
+        setHighlightedItemValue(null);
+        setQuery(nextQuery);
+        setBrowseGeneration((generation) => generation + 1);
+      },
+    );
+  };
+
   const browseUp = async (): Promise<void> => {
     const parentPath = browsePath.parentPath;
     if (parentPath === null) {
@@ -2413,6 +2472,34 @@ function OpenCommandPaletteDialog(props: {
     },
     messages,
   );
+  const recentDirectoriesQueryText = query.trim();
+  const recentDirectoryGroups = showsRecentDirectories
+    ? buildRecentDirectoryGroups({
+        directories: filterFrecentDirectories(
+          recentDirectoriesQuery.data?.directories ?? EMPTY_RECENT_DIRECTORIES,
+          recentDirectoriesQueryText,
+          browseEnvironmentPlatform,
+        ).slice(
+          0,
+          recentDirectoriesQueryText.length === 0
+            ? RECENT_DIRECTORIES_BEFORE_TYPING
+            : isBrowsing
+              ? RECENT_DIRECTORIES_BESIDE_LISTING
+              : RECENT_DIRECTORIES_SEARCH_LIMIT,
+        ),
+        browseQuery: query,
+        icon: <HistoryIcon className={ITEM_ICON_CLASS} />,
+        browseTo: browseToRecentDirectory,
+        ...(recentDirectoriesQueryText.length === 0
+          ? {
+              base: {
+                path: getAddProjectInitialQueryForEnvironment(browseEnvironmentId),
+                icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+              },
+            }
+          : {}),
+      })
+    : [];
   const cloneDestinationBrowseGroups = browseGroups.map((group) =>
     group.value === "directories" ? { ...group, label: gt("Select where to clone") } : group,
   );
@@ -2562,7 +2649,12 @@ function OpenCommandPaletteDialog(props: {
   } else if (addProjectCloneFlow?.step === "confirm") {
     displayedGroups = relativePathNeedsActiveProject ? [] : cloneDestinationBrowseGroups;
   } else if (isBrowsing) {
-    displayedGroups = relativePathNeedsActiveProject ? [] : browseGroups;
+    displayedGroups = relativePathNeedsActiveProject
+      ? []
+      : [...recentDirectoryGroups, ...browseGroups];
+  } else if (recentDirectoryGroups.length > 0) {
+    // Words typed in the add-project view search recent directories before the rest of the app.
+    displayedGroups = recentDirectoryGroups;
   }
   const resultRows = buildCommandPaletteRows(displayedGroups);
   const autoHighlightsFirstRow =
@@ -2773,6 +2865,12 @@ function OpenCommandPaletteDialog(props: {
       event.preventDefault();
       if (highlightedItemValue === "browse:up") {
         void browseUp();
+        return;
+      }
+      if (highlightedItemValue?.startsWith(RECENT_DIRECTORY_VALUE_PREFIX)) {
+        void browseToRecentDirectory(
+          highlightedItemValue.slice(RECENT_DIRECTORY_VALUE_PREFIX.length),
+        );
         return;
       }
       const highlightedEntry = visibleBrowseEntries.find(

@@ -42,11 +42,13 @@ import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
   filterFilesystemBrowseEntries,
+  filterFrecentDirectories,
   getFilesystemBrowsePath,
   resolveFilesystemReadAccess,
 } from "@t3tools/client-runtime/state/filesystem";
 import {
   appendBrowsePathSegment,
+  ensureBrowseDirectoryPath,
   inferProjectTitleFromPath,
   isWindowsPlatform,
 } from "@t3tools/client-runtime/state/projects";
@@ -315,18 +317,38 @@ function ProjectPathInput(props: {
   readonly value: string;
   readonly onChangeText: (value: string) => void;
   readonly onSubmit: () => void;
+  /** Shows a button before the field that fills in this path. */
+  readonly prefillPath?: string;
+  readonly placeholder?: string;
 }) {
-  return (
+  const input = (
     <TextInput
-      className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
+      className="h-12 min-h-12 flex-1 rounded-[24px] px-4 py-0 text-base leading-snug"
       value={props.value}
       onChangeText={(text) => props.onChangeText(resolvePastedPath(props.value, text))}
       autoCapitalize="none"
       autoCorrect={false}
-      placeholder="~/projects/my-app"
+      placeholder={props.placeholder ?? "~/projects/my-app"}
       returnKeyType="done"
       onSubmitEditing={props.onSubmit}
     />
+  );
+  const prefillPath = props.prefillPath;
+  if (prefillPath === undefined) return input;
+  return (
+    <View className="flex-row items-center gap-2">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Browse ${prefillPath}`}
+        className="h-12 max-w-[40%] items-center justify-center rounded-[24px] border border-input-border bg-input px-4"
+        onPress={() => props.onChangeText(prefillPath)}
+      >
+        <Text className="text-base leading-snug text-foreground-muted" numberOfLines={1}>
+          {prefillPath}
+        </Text>
+      </Pressable>
+      {input}
+    </View>
   );
 }
 
@@ -334,14 +356,13 @@ function useBrowsePathInput(
   environment: EnvironmentOption | null,
   pinnedDirectoryName = "",
   cloneDirectoryPath = pinnedDirectoryName,
+  startEmpty = false,
 ) {
   const environmentId = environment?.environmentId ?? null;
   const environmentBaseDirectory = environment?.baseDirectory ?? null;
   const clonePathCaseSensitive = !isWindowsPlatform(environment?.platform ?? "");
-  const seedPath = getCloneDestinationPath(
-    getAddProjectInitialQuery(environmentBaseDirectory),
-    cloneDirectoryPath,
-  );
+  const basePath = getAddProjectInitialQuery(environmentBaseDirectory);
+  const seedPath = startEmpty ? "" : getCloneDestinationPath(basePath, cloneDirectoryPath);
   // Each host keeps the path last typed or browsed for it, and shows its own default until then,
   // so switching hosts and back loses nothing. With no host selected (one dropping out briefly),
   // the field keeps the last path typed anywhere.
@@ -439,7 +460,14 @@ function useBrowsePathInput(
       : path;
   };
 
-  return { isBrowseNavigating, pathInput, setPathInput, navigateToBrowsePath, resolveHomePath };
+  return {
+    basePath,
+    isBrowseNavigating,
+    pathInput,
+    setPathInput,
+    navigateToBrowsePath,
+    resolveHomePath,
+  };
 }
 
 function useEnvironmentOptions(
@@ -1036,6 +1064,30 @@ export function AddProjectRepositoryScreen(props: {
   );
 }
 
+/** The host's frecent folders, read from zoxide, fasd or z on that host. */
+function useRecentFolders(environmentId: EnvironmentId | null) {
+  const session = useEnvironmentQuery(
+    environmentId === null ? null : environmentSession.sessionStateAtom(environmentId),
+  );
+  const presentation = useEnvironmentPresentation(environmentId);
+  const access = resolveFilesystemReadAccess({
+    isCatalogReady: presentation.isReady,
+    connection: presentation.presentation?.connection ?? null,
+    session: session.data,
+    sessionError: session.error,
+  });
+  const recent = useEnvironmentQuery(
+    environmentId === null || !access.canReadFiles
+      ? null
+      : filesystemEnvironment.listFrecentDirectories({ environmentId, input: {} }),
+  );
+  return {
+    directories: recent.data?.directories ?? [],
+    isLoading:
+      access.isPending || (access.canReadFiles && recent.data === null && recent.error === null),
+  };
+}
+
 function FolderBrowser(props: {
   readonly environment: EnvironmentOption;
   readonly pathInput: string;
@@ -1046,9 +1098,20 @@ function FolderBrowser(props: {
   }) => Promise<boolean>;
   readonly pinnedDirectoryName?: string;
   readonly cloning?: boolean;
+  /** Lists these recent folders, and the base folder's contents while the field is empty. */
+  readonly recentFolders?: {
+    readonly basePath: string;
+    readonly directories: ReadonlyArray<string>;
+  };
 }) {
   const messages = useMessages();
-  const browsePath = getFilesystemBrowsePath(props.pathInput, props.environment.platform);
+  const pathQuery = props.pathInput.trim();
+  const browsePath = getFilesystemBrowsePath(
+    pathQuery.length === 0 && props.recentFolders !== undefined
+      ? props.recentFolders.basePath
+      : props.pathInput,
+    props.environment.platform,
+  );
   const browseInput =
     browsePath.directoryPath.length > 0 ? { partialPath: browsePath.directoryPath } : null;
   const fileAccessSession = useEnvironmentQuery(
@@ -1083,9 +1146,44 @@ function FolderBrowser(props: {
     browseFilterQuery,
   );
   const gt = useGT();
+  // Beside a folder listing a few are enough; typed words search only these.
+  const recentFolders = filterFrecentDirectories(
+    props.recentFolders?.directories ?? [],
+    pathQuery,
+    props.environment.platform,
+  ).slice(0, pathQuery.length === 0 ? 10 : browsePath.isBrowsing ? 5 : 20);
 
   return (
     <>
+      {recentFolders.length > 0 ? (
+        <>
+          <SectionTitle>{gt("Recent folders")}</SectionTitle>
+          <ListSection>
+            {recentFolders.map((directory, index) => (
+              <ListRow
+                key={directory}
+                title={inferProjectTitleFromPath(directory)}
+                subtitle={directory}
+                icon={
+                  <SymbolView
+                    name="clock"
+                    size={Platform.OS === "android" ? 24 : 17}
+                    tintColorClassName="accent-icon-muted"
+                    type="monochrome"
+                  />
+                }
+                isFirst={index === 0}
+                right={null}
+                onPress={() => {
+                  void props.navigateToBrowsePath({
+                    browseDirectoryPath: ensureBrowseDirectoryPath(directory),
+                  });
+                }}
+              />
+            ))}
+          </ListSection>
+        </>
+      ) : null}
       <SectionTitle>{gt("Browse folders")}</SectionTitle>
       {!canReadFiles && !fileAccess.isPending ? (
         <ErrorBanner
@@ -1456,8 +1554,22 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
   );
   const navigation = useNavigation();
   const createProject = useCreateProject(environment);
-  const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput, resolveHomePath } =
-    useBrowsePathInput(environment);
+  const recentFolders = useRecentFolders(environment?.environmentId ?? null);
+  // With recent folders the field starts empty so typed words search the whole host;
+  // without them it starts at the base directory.
+  const {
+    basePath,
+    isBrowseNavigating,
+    navigateToBrowsePath,
+    pathInput,
+    setPathInput,
+    resolveHomePath,
+  } = useBrowsePathInput(
+    environment,
+    "",
+    "",
+    recentFolders.isLoading || recentFolders.directories.length > 0,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const gt = useGT();
@@ -1498,7 +1610,13 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
           {!canCreateProject ? (
             <ErrorBanner message={gt("This connection cannot add projects.")} />
           ) : null}
-          <ProjectPathInput value={pathInput} onChangeText={setPathInput} onSubmit={submitPath} />
+          <ProjectPathInput
+            value={pathInput}
+            onChangeText={setPathInput}
+            onSubmit={submitPath}
+            prefillPath={basePath}
+            placeholder="Search folders or type a path"
+          />
           <PrimaryActionButton
             label={gt("Add project")}
             disabled={!canCreateProject || isBrowseNavigating || isSubmitting}
@@ -1510,6 +1628,7 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
             navigateToBrowsePath={navigateToBrowsePath}
             pathInput={pathInput}
             setPathInput={setPathInput}
+            recentFolders={{ basePath, directories: recentFolders.directories }}
           />
         </>
       ) : (

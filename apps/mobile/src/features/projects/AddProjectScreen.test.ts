@@ -109,6 +109,7 @@ vi.mock("../../lib/uuid", () => ({ uuidv4: () => "project" }));
 vi.mock("../../state/session", () => ({
   useEnvironmentScope: (_environmentId: string, scope: string) => state.scopes.has(scope),
   readEnvironmentScope: (_environmentId: string, scope: string) => state.scopes.has(scope),
+  environmentSession: { sessionStateAtom: () => null },
 }));
 vi.mock("../../state/entities", () => ({
   useProjects: () => state.existingProjects,

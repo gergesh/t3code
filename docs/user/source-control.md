@@ -154,6 +154,12 @@ like `pinball-stats` for "Pinball Stats". Turn on **Create private repository on
 publish it. If Git has no name or email on that machine, the project is created without the
 first commit.
 
+To add a folder that is already on the machine, choose **Add Project** and type or browse to its
+path. If that machine uses [zoxide](https://github.com/ajeetdsouza/zoxide), fasd, or z,
+the path starts empty and **Recent directories** lists the folders you visit most there. Type
+words, like `t3`, to search them anywhere on the machine, or start a path, like `~/code/t3`, to
+browse. **Browse ~/** (the `~/` button on mobile) starts from your home folder.
+
 Use **Add Project** in the command palette (`Cmd/Ctrl+K`) to clone a repository. Choose a hosting
 provider or paste a Git URL, then choose where to save it. Only GitHub is listed at first. To list
 another provider here and in **Publish Repository**, turn on its switch under

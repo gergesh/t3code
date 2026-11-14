@@ -143,6 +143,54 @@ export function filterFilesystemBrowseEntries(
   return { visibleEntries, exactEntry };
 }
 
+function frecentBasenameRank(directory: string, term: string): number {
+  const basename = (directory.split(/[\\/]/).findLast(Boolean) ?? directory).toLowerCase();
+  if (basename.startsWith(term)) return 0;
+  return basename.includes(term) ? 1 : 2;
+}
+
+/**
+ * Matches the host's frecent directories (best first) against what the user typed. A path keeps
+ * those below its directory whose rest contains the typed leaf, so `~/t3` finds
+ * `~/code/t3code`; words match like `z`, in order anywhere in the path. Ties keep frecency order.
+ */
+export function filterFrecentDirectories(
+  directories: ReadonlyArray<string>,
+  query: string,
+  platform = "",
+): string[] {
+  let matches: string[];
+  let lastTerm: string;
+  if (isFilesystemBrowseQuery(query, platform)) {
+    const directoryPath = getBrowseDirectoryPath(query).toLowerCase();
+    lastTerm = hasTrailingPathSeparator(query) ? "" : getBrowseLeafPathSegment(query).toLowerCase();
+    matches = directories.filter((directory) => {
+      const lower = directory.toLowerCase();
+      return (
+        lower.startsWith(directoryPath) && lower.slice(directoryPath.length).includes(lastTerm)
+      );
+    });
+  } else {
+    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    lastTerm = terms.at(-1) ?? "";
+    matches = directories.filter((directory) => {
+      const lower = directory.toLowerCase();
+      let from = 0;
+      for (const term of terms) {
+        const index = lower.indexOf(term, from);
+        if (index === -1) return false;
+        from = index + term.length;
+      }
+      return true;
+    });
+  }
+  return lastTerm.length === 0
+    ? matches
+    : matches.sort(
+        (left, right) => frecentBasenameRank(left, lastTerm) - frecentBasenameRank(right, lastTerm),
+      );
+}
+
 /** Shell-style Tab: a single match enters the directory, several extend to their common prefix. */
 export function getFilesystemBrowseTabCompletion(
   visibleEntries: ReadonlyArray<FilesystemBrowseEntry>,
@@ -209,6 +257,13 @@ export function createFilesystemEnvironmentAtoms<R, E>(
     getMetadata: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:filesystem:get-metadata",
       tag: WS_METHODS.filesystemGetMetadata,
+    }),
+    // Fetched once per picker; clients filter it locally as the user types.
+    listFrecentDirectories: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:filesystem:list-frecent-directories",
+      tag: WS_METHODS.filesystemListFrecentDirectories,
+      idleTtlMs: BROWSE_IDLE_TTL_MS,
+      staleTimeMs: 0,
     }),
     browse: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:filesystem:browse",
