@@ -16,6 +16,7 @@
     "@alchemy.run/cloudflare": "catalog:",
     "@alchemy.run/drizzle": "catalog:",
     "@alchemy.run/planetscale": "catalog:",
+    "@alchemy.run/sql": "catalog:",
     "@clerk/backend": "catalog:",
     "@distilled.cloud/cloudflare": "catalog:",
     "@effect/sql-pg": "catalog:",
@@ -27,7 +28,8 @@
     "@t3tools/shared": "workspace:*",
     "alchemy": "catalog:",
     "drizzle-orm": "1.0.0-rc.5",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "pg": "8.23.0"
   },
   "devDependencies": {
     "@alchemy.run/test": "catalog:",

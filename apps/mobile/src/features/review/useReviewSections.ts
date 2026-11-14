@@ -4,7 +4,12 @@ import { Atom } from "effect/reactivity";
 import { msg, useMessages } from "gt-react-native";
 
 import { deriveThreadCheckpointSummaries } from "@t3tools/client-runtime/state/thread-checkpoints";
-import type { EnvironmentId, ReviewDiffPreviewSource, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ReviewDiffPreviewSource,
+  ThreadId,
+  VcsDriverKind,
+} from "@t3tools/contracts";
 
 import { useCheckpointDiff } from "../../state/queries";
 import { useEnvironmentQuery } from "../../state/query";
@@ -38,9 +43,11 @@ export function useReviewSections(input: {
   readonly environmentId?: EnvironmentId;
   readonly threadId?: ThreadId;
   readonly reviewCache: ReviewCacheForThread;
+  readonly vcsKind?: VcsDriverKind | null;
 }) {
   const { environmentId, reviewCache, threadId } = input;
   const messages = useMessages();
+  const vcsKind = input.vcsKind ?? null;
   const enabled = input.enabled ?? true;
   const fileAccessSession = useEnvironmentQuery(
     environmentId === undefined ? null : environmentSession.sessionStateAtom(environmentId),
@@ -93,6 +100,7 @@ export function useReviewSections(input: {
     turnDiffById: reviewTurnDiffsBySectionId(readyCheckpoints, lastTurnDiffs),
     loadingGitSections: fileAccess.isPending || diffPreview.isPending,
     resolve: messages,
+    vcsKind,
   });
   const selectedSectionId = resolveReviewSelectedSectionId(
     cachedSections,

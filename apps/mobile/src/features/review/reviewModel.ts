@@ -4,7 +4,8 @@ import {
   checkpointFileTotals,
   type ThreadCheckpointSummary,
 } from "@t3tools/client-runtime/state/thread-checkpoints";
-import type { ReviewDiffPreviewSource } from "@t3tools/contracts";
+import { getVcsTerminology, type VcsTerminology } from "@t3tools/shared/vcs";
+import type { ReviewDiffPreviewSource, VcsDriverKind } from "@t3tools/contracts";
 import { quoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
@@ -144,14 +145,24 @@ const readyCheckpointOrder = Order.make<ThreadCheckpointSummary>(
   compareCheckpointTurnCountDescending,
 );
 
-function gitSubtitle(section: ReviewDiffPreviewSource, resolve: MessageResolver): string | null {
+function gitSubtitle(
+  section: ReviewDiffPreviewSource,
+  terminology: VcsTerminology,
+  resolve: MessageResolver,
+): string | null {
   if (section.kind === "working-tree") {
-    return resolve(UNCOMMITTED_SUBTITLE);
+    return terminology.preserveReviewSectionTitles
+      ? resolve(
+          msg("{workingTreeNounTitle} changes", {
+            workingTreeNounTitle: terminology.workingTreeNounTitle,
+          }),
+        )
+      : resolve(UNCOMMITTED_SUBTITLE);
   }
   if (section.baseRef) {
     return `${section.baseRef} ... ${section.headRef ?? "HEAD"}`;
   }
-  return resolve(msg("Base branch unavailable"));
+  return resolve(msg("Base {refNoun} unavailable", { refNoun: terminology.refNoun }));
 }
 
 function stripTrailingNewline(value: string): string {
@@ -535,8 +546,10 @@ export function buildReviewSectionItems(input: {
   readonly turnDiffById: Readonly<Record<string, string | undefined>>;
   readonly loadingGitSections: boolean;
   readonly resolve?: MessageResolver;
+  readonly vcsKind?: VcsDriverKind | null;
 }): ReadonlyArray<ReviewSectionItem> {
   const resolve = input.resolve ?? m;
+  const terminology = getVcsTerminology(input.vcsKind);
   const turnItems = getReadyReviewCheckpoints(input.checkpoints).map<ReviewSectionItem>(
     (checkpoint) => {
       const id = getReviewSectionIdForCheckpoint(checkpoint);
@@ -560,7 +573,7 @@ export function buildReviewSectionItems(input: {
       id: `git:${section.kind}`,
       kind: section.kind,
       title: section.title,
-      subtitle: gitSubtitle(section, resolve),
+      subtitle: gitSubtitle(section, terminology, resolve),
       diff: section.diff,
       source: section,
       ...(section.files ? { files: section.files } : {}),
@@ -574,7 +587,9 @@ export function buildReviewSectionItems(input: {
           {
             id: CHANGES_SECTION_ID,
             kind: "branch-range",
-            title: resolve(CHANGES_TITLE),
+            title: terminology.preserveReviewSectionTitles
+              ? resolve(msg("Against base {refNoun}", { refNoun: terminology.refNoun }))
+              : resolve(CHANGES_TITLE),
             subtitle: null,
             diff: null,
             isLoading: true,

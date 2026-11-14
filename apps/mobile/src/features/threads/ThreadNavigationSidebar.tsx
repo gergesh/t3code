@@ -47,7 +47,7 @@ import { requestThreadMessageJump } from "./threadMessageJump";
 import { useThreadListSearchMatches } from "./useThreadListSearchMatches";
 import { useHomeListOptions } from "../home/home-list-options";
 import {
-  buildHomeListFilterMenuItems,
+  buildHomeListFilterMenus,
   homeListFilterEnvironments,
 } from "../home/home-list-filter-menu";
 import {
@@ -67,6 +67,7 @@ import {
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
+  ThreadListV2SectionDivider,
   ThreadListV2WorkingShelfHeader,
 } from "./thread-list-v2-items";
 import { useThreadRowProviderInstanceResolver } from "./thread-provider-instance";
@@ -224,7 +225,11 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   );
   // This map reaches LegendList's extraData, which re-renders every row whenever it changes
   // identity; the hook keeps it stable.
-  const threadSearchMatchByKey = useThreadListSearchMatches(threads, threadSearch);
+  const threadSearchMatchByKey = useThreadListSearchMatches(
+    threads,
+    threadSearch,
+    projectTitleByProjectKey,
+  );
   const selectedProjectKey = selectedProjectScope?.key ?? null;
   const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();
@@ -266,7 +271,6 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     pinningEnvironmentIds,
     autoSettleOptOutEnvironmentIds,
     pinReorderEnvironmentIds,
-    activeReorderEnvironmentIds,
     titleRegenerationEnvironmentIds,
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
@@ -282,11 +286,11 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     environmentId: options.selectedEnvironmentId,
     projectRefs: selectedProjectScope === null ? null : selectedProjectScope.projectRefs,
     searchQuery: props.searchQuery,
+    projectTitleByKey: projectTitleByProjectKey,
     searchMatches: threadSearchMatchByKey,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
     pinReorderEnvironmentIds,
-    activeReorderEnvironmentIds,
     queuedThreadKeys,
     settledLimit: settledVisibleCount,
     now,
@@ -471,9 +475,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             pinningSupported={pinningEnvironmentIds.has(thread.environmentId)}
             autoSettleOptOutSupported={autoSettleOptOutEnvironmentIds.has(thread.environmentId)}
             reorderSupported={
-              item.item.pinned
-                ? pinReorderEnvironmentIds.has(thread.environmentId)
-                : !workingShelfEnabled && activeReorderEnvironmentIds.has(thread.environmentId)
+              item.item.pinned && pinReorderEnvironmentIds.has(thread.environmentId)
             }
             canMoveUp={item.canMoveUp}
             canMoveDown={item.canMoveDown}
@@ -500,6 +502,8 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             pane="sidebar"
           />
         );
+      case "v2-active-divider":
+        return <ThreadListV2SectionDivider label="Active" pane="sidebar" />;
       case "v2-snoozed-shelf":
         return (
           <ThreadListV2SnoozedShelfHeader
@@ -545,20 +549,17 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
         placeholder: gt("Search", { $context: "search field placeholder" }),
         accessibilityLabel: gt("Search threads"),
       }}
-      filter={{
-        customized: options.selectedEnvironmentId !== null || selectedProjectKey !== null,
-        items: buildHomeListFilterMenuItems(
-          {
-            environments,
-            projects: projectFilterOptions,
-            selectedEnvironmentId: options.selectedEnvironmentId,
-            selectedProjectKey,
-            onEnvironmentChange: setSelectedEnvironmentId,
-            onProjectChange: setSelectedProjectKey,
-          },
-          messages,
-        ),
-      }}
+      filters={buildHomeListFilterMenus(
+        {
+          environments,
+          projects: projectFilterOptions,
+          selectedEnvironmentId: options.selectedEnvironmentId,
+          selectedProjectKey,
+          onEnvironmentChange: setSelectedEnvironmentId,
+          onProjectChange: setSelectedProjectKey,
+        },
+        messages,
+      )}
       sidebar={{
         width: props.width,
         visible: props.visible,

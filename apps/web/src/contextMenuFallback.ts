@@ -53,6 +53,11 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "circle", attrs: { cx: "6", cy: "18", r: "3" } },
     { tag: "path", attrs: { d: "M18 9a9 9 0 0 1-9 9" } },
   ],
+  "git-merge": [
+    { tag: "circle", attrs: { cx: "18", cy: "18", r: "3" } },
+    { tag: "circle", attrs: { cx: "6", cy: "6", r: "3" } },
+    { tag: "path", attrs: { d: "M6 21V9a9 9 0 0 0 9 9" } },
+  ],
   hash: [
     { tag: "line", attrs: { x1: "4", x2: "20", y1: "9", y2: "9" } },
     { tag: "line", attrs: { x1: "4", x2: "20", y1: "15", y2: "15" } },
@@ -152,6 +157,12 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     },
     { tag: "path", attrs: { d: "M3 5a2 2 0 0 0 2 2h3" } },
     { tag: "path", attrs: { d: "M3 3v13a2 2 0 0 0 2 2h3" } },
+  ],
+  images: [
+    { tag: "path", attrs: { d: "m22 11-1.296-1.296a2.4 2.4 0 0 0-3.408 0L11 16" } },
+    { tag: "path", attrs: { d: "M4 8a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2" } },
+    { tag: "circle", attrs: { cx: "13", cy: "7", r: "1", fill: "currentColor" } },
+    { tag: "rect", attrs: { x: "8", y: "2", width: "14", height: "14", rx: "2" } },
   ],
   "text-search": [
     { tag: "path", attrs: { d: "M21 5H3" } },

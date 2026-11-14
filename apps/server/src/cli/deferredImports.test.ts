@@ -35,6 +35,10 @@ vi.mock("../orchestration-v2/runtimeLayer.ts", () => {
   hooks.importsAttempted.push("runtimeLayer");
   throw new Error("runtime import failed");
 });
+vi.mock("@t3tools/tui", () => {
+  hooks.importsAttempted.push("tui");
+  throw new Error("tui import failed");
+});
 vi.mock("../claudeHistoryWorker.ts", async () => {
   hooks.importsAttempted.push("claudeHistoryWorker");
   hooks.historyImportStarted.resolve();
@@ -50,7 +54,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("CLI deferred imp
   it.effect("runs commands that do not need them without loading them", () =>
     Effect.gen(function* () {
       hooks.importsAttempted.length = 0;
-      for (const args of [["--version"], ["--help"], ["project", "--help"], ["thread", "--help"]]) {
+      for (const args of [
+        ["--version"],
+        ["--help"],
+        ["project", "--help"],
+        ["thread", "--help"],
+        ["tui", "--help"],
+      ]) {
         yield* runCli(args);
       }
       assert.deepEqual(hooks.importsAttempted, []);

@@ -6,6 +6,7 @@ import {
   type ModelSelection,
   NodeId,
   ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
+  ORCHESTRATOR_MCP_TASK_KINDS,
   TurnItemId,
   type OrchestrationV2Run,
   type OrchestrationV2Subagent,
@@ -112,9 +113,11 @@ import {
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { placeholderThreadTitle } from "../orchestration-v2/placeholderThreadTitle.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
+import * as AgentRoles from "../project/AgentRoles.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
@@ -1288,9 +1291,11 @@ const make = Effect.gen(function* () {
   const scheduledTasks = yield* ScheduledTaskService.ScheduledTaskService;
   const projects = yield* ProjectService.ProjectService;
   const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
+  const workflow = yield* GitWorkflowService.GitWorkflowService;
   const gitDriver = yield* GitVcsDriver.GitVcsDriver;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const remoteDelegation = yield* RemoteDelegation.RemoteDelegation;
+  const agentRoles = yield* AgentRoles.AgentRoles;
 
   const requireProject = (projectId: ProjectId) =>
     projects.getById(projectId).pipe(
@@ -1549,6 +1554,36 @@ const make = Effect.gen(function* () {
           ),
           Effect.orElseSucceed(() => undefined),
         );
+
+  /** The roles in the caller's checkout, and the caller's own role among them. */
+  const loadCallerRoles = Effect.fn("OrchestratorMcpService.loadCallerRoles")(function* (
+    parent: Pick<OrchestrationV2ThreadProjection, "thread">,
+  ) {
+    const cwd = yield* parentWorkspaceCwd(parent);
+    const { roles } = cwd === undefined ? { roles: [] } : yield* agentRoles.list(cwd);
+    const own = roles.find((role) => role.name === parent.thread.role);
+    return { roles, own };
+  });
+
+  /** A delegate_task `role` that names a project role, checked against the caller's reach. */
+  const resolveDelegateRole = Effect.fn("OrchestratorMcpService.resolveDelegateRole")(function* (
+    parent: Pick<OrchestrationV2ThreadProjection, "thread">,
+    name: string,
+  ) {
+    const { roles } = yield* loadCallerRoles(parent);
+    if (
+      (ORCHESTRATOR_MCP_TASK_KINDS as ReadonlyArray<string>).includes(name) &&
+      !roles.some((role) => role.name === name)
+    ) {
+      return undefined;
+    }
+    const resolved = AgentRoles.resolveRequestedRole({
+      roles,
+      callerRole: parent.thread.role,
+      requested: name,
+    });
+    return "role" in resolved ? resolved.role : yield* failure("invalid_request", resolved.problem);
+  });
 
   const scanWorkspace = (instanceId: ServerProvider["instanceId"], cwd: string) =>
     projects
@@ -2666,8 +2701,22 @@ const make = Effect.gen(function* () {
       );
       const inherited = parent?.thread.modelSelection;
       const searchTerms = input.search?.toLowerCase().split(/\s+/).filter(Boolean) ?? [];
+      const callerRoles = parent === undefined ? undefined : yield* loadCallerRoles(parent);
+      const delegableRoles = (callerRoles?.roles ?? []).filter((role) =>
+        AgentRoles.roleMayDelegateTo(callerRoles?.own, role.name),
+      );
       return {
         parentThreadId: parent?.thread.id ?? null,
+        ...(parent?.thread.role ? { role: parent.thread.role } : {}),
+        ...(delegableRoles.length === 0
+          ? {}
+          : {
+              roles: delegableRoles.map((role) => ({
+                name: role.name,
+                ...(role.title === role.name ? {} : { title: role.title }),
+                ...(role.description === undefined ? {} : { description: role.description }),
+              })),
+            }),
         inheritedProviderInstanceId: inherited?.instanceId ?? null,
         inheritedModel: inherited?.model ?? null,
         inheritedOptions:
@@ -2782,6 +2831,37 @@ const make = Effect.gen(function* () {
         );
       }
       const providers = yield* loadProviders;
+      const projectRole =
+        input.role === undefined ? undefined : yield* resolveDelegateRole(parent, input.role);
+      const roleProvider =
+        projectRole?.provider === undefined
+          ? undefined
+          : providers.find(
+              (provider) =>
+                provider.instanceId === projectRole.provider ||
+                provider.driver === projectRole.provider,
+            );
+      if (projectRole?.provider !== undefined && roleProvider === undefined) {
+        return yield* failure(
+          "invalid_request",
+          `Role @${projectRole.name} runs on provider "${projectRole.provider}", which is not configured here. Pass target.providerInstanceId to override it.`,
+        );
+      }
+      // The caller's explicit target wins over the role's defaults.
+      const callerChoseTarget =
+        input.target?.providerInstanceId !== undefined ||
+        input.target?.driverKind !== undefined ||
+        input.target?.model !== undefined;
+      const requestedTarget =
+        projectRole === undefined || callerChoseTarget
+          ? input.target
+          : {
+              ...input.target,
+              ...(roleProvider === undefined
+                ? {}
+                : { providerInstanceId: roleProvider.instanceId }),
+              ...(projectRole.model === undefined ? {} : { model: projectRole.model }),
+            };
       const key = yield* requestKey(input.clientRequestId);
       const commandId = stableCommandId({
         scope,
@@ -2791,14 +2871,20 @@ const make = Effect.gen(function* () {
       const isRetryOfAcceptedDelegation = yield* threadManagement.hasReceipt(commandId);
       const target = yield* resolveTargetRechecking({
         parent,
-        target: input.target,
+        target: requestedTarget,
         providers,
         cwd: yield* parentWorkspaceCwd(parent),
         skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
       });
+      // A role's runtime mode is a default, so it narrows to the caller's instead of failing.
+      const roleRuntimeMode =
+        projectRole?.runtimeMode !== undefined &&
+        runtimeModeRank(projectRole.runtimeMode) <= runtimeModeRank(parent.thread.runtimeMode)
+          ? projectRole.runtimeMode
+          : undefined;
       const runtimeMode = yield* resolveRuntimeMode(
         parent.thread.runtimeMode,
-        input.runtimeMode,
+        input.runtimeMode ?? roleRuntimeMode,
         target,
       );
       const interactionMode = yield* resolveInteractionMode(
@@ -2808,32 +2894,35 @@ const make = Effect.gen(function* () {
       let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;
       if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
         const project = yield* requireProject(parent.thread.projectId);
-        const base = yield* gitDriver
-          .resolveCommit({
-            cwd: parent.thread.worktreePath ?? project.workspaceRoot,
-            revision: "HEAD",
-          })
+        const cwd = parent.thread.worktreePath ?? project.workspaceRoot;
+        const baseRef = yield* workflow
+          .committedBase(cwd)
           .pipe(
             Effect.mapError(() =>
               failure("invalid_request", "Unable to resolve the parent checkout commit."),
             ),
           );
+        if (baseRef === null) {
+          return yield* failure(
+            "invalid_request",
+            "The parent workspace has no committed parent to delegate from.",
+          );
+        }
         // Launch preparation creates the worktree from the project root, so a
         // parent checkout in another repository (such as a Git folder inside
         // Scratch) would hand it a commit it cannot find.
         if (parent.thread.worktreePath !== null) {
-          yield* gitDriver
-            .resolveCommit({ cwd: project.workspaceRoot, revision: base.commitSha })
-            .pipe(
-              Effect.mapError(() =>
-                failure(
-                  "invalid_request",
-                  `Isolation "worktree" creates the child checkout in project "${project.title}" (${project.workspaceRoot}), which does not contain the parent checkout's commit. Use isolation "shared" to work in the parent's checkout.`,
-                ),
-              ),
+          const containsBase = yield* workflow
+            .hasCommit({ cwd: project.workspaceRoot, refName: baseRef })
+            .pipe(Effect.orElseSucceed(() => false));
+          if (!containsBase) {
+            return yield* failure(
+              "invalid_request",
+              `Isolation "worktree" creates the child checkout in project "${project.title}" (${project.workspaceRoot}), which does not contain the parent checkout's commit. Use isolation "shared" to work in the parent's checkout.`,
             );
+          }
         }
-        workspaceStrategy = { type: "worktree", baseRef: base.commitSha, startFromOrigin: false };
+        workspaceStrategy = { type: "worktree", baseRef, startFromOrigin: false };
       }
       // ThreadManagementService.dispatch is the chokepoint for this command
       // type's own enablement check, using the same command id and its
@@ -2847,8 +2936,9 @@ const make = Effect.gen(function* () {
           parentThreadId: scope.thread.threadId,
           parentRunId: parentRun.id,
           parentNodeId: parentRun.rootNodeId,
-          task: taskPrompt(input),
+          task: taskPrompt(input, projectRole !== undefined),
           ...(input.title === undefined ? {} : { title: input.title }),
+          ...(projectRole === undefined ? {} : { role: projectRole.name }),
           modelSelection: target.modelSelection,
           runtimeMode,
           interactionMode,
@@ -3750,6 +3840,7 @@ export const layer: Layer.Layer<
   | SecureRandom.SecureRandom
   | ThreadManagementService.ThreadManagementService
   | ThreadLaunchService.ThreadLaunchService
+  | GitWorkflowService.GitWorkflowService
   | GitVcsDriver.GitVcsDriver
   | ProviderRegistry.ProviderRegistry
   | ProviderAdapterRegistry.ProviderAdapterRegistryV2
@@ -3758,4 +3849,5 @@ export const layer: Layer.Layer<
   | SecretRequests.SecretRequests
   | ServerSettings.ServerSettingsService
   | RemoteDelegation.RemoteDelegation
+  | AgentRoles.AgentRoles
 > = Layer.effect(OrchestratorMcpService, make);

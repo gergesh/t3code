@@ -1273,6 +1273,20 @@ describe("composerDraftStore project draft thread mapping", () => {
     });
   });
 
+  it("keeps a draft's role through workspace changes and drops it with the project", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setDraftThreadContext(draftId, { role: "engineer" });
+    store.setDraftThreadContext(draftId, { branch: "feature" });
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    expect(store.getDraftThread(draftId)?.role).toBe("engineer");
+    store.setDraftThreadContext(draftId, { role: null });
+    expect(store.getDraftThread(draftId)?.role).toBeUndefined();
+    store.setDraftThreadContext(draftId, { role: "engineer" });
+    store.setDraftThreadContext(draftId, { projectRef: remoteProjectRef });
+    expect(store.getDraftThread(draftId)?.role).toBeUndefined();
+  });
+
   it("pins manual workspace choices and can return to automatic routing without losing the prompt", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });
@@ -2902,7 +2916,7 @@ describe("composerDraftStore checkout pull request", () => {
     expect(store().getDraftSession(draftId)?.checkoutPullRequest).toBeUndefined();
   });
 
-  it("persists the pull request and still restores drafts saved without one", async () => {
+  it("persists the pull request and role, and still restores drafts saved without them", async () => {
     vi.useFakeTimers();
     try {
       await useComposerDraftStore.persist.clearStorage();
@@ -2928,7 +2942,11 @@ describe("composerDraftStore checkout pull request", () => {
         state: {
           draftsByThreadKey: {},
           draftThreadsByThreadKey: {
-            [draftId]: { ...persistedDraftThread(threadId), checkoutPullRequest: checkout },
+            [draftId]: {
+              ...persistedDraftThread(threadId),
+              checkoutPullRequest: checkout,
+              role: "engineer",
+            },
             [legacyDraftId]: persistedDraftThread(ThreadId.make("thread-legacy")),
           },
           logicalProjectDraftThreadKeyByLogicalProjectKey: {
@@ -2941,12 +2959,14 @@ describe("composerDraftStore checkout pull request", () => {
       await useComposerDraftStore.persist.rehydrate();
 
       expect(toLink()).toBe(url);
+      expect(store().getDraftSession(draftId)?.role).toBe("engineer");
       const legacy = store().getDraftSession(legacyDraftId);
       expect(legacy).toMatchObject({ branch: checkout.branch });
+      expect(legacy?.role).toBeUndefined();
       expect(checkoutPullRequestUrlToLink(legacy)).toBeNull();
       expect(
         partializeComposerDraftStoreState(store()).draftThreadsByThreadKey[draftId],
-      ).toMatchObject({ checkoutPullRequest: checkout });
+      ).toMatchObject({ checkoutPullRequest: checkout, role: "engineer" });
     } finally {
       await useComposerDraftStore.persist.clearStorage();
       vi.useRealTimers();

@@ -4,6 +4,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ServerConfig from "../config.ts";
 import * as GitManager from "../git/GitManager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as JjWorkflow from "../jj/JjWorkflow.ts";
+import * as JjVcsDriver from "../vcs/JjVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "../vcs/VcsProjectConfig.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -20,6 +22,7 @@ import * as Layer from "effect/Layer";
 
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as WorktreeCommands from "../vcs/WorktreeCommands.ts";
 
 export const layer = Layer.merge(
   Layer.mock(GitWorkflow.GitWorkflowService)({
@@ -57,7 +60,14 @@ export const layerRealGit = GitWorkflow.layer.pipe(
       ServerSettings.layerTest(),
     ),
   ),
+  Layer.provide(Layer.mock(JjWorkflow.JjWorkflow)({})),
+  Layer.provide(
+    Layer.mock(WorktreeCommands.WorktreeCommands)({
+      resolve: () => Effect.succeed({ create: "", remove: "", merge: "" }),
+    }),
+  ),
   Layer.provide(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer))),
+  Layer.provide(JjVcsDriver.layer),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(VcsProcess.layer),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-recreate-" })),

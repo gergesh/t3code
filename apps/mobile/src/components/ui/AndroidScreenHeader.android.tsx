@@ -32,8 +32,16 @@ export function AndroidHeaderIconButton(props: {
   readonly onPress?: () => void;
   readonly disabled?: boolean;
   readonly selected?: boolean;
+  /** Tints the icon, such as for an applied filter. */
+  readonly highlighted?: boolean;
 }) {
-  return <IconButton {...props} tintColorClassName="accent-header-foreground" />;
+  const { highlighted, ...buttonProps } = props;
+  return (
+    <IconButton
+      {...buttonProps}
+      tintColorClassName={highlighted ? "accent-primary" : "accent-header-foreground"}
+    />
+  );
 }
 
 export function AndroidScreenHeader(props: {

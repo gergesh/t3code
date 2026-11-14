@@ -1,5 +1,11 @@
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { DEFAULT_SERVER_SETTINGS, EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { act, createElement, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { RegistryContext } from "@effect/atom-react";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
+import { describe, expect, it, vi } from "vite-plus/test";
+import type { ComposerDraft, ComposerDraftSettingsUpdate } from "../../state/use-composer-drafts";
+import type { QueuedThreadMessage } from "../../state/thread-outbox";
 
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { buildHomeProjectScopes, type HomeProjectScope } from "../home/homeThreadList";
@@ -12,6 +18,254 @@ import {
   resolveEnvironmentProjectMatch,
   resolveNewTaskScratchOption,
 } from "./new-task-project-selection";
+
+const flowState = vi.hoisted(() => {
+  // Assigned once the imports are live; the mocks only read it when a test runs.
+  const registry = null as unknown as import("effect/reactivity").AtomRegistry.AtomRegistry;
+  const draft: ComposerDraft = { text: "Keep chatting", attachments: [] };
+  return {
+    registry,
+    draft,
+    status: {
+      branchName: "main",
+      vcs: { kind: "jj", unsupportedReason: "This workspace is unsupported" },
+    },
+    model: { instanceId: "codex", model: "gpt-5" },
+  };
+});
+
+vi.mock("../../state/olderSettledShelf", () => ({ useOlderSettledCount: () => 0 }));
+vi.mock("../triage/usePrepareTriage", () => ({ usePrepareTriage: () => async () => null }));
+vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
+vi.mock("../../state/presentation", () => ({
+  useEnvironmentPresentation: () => ({ isReady: true, presentation: null }),
+}));
+vi.mock("../../state/session", () => ({
+  environmentSession: { sessionStateAtom: () => null },
+}));
+vi.mock("../../state/entities", () => ({
+  useProjects: () => [makeProject("project")],
+  useThreadShells: () => [],
+  useEnvironmentServerConfig: () => ({
+    providers: [],
+    settings: { ...DEFAULT_SERVER_SETTINGS, defaultThreadEnvMode: "worktree" },
+  }),
+  useServerConfigs: () => new Map(),
+}));
+vi.mock("../../lib/modelOptions", () => ({
+  buildModelOptions: () => [],
+  groupByProvider: () => [],
+  serverConfigForCwd: (config: unknown) => config,
+  resolveDefaultableModelSelection: () => null,
+  resolveNewTaskModelSelection: () => flowState.model,
+  resolveSelectableModelSelection: () => flowState.model,
+}));
+vi.mock("../../state/atom-registry", () => ({
+  appAtomRegistry: {
+    get: (atom: unknown) =>
+      atom === "status"
+        ? AsyncResult.success(flowState.status)
+        : flowState.registry.get(atom as never),
+    set: (atom: unknown, value: unknown) => flowState.registry.set(atom as never, value as never),
+  },
+}));
+vi.mock("../../state/projects", () => ({
+  projectEnvironment: { readFile: vi.fn(), openScratch: vi.fn() },
+}));
+vi.mock("../../state/query", () => ({
+  useEnvironmentQuery: (target: unknown) => ({
+    data: target === "status" ? flowState.status : null,
+    error: null,
+    isPending: false,
+  }),
+}));
+vi.mock("../../state/use-composer-drafts", () => ({
+  createNewTaskDraft: () => "new-task:test",
+  useComposerDraft: () => flowState.draft,
+  getComposerDraftSnapshot: () => flowState.draft,
+  updateComposerDraftSettings: (_key: string, settings: ComposerDraftSettingsUpdate) => {
+    flowState.draft = { ...flowState.draft, ...settings };
+  },
+  useStickyComposerModelSelection: () => null,
+  composerDraftsLoadedAtom: Atom.make(true),
+  retargetNewTaskDraft: vi.fn(),
+  setComposerDraftText: vi.fn(),
+  isNewTaskDraftKey: (key: string) => key.startsWith("new-task:"),
+  clearComposerDraft: vi.fn(),
+  appendComposerDraftAttachments: vi.fn(),
+  removeComposerDraftAttachment: vi.fn(),
+  replaceComposerDraftAttachments: vi.fn(),
+  setStickyComposerModelSelection: vi.fn(),
+  setComposerDraftContext: vi.fn(),
+  scheduleUnusedComposerAttachmentCleanup: vi.fn(),
+  isComposerDraftEmpty: (draft: ComposerDraft) =>
+    draft.text === "" && draft.attachments.length === 0,
+}));
+vi.mock("../../state/queries", () => ({
+  useBranches: () => ({ data: { isRepo: true }, isPending: false }),
+  useDebouncedValue: (value: string) => value,
+  usePaginatedBranches: () => ({
+    refs: [{ name: "main", current: true, isDefault: true, worktreePath: null }],
+    data: { nextCursor: null },
+    isPending: false,
+    isFetchingNextPage: false,
+    refresh: vi.fn(),
+    loadNext: vi.fn(),
+  }),
+}));
+vi.mock("../../state/vcs", () => ({ vcsEnvironment: { status: () => "status" } }));
+vi.mock("../../state/thread-outbox", () => ({
+  flattenQueuedThreadMessages: () => [],
+  threadOutboxManager: {},
+}));
+vi.mock("../../state/use-thread-outbox", () => ({
+  useThreadOutboxMessages: () => ({}),
+  holdEditingQueuedMessage: vi.fn(),
+  releaseEditingQueuedMessage: vi.fn(),
+}));
+vi.mock("../../state/use-remote-environment-registry", () => ({
+  useSavedRemoteConnections: () => ({ savedConnectionsById: {} }),
+  useRemoteConnectionStatus: () => ({ connectedEnvironments: [] }),
+  setPendingConnectionError: vi.fn(),
+}));
+vi.mock("../../state/project-grouping", () => ({
+  useMobileProjectGroupingSettings: () => ({ sidebarProjectGroupingMode: "repository" }),
+}));
+vi.mock("./use-legacy-plan-mode-enabled", () => ({
+  useLegacyPlanModeState: () => ({ enabled: false, loaded: true }),
+}));
+
+vi.mock("../../state/orchestration", () => ({ orchestrationEnvironment: {} }));
+vi.mock("../../state/threads", () => ({ olderSettledThreads: {}, threadFamilies: {} }));
+vi.mock("../../state/pull-requests", () => ({ composerPullRequests: {} }));
+vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
+vi.mock("../../state/use-model-option-memory", () => ({
+  rememberModelOptions: vi.fn(),
+  withRememberedModelOptions: (value: unknown) => value,
+}));
+vi.mock("../../state/peerLinks", () => ({ useLinkedEnvironments: () => new Map() }));
+vi.mock("../../state/project-has-threads", () => ({ useProjectHasThreads: () => false }));
+vi.mock("../../state/workspace", () => ({
+  useConnectionsReady: () => true,
+  useWorkspaceEnvironments: () => [],
+}));
+vi.mock("../../state/shell", () => ({ useEnvironmentShellReadiness: () => ({}) }));
+vi.mock("../../lib/clock", () => ({ useNowMinuteMs: () => 0 }));
+
+import { NewTaskFlowProvider, useNewTaskFlow } from "./new-task-flow-provider";
+import { updateNewTaskFlowState } from "./new-task-flow-state";
+
+flowState.registry = AtomRegistry.make();
+
+describe("unsupported new-task workspace recovery", () => {
+  it.each(["saved", "default"])(
+    "can leave an unsupported %s worktree choice and build a local chat task",
+    async (source) => {
+      Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
+      flowState.draft = {
+        text: "Keep chatting",
+        attachments: [],
+        ...(source === "saved"
+          ? { workspaceSelection: { mode: "worktree", branch: "main", worktreePath: null } }
+          : {}),
+      };
+      // Picking the project binds the flow to its draft (see setProject).
+      updateNewTaskFlowState("test-flow", { draftKey: "new-task:test" });
+      const container = document.createElement("div");
+      const root = createRoot(container);
+      const metadata = {
+        threadId: "thread",
+        commandId: "command",
+        messageId: "message",
+        createdAt: "2026-07-01T00:00:00.000Z",
+      };
+      function CaptureFlow() {
+        const flow = useNewTaskFlow();
+        const [message, setMessage] = useState<QueuedThreadMessage | null>(null);
+        return createElement(
+          "div",
+          null,
+          createElement("output", { "data-mode": true }, flow.workspaceMode),
+          createElement("output", { "data-supported": true }, String(flow.vcsActionsSupported)),
+          createElement(
+            "button",
+            { "data-local": true, onClick: () => flow.setWorkspaceMode("local") },
+            "Use local",
+          ),
+          createElement(
+            "button",
+            { "data-worktree": true, onClick: () => flow.setWorkspaceMode("worktree") },
+            "Use worktree",
+          ),
+          createElement(
+            "button",
+            {
+              "data-create": true,
+              onClick: () => setMessage(flow.buildPendingTaskMessage(metadata)),
+            },
+            "Create task",
+          ),
+          createElement("output", { "data-message": true }, message?.text ?? "blocked"),
+          createElement("output", { "data-created-mode": true }, message?.creation?.workspaceMode),
+        );
+      }
+      try {
+        await act(async () =>
+          root.render(
+            createElement(
+              RegistryContext.Provider,
+              { value: flowState.registry },
+              createElement(
+                NewTaskFlowProvider,
+                { active: true, flowKey: "test-flow" },
+                createElement(CaptureFlow),
+              ),
+            ),
+          ),
+        );
+        expect(container.querySelector("[data-mode]")?.textContent).toBe("worktree");
+        expect(container.querySelector("[data-supported]")?.textContent).toBe("false");
+        await act(async () => container.querySelector<HTMLButtonElement>("[data-create]")!.click());
+        expect(container.querySelector("[data-message]")?.textContent).toBe("blocked");
+        await act(async () => {
+          container.querySelector<HTMLButtonElement>("[data-local]")!.click();
+          root.render(
+            createElement(
+              RegistryContext.Provider,
+              { value: flowState.registry },
+              createElement(
+                NewTaskFlowProvider,
+                { active: true, flowKey: "test-flow" },
+                createElement(CaptureFlow),
+              ),
+            ),
+          );
+        });
+        expect(container.querySelector("[data-mode]")?.textContent).toBe("local");
+        await act(async () => container.querySelector<HTMLButtonElement>("[data-create]")!.click());
+        expect(container.querySelector("[data-message]")?.textContent).toBe("Keep chatting");
+        expect(container.querySelector("[data-created-mode]")?.textContent).toBe("local");
+        await act(async () => {
+          container.querySelector<HTMLButtonElement>("[data-worktree]")!.click();
+          root.render(
+            createElement(
+              RegistryContext.Provider,
+              { value: flowState.registry },
+              createElement(
+                NewTaskFlowProvider,
+                { active: true, flowKey: "test-flow" },
+                createElement(CaptureFlow),
+              ),
+            ),
+          );
+        });
+        expect(container.querySelector("[data-mode]")?.textContent).toBe("local");
+      } finally {
+        await act(async () => root.unmount());
+      }
+    },
+  );
+});
 
 function makeProject(
   id: string,
@@ -103,33 +357,60 @@ describe("getProjectScopeSelectionTarget", () => {
 });
 
 describe("newTaskFilteredProject", () => {
+  type Last = { readonly environmentId: string; readonly projectId: string };
+  const mac = makeProject("t3code", "mac");
+  const server = makeProject("t3code", "server");
+  const docs = makeProject("docs", "mac");
+  const connected = new Set([mac.environmentId, server.environmentId]);
+  const filtered = (input: {
+    readonly projectScope?: HomeProjectScope;
+    readonly environmentId?: string;
+    readonly last?: Last;
+  }) =>
+    newTaskFilteredProject({
+      projectScope: input.projectScope ?? null,
+      environmentId:
+        input.environmentId === undefined ? null : EnvironmentId.make(input.environmentId),
+      scopes: [makeScope([mac, server]), makeScope([docs])],
+      connectedEnvironmentIds: connected,
+      lastProject: input.last,
+    });
+
   it("never starts in an archived copy of the filtered project", () => {
-    const mac = { ...makeProject("t3code", "mac"), archivedAt: "2026-01-01T00:00:00.000Z" };
-    const server = makeProject("t3code", "server");
+    const archived = { ...mac, archivedAt: "2026-01-01T00:00:00.000Z" };
     expect(
-      newTaskFilteredProject(
-        makeScope([mac, server]),
-        null,
-        new Set([mac.environmentId, server.environmentId]),
-        { environmentId: "mac", projectId: "t3code" },
-      ),
+      filtered({
+        projectScope: makeScope([archived, server]),
+        last: { environmentId: "mac", projectId: "t3code" },
+      }),
     ).toEqual({ environmentId: "server", projectId: "t3code" });
   });
 
   it("prefers the remembered copy of the filtered project", () => {
-    const mac = makeProject("t3code", "mac");
-    const server = makeProject("t3code", "server");
-    const connected = new Set([mac.environmentId, server.environmentId]);
-    const filtered = (last?: { readonly environmentId: string; readonly projectId: string }) =>
-      newTaskFilteredProject(makeScope([mac, server]), null, connected, last);
-    expect(filtered({ environmentId: "server", projectId: "t3code" })).toEqual({
+    const projectScope = makeScope([mac, server]);
+    expect(
+      filtered({ projectScope, last: { environmentId: "server", projectId: "t3code" } }),
+    ).toEqual({ environmentId: "server", projectId: "t3code" });
+    expect(
+      filtered({ projectScope, last: { environmentId: "server", projectId: "other" } }),
+    ).toEqual({ environmentId: "mac", projectId: "t3code" });
+  });
+
+  it("starts in the filtered environment's copy of the remembered project", () => {
+    const last = { environmentId: "mac", projectId: "t3code" };
+    expect(filtered({ last })).toBeUndefined();
+    expect(filtered({ environmentId: "mac", last })).toEqual(last);
+    expect(filtered({ environmentId: "server", last })).toEqual({
       environmentId: "server",
       projectId: "t3code",
     });
-    expect(filtered({ environmentId: "server", projectId: "other" })).toEqual({
-      environmentId: "mac",
-      projectId: "t3code",
-    });
+  });
+
+  it("finds nothing when the remembered project is not on the filtered environment", () => {
+    expect(
+      filtered({ environmentId: "server", last: { environmentId: "mac", projectId: "docs" } }),
+    ).toBeNull();
+    expect(filtered({ environmentId: "server" })).toBeNull();
   });
 });
 
@@ -256,7 +537,7 @@ describe("newTaskDestination", () => {
     readonly useLastProject: boolean | undefined;
     readonly projects: ReadonlyArray<EnvironmentProject>;
     readonly current?: EnvironmentProject;
-    readonly filtered?: EnvironmentProject;
+    readonly filtered?: EnvironmentProject | null;
     readonly last?: { readonly environmentId: string; readonly projectId: string };
   }) {
     return newTaskDestination({
@@ -302,6 +583,18 @@ describe("newTaskDestination", () => {
     ).toEqual({
       draft: { requestId: "request", environmentId: "environment", projectId: "alpha" },
     });
+  });
+
+  it("opens the picker instead of a remembered project outside the thread list's filters", () => {
+    const projects = [makeProject("remembered")];
+    expect(
+      destination({
+        useLastProject: true,
+        projects,
+        filtered: null,
+        last: { environmentId: "environment", projectId: "remembered" },
+      }),
+    ).toEqual(picker);
   });
 
   it("opens the picker for an archived last project, but keeps an archived current one", () => {

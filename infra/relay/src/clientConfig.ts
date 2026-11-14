@@ -13,12 +13,13 @@ import * as Schema from "effect/Schema";
 
 export interface RelayClientConfig {
   readonly url: string | undefined;
-  readonly mobileTracingUrl: string;
-  readonly mobileTracingDataset: string;
-  readonly mobileTracingToken: Redacted.Redacted<string>;
-  readonly clientTracingUrl: string;
-  readonly clientTracingDataset: string;
-  readonly clientTracingToken: Redacted.Redacted<string>;
+  // Unset when the relay runs without Axiom; clients then build without tracing.
+  readonly mobileTracingUrl?: string;
+  readonly mobileTracingDataset?: string;
+  readonly mobileTracingToken?: Redacted.Redacted<string>;
+  readonly clientTracingUrl?: string;
+  readonly clientTracingDataset?: string;
+  readonly clientTracingToken?: Redacted.Redacted<string>;
   /** Alchemy hashes JSON inputs; Redacted hides token rotation, so hash the tokens without persisting secrets. */
   readonly tokenDigest: string;
 }
@@ -32,16 +33,24 @@ export class RelayUrlUnavailableError extends Schema.TaggedError<RelayUrlUnavail
   }
 }
 
-const relayClientConfigEnv = (config: RelayClientConfig & { readonly url: string }) =>
-  ({
+export const relayClientConfigEnv = (
+  config: RelayClientConfig & { readonly url: string },
+): Record<string, string> => {
+  const entries: Record<string, string | undefined> = {
     T3CODE_RELAY_URL: config.url,
     T3CODE_MOBILE_OTLP_TRACES_URL: config.mobileTracingUrl,
     T3CODE_MOBILE_OTLP_TRACES_DATASET: config.mobileTracingDataset,
-    T3CODE_MOBILE_OTLP_TRACES_TOKEN: Redacted.value(config.mobileTracingToken),
+    T3CODE_MOBILE_OTLP_TRACES_TOKEN:
+      config.mobileTracingToken && Redacted.value(config.mobileTracingToken),
     T3CODE_RELAY_CLIENT_OTLP_TRACES_URL: config.clientTracingUrl,
     T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET: config.clientTracingDataset,
-    T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN: Redacted.value(config.clientTracingToken),
-  }) as const;
+    T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN:
+      config.clientTracingToken && Redacted.value(config.clientTracingToken),
+  };
+  return Object.fromEntries(
+    Object.entries(entries).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  );
+};
 
 export class EnvValueNotSingleLineError extends Schema.TaggedError<EnvValueNotSingleLineError>()(
   "EnvValueNotSingleLineError",

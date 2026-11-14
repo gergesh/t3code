@@ -6,11 +6,12 @@ import { View } from "react-native";
 import { AppText as Text, AppTextInput } from "../../../components/ui/AppText";
 import { ListChoiceRow as SettingsChoiceRow } from "../../../components/ui/ListChoiceRow";
 import { SettingsSection } from "./SettingsSection";
+import { GIT_VCS_TERMINOLOGY, type VcsTerminology } from "@t3tools/shared/vcs";
 
 const MODES = {
   static: {
     label: msg("Static prefix"),
-    description: msg("Add your prefix to the generated branch name."),
+    description: msg("Add your prefix to the generated {refNoun} name."),
   },
   semantic: {
     label: msg("Semantic prefix"),
@@ -31,6 +32,7 @@ export function BranchNamingSettings(props: {
   /** Per setting, since a policy can lock one and leave the others to the user. */
   disabled: Readonly<Record<"mode" | "prefix" | "instructions", boolean>>;
   onChange: (patch: ServerSettingsPatch) => void;
+  terminology?: VcsTerminology;
 }) {
   const gt = useGT();
   const m = useMessages();
@@ -61,9 +63,14 @@ export function BranchNamingSettings(props: {
   );
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- saves unsent branch naming drafts to server settings when the section unmounts
   useEffect(() => () => saveDrafts(), []);
+  const terminology = props.terminology ?? GIT_VCS_TERMINOLOGY;
+  const refNounTitle = terminology.refNounTitle;
   return (
     <SettingsSection
-      title={gt("Worktree branch naming")}
+      title={gt("{workspaceNounTitle} {refNoun} naming", {
+        workspaceNounTitle: terminology.workspaceNounTitle,
+        refNoun: terminology.refNoun,
+      })}
       trailing={
         props.mode === null ? (
           <Text className="text-xs text-foreground-muted">
@@ -76,7 +83,7 @@ export function BranchNamingSettings(props: {
         <SettingsChoiceRow
           key={mode}
           label={m(MODES[mode].label)}
-          description={m(MODES[mode].description)}
+          description={m(MODES[mode].description, { refNoun: terminology.refNoun })}
           selected={props.mode === mode}
           separated={index > 0}
           disabled={props.disabled.mode}
@@ -94,7 +101,7 @@ export function BranchNamingSettings(props: {
           </Text>
           <AppTextInput
             key={props.prefix}
-            accessibilityLabel={gt("Branch prefix")}
+            accessibilityLabel={gt("{refNounTitle} prefix", { refNounTitle })}
             onChangeText={(text) => edit("branchNamePrefix", text)}
             defaultValue={props.prefix ?? ""}
             placeholder={props.prefix === null ? gt("Mixed") : gt("No prefix")}
@@ -113,7 +120,7 @@ export function BranchNamingSettings(props: {
           </Text>
           <AppTextInput
             key={props.instructions}
-            accessibilityLabel={gt("Branch naming instructions")}
+            accessibilityLabel={gt("{refNounTitle} naming instructions", { refNounTitle })}
             onChangeText={(text) => edit("branchNameInstructions", text)}
             defaultValue={props.instructions ?? ""}
             placeholder={

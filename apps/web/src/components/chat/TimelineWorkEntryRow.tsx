@@ -7,6 +7,7 @@ import {
   hasQuestionAnswer,
 } from "@t3tools/client-runtime/work-log/user-input";
 import {
+  ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE,
   ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE,
   type EnvironmentId,
   ThreadId,
@@ -285,6 +286,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
   const m = useMessages();
   const { threadRef, onImageExpand, timestampFormat } = ctx;
   const { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation } = ctx;
+  const { onContinueInProjectCheckout } = ctx;
   const threadTarget = useThreadReadTarget(workEntry, ctx.activeThreadEnvironmentId);
   const createdThread =
     workEntry.projectedItem?.item.type === "thread_created"
@@ -379,6 +381,14 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             >
               <RotateCcwIcon aria-hidden />
               <T>Retry</T>
+            </Button>
+          </div>
+        ) : null}
+        {failureItem.failure.code === ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE &&
+        onContinueInProjectCheckout ? (
+          <div className="ms-7 pb-1">
+            <Button type="button" size="xs" variant="outline" onClick={onContinueInProjectCheckout}>
+              Continue in project checkout
             </Button>
           </div>
         ) : null}

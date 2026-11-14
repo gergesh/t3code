@@ -188,7 +188,17 @@ accounts for other providers are not read. Codex accounts show banked reset cred
 account and choose **Use reset** to redeem one. No hub plugin is required.
 
 This connection supplies usage information; configure
-the provider separately to send agent requests through the hub. Remove the hub from the same
+the provider separately to send agent requests through the hub.
+
+Turn on **Spend soonest reset first** for a hub to spend the account whose quota resets soonest
+before the others, so usage is not lost when it resets. T3 Code rewrites each account's priority
+after every usage check, and the hub sends new conversations only to the highest-priority account
+it can use. The next account takes over when that one runs out or cools down. The weekly window
+decides the order; a spent session window only takes the account out until it refills. This works
+with any `routing.strategy`. Turn on `routing.session-affinity` so a conversation stays on one
+account. While the option is on, T3 Code replaces any priorities set on the hub's accounts.
+Turning it off or removing the hub resets them. If T3 Code stops, the last priorities stay in
+place until it runs again. Remove the hub from the same
 settings section when you no longer need it.
 
 ## Subscription usage widget

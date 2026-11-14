@@ -1,8 +1,10 @@
 import { msg } from "gt-react";
-import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { errorI18nMessage, thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import { isClearComposerCommand, parseSideChatCommand } from "@t3tools/shared/composerTrigger";
 import { armFreshSession, disarmFreshSession, readFreshSessionArm } from "./freshSessionArms";
+import { vcsOperationErrorMessage } from "@t3tools/client-runtime/errors";
+import type { VcsTerminology } from "@t3tools/shared/vcs";
 import {
   mergeDirectPreviewAnnotation,
   resolveBackgroundDraftWorkspaceOptions,
@@ -196,6 +198,8 @@ type UsageLimitsPanel = ReturnType<typeof useUsageLimitsPanel>;
 type TimelineFollow = ReturnType<typeof useTimelineFollow>;
 
 interface ComposerSendInput {
+  readonly vcsWorkspacePreparationBlocked: boolean;
+  readonly vcsTerminology: VcsTerminology;
   readonly environmentId: EnvironmentId;
   readonly routeThreadKey: string;
   readonly currentRouteThreadKeyRef: { readonly current: string | null };
@@ -237,7 +241,7 @@ interface ComposerSendInput {
   readonly isDraftHeroState: boolean;
   readonly panelAnimationsActive: boolean;
   readonly panelAnimationDurationMs: number;
-  readonly keepFullHistory: boolean;
+  readonly compactRequested: boolean;
   /** `/clear` can arm a fresh session on this thread. */
   readonly freshSessionAvailable: boolean;
   readonly resumeCompactionTokens: number | null;
@@ -270,7 +274,7 @@ interface ComposerSendInput {
     SetStateAction<Record<string, ReadonlyArray<CodexFeedbackSubmission>>>
   >;
   readonly setThreadError: ReturnType<typeof makeThreadErrorSetter>;
-  readonly setKeepFullHistory: (threadKey: string, keep: boolean) => void;
+  readonly setCompactRequested: (threadKey: string, requested: boolean) => void;
   readonly anchorNewTurn: TimelineFollow["anchorNewTurn"];
   readonly acknowledgeActiveThreadWoke: () => void;
   /** Resolves true once the side chat started and got the message. */
@@ -335,7 +339,7 @@ export function useComposerSend(input: ComposerSendInput) {
     isDraftHeroState,
     panelAnimationsActive,
     panelAnimationDurationMs,
-    keepFullHistory,
+    compactRequested,
     freshSessionAvailable,
     resumeCompactionTokens,
     usageLimitsKey,
@@ -361,7 +365,7 @@ export function useComposerSend(input: ComposerSendInput) {
     optimisticBlobPreviews,
     setFeedbackSubmissionsByThreadKey,
     setThreadError,
-    setKeepFullHistory,
+    setCompactRequested,
     anchorNewTurn,
     acknowledgeActiveThreadWoke,
     onSideChat,
@@ -417,6 +421,7 @@ export function useComposerSend(input: ComposerSendInput) {
     },
   ) => {
     e?.preventDefault();
+    if (input.vcsWorkspacePreparationBlocked) return;
     // What the user pressed send on; uploads below can take a while, and a redirect must not
     // decline approvals for a draft that changed meanwhile.
     const promptAtSend = promptRef.current;
@@ -746,9 +751,19 @@ export function useComposerSend(input: ComposerSendInput) {
       toastManager.add(
         stackedThreadToast({
           type: "warning",
-          title: m(msg("Choose models and a base branch")),
+          title: m(
+            msg("Choose models and a base {refNoun}", {
+              refNoun: input.vcsTerminology.refNoun,
+            }),
+          ),
           description: m(
-            msg("Multiple models need a new thread in a Git project. Each gets its own worktree."),
+            msg(
+              "Multiple models need a new thread in a {systemName} project. Each gets its own {workspaceNoun}.",
+              {
+                systemName: input.vcsTerminology.systemName,
+                workspaceNoun: input.vcsTerminology.workspaceNoun,
+              },
+            ),
           ),
         }),
       );
@@ -977,7 +992,7 @@ export function useComposerSend(input: ComposerSendInput) {
       activeThreadBranch,
       isScratchProject: activeProjectIsScratch,
       resumeCompactionTokens,
-      keepFullHistory,
+      compactRequested,
       phase,
       dispatchMode,
       freshContext: freshArm !== undefined,
@@ -1186,8 +1201,8 @@ export function useComposerSend(input: ComposerSendInput) {
         .getState()
         .getComposerDraft(composerDraftTarget);
       const changedBeforeDecline = draftChangedSinceSend();
-      const pendingIdsBeforeDecline = pendingApprovalsRef.current.map(
-        (approval) => approval.requestId,
+      const pendingIdsBeforeDecline = new Set(
+        pendingApprovalsRef.current.map((approval) => approval.requestId),
       );
       const approvalResponding = approvalsToDecline.some((approval) =>
         respondingRequestIdsRef.current.includes(approval.requestId),
@@ -1242,7 +1257,7 @@ export function useComposerSend(input: ComposerSendInput) {
       // An approval that arrived during the decline would block the redirect; keep the draft so
       // the next send declines it too.
       const approvalArrived = pendingApprovalsRef.current.some(
-        (approval) => !pendingIdsBeforeDecline.includes(approval.requestId),
+        (approval) => !pendingIdsBeforeDecline.has(approval.requestId),
       );
       if (
         !declined ||
@@ -1471,11 +1486,12 @@ export function useComposerSend(input: ComposerSendInput) {
           : null;
       // Read the live session, not the render snapshot: the draft is finalized away once the
       // thread exists.
-      const checkoutPullRequestUrl = isLocalDraftThread
-        ? checkoutPullRequestUrlToLink(
-            draftId === null ? null : useComposerDraftStore.getState().getDraftSession(draftId),
-          )
-        : null;
+      const liveDraftSession =
+        isLocalDraftThread && draftId !== null
+          ? useComposerDraftStore.getState().getDraftSession(draftId)
+          : null;
+      const checkoutPullRequestUrl = checkoutPullRequestUrlToLink(liveDraftSession);
+      const draftRole = liveDraftSession?.role;
       if (backgroundThreadRef) beginBackgroundDraftSubmissionByRef(backgroundThreadRef);
       const startPromise = startThreadTurn({
         environmentId,
@@ -1499,6 +1515,7 @@ export function useComposerSend(input: ComposerSendInput) {
           dispatchMode: turnDispatchMode,
           ...(freshArm === undefined ? {} : { freshContext: true }),
           ...(bootstrap ? { bootstrap } : {}),
+          ...(draftRole === undefined ? {} : { role: draftRole }),
           createdAt: messageCreatedAt,
         },
       });
@@ -1536,7 +1553,7 @@ export function useComposerSend(input: ComposerSendInput) {
             checkoutPullRequestUrl,
           );
         }
-        setKeepFullHistory(routeThreadKey, false);
+        setCompactRequested(routeThreadKey, false);
         if (freshArm !== undefined) disarmFreshSession(routeThreadKey, freshArm);
         clearUsageLimitsFor(routeThreadKey);
         if (turnUsesAttachmentUploads) {
@@ -1654,10 +1671,12 @@ export function useComposerSend(input: ComposerSendInput) {
       }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
-        setThreadError(
-          threadIdForSend,
-          thrownErrorMessage(error, m) ?? m(msg("Failed to send message.")),
-        );
+        // Marked errors resolve in the active language; the rest prefer the unsupported-VCS reason.
+        const sendErrorMessage =
+          errorI18nMessage(error) === undefined
+            ? vcsOperationErrorMessage(error, m(msg("Failed to send message.")))
+            : (thrownErrorMessage(error, m) ?? m(msg("Failed to send message.")));
+        setThreadError(threadIdForSend, sendErrorMessage);
         if (
           draftId &&
           (backgroundDraftOpened || currentRouteThreadKeyRef.current !== routeThreadKey)
@@ -1669,7 +1688,7 @@ export function useComposerSend(input: ComposerSendInput) {
                 submissionIntent === "background"
                   ? m(msg("Background task failed"))
                   : m(msg("Could not start thread")),
-              description: thrownErrorMessage(error, m) ?? m(msg("Failed to send message.")),
+              description: sendErrorMessage,
               actionProps: {
                 children: m(msg("Open draft")),
                 onClick: () => {

@@ -252,7 +252,7 @@ export const layer: Layer.Layer<
 
     // A failed probe is an operational error, not proof that the workspace has no repository.
     const probeRepository = (scope: OrchestrationV2CheckpointScope) =>
-      checkpointStore.isGitRepository(scope.cwd).pipe(
+      checkpointStore.supportsCheckpoints(scope.cwd).pipe(
         Effect.map((isRepository) =>
           isRepository ? ("repository" as const) : ("missing" as const),
         ),
@@ -268,7 +268,7 @@ export const layer: Layer.Layer<
       withWorkspaceLock(
         input.scope.cwd,
         Effect.gen(function* () {
-          if (!(yield* checkpointStore.isGitRepository(input.scope.cwd))) {
+          if (!(yield* checkpointStore.supportsCheckpoints(input.scope.cwd))) {
             return;
           }
 

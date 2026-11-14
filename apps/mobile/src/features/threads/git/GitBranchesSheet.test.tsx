@@ -8,18 +8,44 @@ type InputProps = {
   onChangeText: (value: string) => void;
 };
 type ActionProps = { label: string; disabled: boolean; onPress: () => void };
+type VcsState = { kind: "git" | "jj"; unsupportedReason?: string };
+type BranchState = {
+  name: string;
+  current: boolean;
+  isDefault: boolean;
+  worktreePath: string | null;
+};
 const state = vi.hoisted(() => ({
   refName: null as string | null,
   branch: null as string | null,
+  vcs: null as VcsState | null,
+  branches: [] as BranchState[],
+  title: null as string | null,
+  checkout: null as ActionProps | null,
   inputs: new Map<string, InputProps>(),
   actions: new Map<string, ActionProps>(),
   worktrees: [] as Array<{ baseBranch: string; newBranch: string }>,
+  mutations: 0,
+  navigations: 0,
 }));
 
-vi.mock("@react-navigation/native", () => ({ useNavigation: () => ({ goBack() {} }) }));
-vi.mock("../../../components/ui/SheetHeader", () => ({ SheetHeader: () => null }));
+vi.mock("@react-navigation/native", () => ({
+  useNavigation: () => ({ goBack: () => state.navigations++ }),
+}));
+vi.mock("../../../components/ui/AppText", () => ({ AppText: () => null }));
+vi.mock("../../../components/ui/SheetHeader", () => ({
+  SheetHeader: (props: { title: string }) => {
+    state.title = props.title;
+    return null;
+  },
+}));
 vi.mock("../../../components/ui/FitSheet", () => ({
-  FitSheet: ({ children }: { children: ReactNode }) => children,
+  FitSheet: ({ header, children }: { header: ReactNode; children: ReactNode }) => (
+    <>
+      {header}
+      {children}
+    </>
+  ),
 }));
 vi.mock("../../../native/StackHeader", () => ({ NativeStackScreenOptions: () => null }));
 vi.mock("../../../components/ui/FormSection", () => ({
@@ -29,11 +55,21 @@ vi.mock("../../../components/ui/FormSection", () => ({
     return null;
   },
 }));
-vi.mock("../../../components/ui/ListSection", () => ({ ListSection: () => null }));
-vi.mock("../../../components/ui/ListChoiceRow", () => ({ ListChoiceRow: () => null }));
+vi.mock("../../../components/ui/ListSection", () => ({
+  ListSection: ({ children }: { children: ReactNode }) => children,
+}));
+vi.mock("../../../components/ui/ListChoiceRow", () => ({
+  ListChoiceRow: (props: ActionProps) => {
+    state.checkout = props;
+    return null;
+  },
+}));
 vi.mock("../../../state/query", () => ({
   useEnvironmentQuery: () => ({
-    data: state.refName === null ? undefined : { refName: state.refName },
+    data:
+      state.refName === null && state.vcs === null
+        ? undefined
+        : { refName: state.refName, vcs: state.vcs },
   }),
 }));
 vi.mock("../../../state/use-thread-selection", () => ({
@@ -48,22 +84,37 @@ vi.mock("../../../state/use-selected-thread-worktree", () => ({
   }),
 }));
 vi.mock("../../../state/use-selected-thread-git-state", () => ({
-  useSelectedThreadGitState: () => ({
-    selectedThreadBranches: [],
-    selectedThreadBranchesLoading: false,
-    gitOperationLabel: null,
+  useSelectedThreadGitState: () => ({ gitOperationLabel: null }),
+}));
+vi.mock("../../../state/queries", () => ({
+  useDebouncedValue: <A,>(value: A) => value,
+  usePaginatedBranches: () => ({
+    data: null,
+    refs: state.branches,
+    error: null,
+    isPending: false,
+    isFetchingNextPage: false,
+    loadNext: () => {},
   }),
 }));
 vi.mock("../../../state/use-selected-thread-git-actions", () => ({
   useSelectedThreadGitActions: () => ({
     canChangeThreadBranch: true,
+    onCreateSelectedThreadBranch: async () => {
+      state.mutations++;
+      return null;
+    },
     onCreateSelectedThreadWorktree: async (input: { baseBranch: string; newBranch: string }) => {
       state.worktrees.push(input);
       return null;
     },
+    onCheckoutSelectedThreadBranch: async () => {
+      state.mutations++;
+      return null;
+    },
   }),
 }));
-vi.mock("../../../state/vcs", () => ({ vcsEnvironment: { branch: () => null } }));
+vi.mock("../../../state/vcs", () => ({ vcsEnvironment: { status: () => null } }));
 vi.mock("./gitSheetComponents", () => ({
   SheetActionButton: (props: ActionProps) => {
     state.actions.set(props.label, props);
@@ -73,13 +124,25 @@ vi.mock("./gitSheetComponents", () => ({
 
 import { GitBranchesSheet } from "./GitBranchesSheet";
 
-function setup(branch: string | null = null) {
+function setup(
+  options: {
+    readonly branch?: string | null;
+    readonly vcs?: VcsState | null;
+    readonly branches?: BranchState[];
+  } = {},
+) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   state.refName = null;
-  state.branch = branch;
+  state.branch = options.branch ?? null;
+  state.vcs = options.vcs ?? null;
+  state.branches = options.branches ?? [];
+  state.title = null;
+  state.checkout = null;
   state.inputs.clear();
   state.actions.clear();
   state.worktrees = [];
+  state.mutations = 0;
+  state.navigations = 0;
   const root = createRoot(document.createElement("div"));
   const render = () =>
     act(() => {
@@ -107,7 +170,7 @@ function setup(branch: string | null = null) {
 it.each([null, "stale-branch"])(
   "uses the loaded checkout branch when thread metadata is %s",
   (branch) => {
-    using screen = setup(branch);
+    using screen = setup({ branch });
     screen.edit("Worktree branch name", "feature/new-worktree");
     state.refName = "release/stable";
     screen.render();
@@ -130,4 +193,33 @@ it.each(["custom-base", ""])("preserves an edited base %j when status arrives", 
   expect(state.worktrees).toEqual(
     base === "" ? [] : [{ baseBranch: base, newBranch: "feature/new-worktree" }],
   );
+});
+
+it("disables and refuses unsupported repository actions without navigation", async () => {
+  using screen = setup({
+    vcs: { kind: "jj", unsupportedReason: "Install Jujutsu" },
+    branches: [{ name: "main", current: false, isDefault: true, worktreePath: null }],
+  });
+  screen.edit("New bookmark name", "feature/bookmark");
+  screen.edit("Workspace base bookmark", "main");
+  screen.edit("Workspace bookmark name", "feature/workspace");
+  for (const action of [
+    state.actions.get("Create & switch")!,
+    state.actions.get("Create workspace")!,
+    state.checkout!,
+  ]) {
+    expect(action.disabled).toBe(true);
+    await act(async () => action.onPress());
+  }
+  expect(state.mutations).toBe(0);
+  expect(state.worktrees).toEqual([]);
+  expect(state.navigations).toBe(0);
+});
+
+it.each([
+  ["git", "Branches & worktrees"],
+  ["jj", "Bookmarks & workspaces"],
+] as const)("titles the %s sheet in its own terms", (kind, title) => {
+  using _screen = setup({ vcs: { kind } });
+  expect(state.title).toBe(title);
 });

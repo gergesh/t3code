@@ -6,6 +6,11 @@ import {
   getGitActionDisabledReason,
   requiresDefaultBranchConfirmation,
 } from "@t3tools/client-runtime/state/vcs";
+import {
+  resolveVcsTerminology,
+  resolveVcsUnsupportedReason,
+  supportsVcsActions,
+} from "@t3tools/shared/vcs";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { changeRequestTermKind } from "../../../lib/changeRequestTerm";
@@ -42,6 +47,7 @@ import {
   useLinkedPullRequestLines,
 } from "../LinkedPullRequestList";
 import { useLinkedPullRequestActions } from "../useLinkedPullRequestActions";
+import { VcsFallbackNotice } from "../VcsFallbackNotice";
 
 type GitOverviewSheetProps = StaticScreenProps<{
   readonly environmentId: string;
@@ -100,9 +106,12 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
       : null,
   );
 
+  const vcsTerminology = resolveVcsTerminology(gitStatus.data);
+  const vcsActionsSupported = supportsVcsActions(gitStatus.data);
+  const vcsUnsupportedReason = resolveVcsUnsupportedReason(gitStatus.data);
   const currentBranchLabel =
-    gitStatus.data?.refName ?? selectedThread?.branch ?? gt("Detached HEAD");
-  const currentStatusSummary = statusSummary(gitStatus.data, m);
+    gitStatus.data?.refName ?? selectedThread?.branch ?? vcsTerminology.noRefLabel;
+  const currentStatusSummary = statusSummary(gitStatus.data, m, vcsTerminology);
   const currentWorktreePath = selectedThreadWorktreePath;
   const gitOperationLabel = gitState.gitOperationLabel;
   const busy = gitOperationLabel !== null;
@@ -115,10 +124,14 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const sheetMenuItems = menuItems.map((item) => ({
     item: {
       ...item,
-      disabled: item.disabled || (!canWriteSourceControl && item.kind !== "open_pr"),
+      disabled:
+        !vcsActionsSupported ||
+        item.disabled ||
+        (!canWriteSourceControl && item.kind !== "open_pr"),
     },
     disabledReason:
-      !canWriteSourceControl && item.kind !== "open_pr"
+      vcsUnsupportedReason ??
+      (!canWriteSourceControl && item.kind !== "open_pr"
         ? gt("This connection cannot change source control.")
         : getGitActionDisabledReason(
             {
@@ -128,7 +141,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
               hasOriginRemote: hasPrimaryRemote,
             },
             m,
-          ),
+          )),
   }));
 
   const term = changeRequestTermKind(
@@ -136,6 +149,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   );
 
   const openExistingPr = async () => {
+    if (!vcsActionsSupported) return;
     const prUrl = gitStatus.data?.pr?.state === "open" ? gitStatus.data.pr.url : null;
     if (!prUrl) {
       Dialog.alert(
@@ -143,8 +157,8 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
           term,
         }),
         gt(
-          "{term, select, mr {This branch does not have an open merge request.} cr {This branch does not have an open change request.} other {This branch does not have an open pull request.}}",
-          { term },
+          "{term, select, mr {This {refNoun} does not have an open merge request.} cr {This {refNoun} does not have an open change request.} other {This {refNoun} does not have an open pull request.}}",
+          { term, refNoun: vcsTerminology.refNoun },
         ),
       );
       return;
@@ -164,7 +178,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   };
 
   const runActionWithPrompt = async (input: GitActionRequestInput) => {
-    if (!canWriteSourceControl) return;
+    if (!vcsActionsSupported || !canWriteSourceControl) return;
     const confirmableAction =
       input.action === "push" ||
       input.action === "create_pr" ||
@@ -200,7 +214,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   };
 
   const onPressMenuItem = async (item: (typeof menuItems)[number]) => {
-    if (item.disabled) return;
+    if (!vcsActionsSupported || item.disabled) return;
     if (item.kind === "open_pr") {
       await openExistingPr();
       return;
@@ -280,6 +294,19 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         <RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} />
       }
     >
+      {gitStatus.data?.vcs?.kind === "git" && selectedThreadProject?.workspaceRoot ? (
+        <VcsFallbackNotice
+          environmentId={environmentId}
+          repository={selectedThreadProject.workspaceRoot}
+          notice={gitStatus.data.vcs.notice}
+          reason={vcsUnsupportedReason}
+        />
+      ) : null}
+      {vcsUnsupportedReason ? (
+        <Text accessibilityRole="alert" className="text-warning-foreground">
+          {vcsUnsupportedReason}
+        </Text>
+      ) : null}
       <ListSection>
         {sheetMenuItems.map(({ item, disabledReason }) => (
           <ListRow
@@ -303,16 +330,26 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
                   )
                 : gt("This connection cannot change source control.")
             }
-            disabled={!canWriteSourceControl || busy || !isRepo}
-            onPress={() => void gitActions.onPullSelectedThreadBranch()}
+            disabled={!vcsActionsSupported || !canWriteSourceControl || busy || !isRepo}
+            onPress={() => {
+              if (!vcsActionsSupported) return;
+              void gitActions.onPullSelectedThreadBranch();
+            }}
           />
         ) : null}
         <ListRow
           icon="text.bubble"
           label={gt("Review changes")}
-          description={gt("Inspect changes, uncommitted edits, and turn diffs")}
-          disabled={busy || !isRepo}
+          description={
+            vcsTerminology.preserveReviewSectionTitles
+              ? gt("Inspect {workspaceNoun} changes and turn diffs", {
+                  workspaceNoun: vcsTerminology.workspaceNoun,
+                })
+              : gt("Inspect changes, uncommitted edits, and turn diffs")
+          }
+          disabled={!vcsActionsSupported || busy || !isRepo}
           onPress={() => {
+            if (!vcsActionsSupported) return;
             const params = { environmentId, threadId };
             if (presentation === "sheet") {
               navigation.dispatch(StackActions.replace("ThreadReview", params));
@@ -325,21 +362,31 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         />
         <ListRow
           icon="point.topleft.down.curvedto.point.bottomright.up"
-          label={gt("Branches & worktrees")}
+          label={gt("{refNounPluralTitle} & {workspaceNounPlural}", {
+            refNounPluralTitle: vcsTerminology.refNounPluralTitle,
+            workspaceNounPlural: vcsTerminology.workspaceNounPlural,
+          })}
           description={
             canChangeThreadBranch
-              ? gt("Switch branch, create branch, or move to a worktree")
-              : gt("View branches and worktrees")
+              ? gt("Switch {refNoun}, create {refNoun}, or move to a {workspaceNoun}", {
+                  refNoun: vcsTerminology.refNoun,
+                  workspaceNoun: vcsTerminology.workspaceNoun,
+                })
+              : gt("View {refNounPlural} and {workspaceNounPlural}", {
+                  refNounPlural: vcsTerminology.refNounPlural,
+                  workspaceNounPlural: vcsTerminology.workspaceNounPlural,
+                })
           }
-          disabled={busy || !isRepo}
-          onPress={() =>
+          disabled={!vcsActionsSupported || busy || !isRepo}
+          onPress={() => {
+            if (!vcsActionsSupported) return;
             presentRoute(() =>
               navigation.navigate("GitBranches", {
                 environmentId: String(environmentId),
                 threadId: String(threadId),
               }),
-            )
-          }
+            );
+          }}
         />
         {linkedPrActions.canLink ? (
           <ListRow
@@ -356,12 +403,13 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
                 term: changeRequestTermKind(linkedPrActions.terminology),
               },
             )}
+            disabled={!vcsActionsSupported}
             onPress={linkedPrActions.promptLink}
           />
         ) : null}
       </ListSection>
 
-      {linkedPrLines.length > 0 ? (
+      {vcsActionsSupported && linkedPrLines.length > 0 ? (
         <ListSection title={gt("Linked {terms}", { terms: linkedPrActions.terminology.plural })}>
           {linkedPrLines.map((line, index) => (
             <LinkedPullRequestRow
@@ -377,7 +425,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
       ) : null}
 
       {currentWorktreePath ? (
-        <ListSection title={gt("Worktree")}>
+        <ListSection title={vcsTerminology.workspaceNounTitle}>
           <Text selectable textRole="footnote" className="p-4 text-foreground-muted">
             {currentWorktreePath}
           </Text>

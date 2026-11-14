@@ -20,6 +20,8 @@ export interface McpCredentialRequest {
   readonly browserToolsAvailable?: boolean;
   readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
   readonly subagent?: boolean;
+  /** The thread role's `tools`: the T3 Code tools this session sees, by name or `prefix*`. */
+  readonly roleTools?: ReadonlyArray<string>;
 }
 
 export interface McpIssuedCredential {
@@ -133,6 +135,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           providerSessionId,
           providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
           subagent: request.subagent === true,
+          ...(request.roleTools === undefined ? {} : { roleTools: request.roleTools }),
         },
         client: undefined,
         capabilities: new Set<McpInvocationContext.McpCapability>([

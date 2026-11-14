@@ -17,9 +17,11 @@ import {
   ProjectId,
   OrchestratorMcpClientRequestId,
   OrchestratorMcpEnvironmentTarget,
+  OrchestratorMcpTaskRole,
   OrchestratorMcpFailure,
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
+  ThreadTag,
 } from "@t3tools/contracts";
 import * as FileSystem from "effect/FileSystem";
 import * as DocumentText from "../../../provider/DocumentText.ts";
@@ -31,12 +33,15 @@ import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
+import * as AgentRoles from "../../../project/AgentRoles.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
+import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
+import * as VcsDriverRegistry from "../../../vcs/VcsDriverRegistry.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const shared = {
@@ -144,6 +149,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     modelSelection: Schema.optional(ModelSelection),
     runtimeMode: Schema.optional(RuntimeMode),
     interactionMode: Schema.optional(ProviderInteractionMode),
+    role: Schema.optional(OrchestratorMcpTaskRole),
     workspaceStrategy: Schema.optional(
       OrchestrationV2ThreadLaunchWorkspaceStrategy.annotate({
         description:
@@ -156,6 +162,11 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
       }),
     ),
     attachments: Schema.optional(Schema.Array(McpAttachmentInput).check(Schema.isMaxLength(8))),
+    tags: Schema.optional(
+      Schema.Array(ThreadTag)
+        .check(Schema.isMaxLength(8))
+        .annotate({ description: "Only tags the user asks for." }),
+    ),
     clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
     /** Set by a linked environment launching its agent's delegated task here; ignored otherwise. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
@@ -172,11 +183,15 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     ...shared.dependencies,
     ThreadLaunchService.ThreadLaunchService,
     ManagedProjectFolders.ManagedProjectFolders,
+    GitWorkflowService.GitWorkflowService,
+    // Launch defaults read the Git checkout directly.
     GitVcsDriver.GitVcsDriver,
+    VcsDriverRegistry.VcsDriverRegistry,
     FileSystem.FileSystem,
     ServerConfig.ServerConfig,
     ServerSettings.ServerSettingsService,
     ProviderRegistry.ProviderRegistry,
+    AgentRoles.AgentRoles,
     DocumentText.DocumentText,
     Digest.Digest,
   ],

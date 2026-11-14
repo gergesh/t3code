@@ -3,11 +3,12 @@ import {
   type EnvironmentId,
   type ThreadId,
 } from "@t3tools/contracts";
+import { vcsOperationErrorMessage } from "@t3tools/client-runtime/errors";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { errorI18nMessage, thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "../i18n/messages";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useRef, useState } from "react";
@@ -24,6 +25,11 @@ import { parsePullRequestReference } from "@t3tools/client-runtime/pull-request-
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
 import { useEnvironmentQuery } from "~/state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
+import {
+  resolveVcsTerminology,
+  resolveVcsUnsupportedReason,
+  supportsVcsActions,
+} from "@t3tools/shared/vcs";
 import { vcsEnvironment } from "~/state/vcs";
 import { offHeadPullRequestCheckoutToast } from "./pullRequest/pullRequestCheckoutToast";
 import { Button } from "./ui/button";
@@ -99,6 +105,12 @@ export function PullRequestThreadDialog({
   const sourceControlPresentation = getSourceControlPresentation(gitStatus?.sourceControlProvider);
   const terminology = sourceControlPresentation.terminology;
   const term = changeRequestTermKind(terminology);
+  const prepareFailedMessage = gt(
+    "Failed to prepare {term, select, mr {merge request} cr {change request} other {pull request}} thread.",
+    { term },
+  );
+  const vcsTerminology = resolveVcsTerminology(gitStatus);
+  const vcsActionsSupported = supportsVcsActions(gitStatus);
   const SourceControlIcon = sourceControlPresentation.Icon;
 
   const parsedReference = parsePullRequestReference(reference);
@@ -133,7 +145,7 @@ export function PullRequestThreadDialog({
   const statusTone = pullRequestStatusTone(resolvedPullRequest?.state);
 
   const handleConfirm = async (mode: "local" | "worktree") => {
-    if (!preparePullRequestThreadAction.isAllowed) return;
+    if (!vcsActionsSupported || !preparePullRequestThreadAction.isAllowed) return;
     if (
       mode === "worktree" &&
       !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)
@@ -161,11 +173,9 @@ export function PullRequestThreadDialog({
       } else {
         const error = squashAtomCommandFailure(result);
         setPrepareErrorMessage(
-          thrownErrorMessage(error, m) ??
-            gt(
-              "Failed to prepare {term, select, mr {merge request} cr {change request} other {pull request}} thread.",
-              { term },
-            ),
+          errorI18nMessage(error) === undefined
+            ? vcsOperationErrorMessage(error, prepareFailedMessage)
+            : (thrownErrorMessage(error, m) ?? prepareFailedMessage),
         );
       }
       return;
@@ -195,16 +205,16 @@ export function PullRequestThreadDialog({
           )
         : null;
   const errorMessage =
+    resolveVcsUnsupportedReason(gitStatus) ??
     validationMessage ??
     prepareErrorMessage ??
     (resolvedPullRequest === null && pullRequestResolution.error
       ? pullRequestResolution.error
       : preparePullRequestThreadAction.error
-        ? (thrownErrorMessage(preparePullRequestThreadAction.error, messages) ??
-          gt(
-            "Failed to prepare {term, select, mr {merge request} cr {change request} other {pull request}} thread.",
-            { term },
-          ))
+        ? errorI18nMessage(preparePullRequestThreadAction.error) === undefined
+          ? vcsOperationErrorMessage(preparePullRequestThreadAction.error, prepareFailedMessage)
+          : (thrownErrorMessage(preparePullRequestThreadAction.error, messages) ??
+            prepareFailedMessage)
         : null);
 
   return (
@@ -329,6 +339,7 @@ export function PullRequestThreadDialog({
             variant="outline"
             onClick={() => handleConfirm("local")}
             disabled={
+              !vcsActionsSupported ||
               !preparePullRequestThreadAction.isAllowed ||
               !cwd ||
               !resolvedPullRequest ||
@@ -345,6 +356,7 @@ export function PullRequestThreadDialog({
             size="sm"
             onClick={() => handleConfirm("worktree")}
             disabled={
+              !vcsActionsSupported ||
               !preparePullRequestThreadAction.isAllowed ||
               !canOperateThread ||
               !cwd ||
@@ -354,8 +366,10 @@ export function PullRequestThreadDialog({
             }
           >
             {preparingMode === "worktree"
-              ? gt("Preparing worktree...")
-              : gt("Worktree", { $context: "checkout in a new git worktree" })}
+              ? gt("Preparing {workspaceNoun}...", {
+                  workspaceNoun: vcsTerminology.workspaceNoun,
+                })
+              : vcsTerminology.workspaceNounTitle}
           </Button>
         </DialogFooter>
       </DialogPopup>

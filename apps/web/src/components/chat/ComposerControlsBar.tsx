@@ -12,6 +12,7 @@ import {
   type RuntimeModeOption,
 } from "./ComposerFooterControls";
 import {
+  type AgentRole,
   type EnvironmentId,
   type ModelSelection,
   type ProviderDriverKind,
@@ -31,6 +32,12 @@ import {
 } from "./ComposerModelEffort";
 import type { useComposerProviderModel } from "./useComposerProviderModel";
 import { resolveComposerControlsOwnership } from "./composerControlsOwnership";
+import { ComposerRoleControl } from "./ComposerRoleControl";
+import { resolveAgentRoleModelSelection } from "./ComposerRoleControl.logic";
+import { useAgentRoles } from "../../state/agentRoles";
+import { useComposerDraftStore } from "../../composerDraftStore";
+import { threadEnvironment } from "../../state/threads";
+import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 
 /**
  * The composer footer controls: the model picker (which also holds effort, speed and
@@ -87,6 +94,9 @@ export function ComposerControlsBar(props: {
   onModelPickerOpenChange: (open: boolean) => void;
   modelPickerIconClassName: string | undefined;
   getModelDisabledReason: ChatComposerProps["getModelDisabledReason"];
+  /** The started thread's role; a draft keeps its own. */
+  serverThreadRole: string | null;
+  canChangeRole: boolean;
 }) {
   const {
     environmentId,
@@ -165,7 +175,50 @@ export function ComposerControlsBar(props: {
     onPromptEdit,
   });
   const effort = describeComposerEffort(traitsInput, props.effortDisplay, controlSize, m);
-  const restingBlockDefs = showModeBlock
+  const roles = useAgentRoles(environmentId, props.workspaceCwd);
+  const draftRole = useComposerDraftStore((store) =>
+    routeKind === "draft" && draftId ? (store.getDraftSession(draftId)?.role ?? null) : null,
+  );
+  const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
+  const updateThreadMetadata = useOrchestrationCommand(
+    threadEnvironment.updateMetadata,
+    "change thread role",
+  );
+  const currentRole = routeKind === "draft" ? draftRole : props.serverThreadRole;
+  const changeRole = useStableCallback((role: AgentRole | null) => {
+    if (routeKind === "server") {
+      void updateThreadMetadata({
+        environmentId: routeThreadRef.environmentId,
+        input: { threadId: routeThreadRef.threadId, role: role?.name ?? null },
+      });
+      return;
+    }
+    if (!draftId) return;
+    setDraftThreadContext(draftId, { role: role?.name ?? null });
+    const pick = role ? resolveAgentRoleModelSelection(role, providerInstanceEntries) : null;
+    if (pick && getModelDisabledReason(pick.instanceId, pick.model) === null) {
+      onProviderModelSelect(pick.instanceId, pick.model, { focusComposer: false });
+    }
+  });
+  // Leading, so it only loses its label: the overflow menu has no home for it.
+  const roleBlockDefs =
+    roles.length > 0 || currentRole !== null
+      ? [
+          {
+            id: "role",
+            content: (
+              <ComposerRoleControl
+                roles={roles}
+                role={currentRole}
+                size={controlSize}
+                hidden={composerControlsHidden}
+                onRoleChange={props.canChangeRole ? changeRole : undefined}
+              />
+            ),
+          },
+        ]
+      : [];
+  const modeBlockDefs = showModeBlock
     ? [
         {
           id: "mode",
@@ -183,6 +236,7 @@ export function ComposerControlsBar(props: {
         },
       ]
     : [];
+  const restingBlockDefs = [...roleBlockDefs, ...modeBlockDefs];
   // Its own element, so typing (which rebuilds the controls around it) leaves it cached.
   const composerModelPicker = (
     <ComposerModelPicker

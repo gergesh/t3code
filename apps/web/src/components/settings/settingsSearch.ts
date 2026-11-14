@@ -862,7 +862,32 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: msg("Start from remote"),
     to: "/settings/worktrees",
     scope: "project-defaults",
-    searchTerms: [msg("new worktrees start remote origin latest fetched branch local")],
+    searchTerms: [
+      msg(
+        "new worktrees workspaces start remote origin latest fetched matching branch bookmark local",
+      ),
+    ],
+  },
+  {
+    id: "worktree-create-command",
+    title: msg("Worktree create command"),
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: ["custom script workspace provider git worktree add jj clone t3.json"],
+  },
+  {
+    id: "worktree-remove-command",
+    title: msg("Worktree remove command"),
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: ["custom script workspace provider delete cleanup teardown t3.json"],
+  },
+  {
+    id: "worktree-merge-command",
+    title: msg("Worktree merge command"),
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["custom script workspace land integrate default branch main jw t3.json"],
   },
   {
     id: "add-project-starts-in",
@@ -1221,7 +1246,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/source-control",
     scope: "environment-defaults",
     searchTerms: [
-      `version control git ${SOURCE_CONTROL_HOST_TERMS} hosting integrations credentials scan server environment`,
+      `version control git jujutsu jj bookmark workspace change ${SOURCE_CONTROL_HOST_TERMS} hosting integrations credentials scan server environment`,
     ],
   },
   {
@@ -1230,7 +1255,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/maintenance",
     targetId: "background-activity",
     searchTerms: [
-      msg("automatic remote branch refresh background credentials security keys seconds off"),
+      msg(
+        "automatic background remote ref branch bookmark refresh git jujutsu jj credentials security keys seconds off",
+      ),
     ],
     environmentOnly: true,
     scope: "environment-defaults",
@@ -1239,7 +1266,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "worktree-branch-naming",
     title: msg("Worktree branch naming"),
     to: "/settings/worktrees",
-    searchTerms: [msg("static semantic prefix custom prompt instructions feat fix refactor chore")],
+    searchTerms: [
+      msg(
+        "static semantic prefix custom prompt instructions feat fix refactor chore bookmark workspace jujutsu jj",
+      ),
+    ],
     environmentOnly: true,
     scope: "project-defaults",
   },
@@ -1304,7 +1335,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "project-actions",
     title: msg("Actions"),
     to: "/settings/projects",
-    searchTerms: [msg("commands scripts setup run dev server checkout worktree t3.json import")],
+    searchTerms: [
+      msg(
+        "commands scripts setup run dev server checkout worktree jujutsu jj bookmark workspace change t3.json import",
+      ),
+    ],
   },
   {
     id: "environment-icon",

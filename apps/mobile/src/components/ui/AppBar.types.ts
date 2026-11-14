@@ -45,6 +45,8 @@ export interface AppBarMenu {
   readonly icon: AppSymbolName;
   readonly status?: string;
   readonly separateBackground?: boolean;
+  /** Android: tints the button, such as for an applied filter. */
+  readonly selected?: boolean;
   readonly items: ReadonlyArray<AppBarMenuItem>;
 }
 

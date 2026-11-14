@@ -6,6 +6,8 @@ const CLI_RUNTIME_EXTERNAL_PREFIXES = [
   // Playwright reads package.json and browsers.json beside its runtime modules.
   "playwright-core",
   "node-pty",
+  // OpenTUI loads its platform renderer library from the package directory.
+  "@opentui/",
   "ffi-rs",
   "@yuuang/",
   "@ff-labs/",
@@ -34,16 +36,42 @@ const CURSOR_RUNTIME_DEPENDENCIES = [
   "@fastify/busboy",
 ] as const;
 
+// OpenTUI's runtime dependencies, which it imports from beside its own files.
+const OPENTUI_RUNTIME_DEPENDENCIES = [
+  "bun-ffi-structs",
+  "diff",
+  "marked",
+  "string-width",
+  "strip-ansi",
+  "ansi-regex",
+  "emoji-regex",
+  "get-east-asian-width",
+  "web-tree-sitter",
+  // A peer bun-ffi-structs declares but never imports; it is not staged.
+  "typescript",
+] as const;
+
 export function isRuntimeExternalCliDependency(id: string): boolean {
   return (
     CLI_RUNTIME_EXTERNAL_PREFIXES.some((prefix) => id.startsWith(prefix)) ||
-    CURSOR_RUNTIME_DEPENDENCIES.some((name) => id === name || id.startsWith(`${name}/`))
+    [...CURSOR_RUNTIME_DEPENDENCIES, ...OPENTUI_RUNTIME_DEPENDENCIES].some(
+      (name) => id === name || id.startsWith(`${name}/`),
+    )
   );
 }
 
 /** Use neverBundle: false from alwaysBundle means no opinion and leaves transitive packages bundled. */
 export function isExternalCliDependency(id: string): boolean {
   return isRuntimeExternalCliDependency(id);
+}
+
+// The standalone executable leaves `t3 tui` out, so OpenTUI's own dependencies bundle there.
+export function isExternalCliExecutableDependency(id: string): boolean {
+  return (
+    isRuntimeExternalCliDependency(id) &&
+    !id.startsWith("@opentui/") &&
+    !OPENTUI_RUNTIME_DEPENDENCIES.some((name) => id === name || id.startsWith(`${name}/`))
+  );
 }
 
 export function shouldBundleCliDependency(id: string): boolean {

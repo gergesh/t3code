@@ -72,8 +72,10 @@
         "@effect/platform-node-shared",
         "@t3tools/web",
         "@napi-rs/keyring",
+        "@opentui/core",
         "ffi-rs",
         "transcribe-cpp",
+        "web-tree-sitter",
       ],
     },
     "apps/desktop": {

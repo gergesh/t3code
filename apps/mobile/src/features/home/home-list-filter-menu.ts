@@ -4,7 +4,7 @@ import * as Order from "effect/Order";
 
 import { msg } from "gt-react-native";
 
-import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
+import type { AppBarMenu } from "../../components/ui/AppBar.types";
 import { m, type MessageResolver } from "../../i18n/messages";
 import type { WorkspaceEnvironment } from "../../state/workspaceModel";
 
@@ -31,7 +31,8 @@ export interface HomeListFilterMenuProject {
   readonly label: string;
 }
 
-export function buildHomeListFilterMenuItems(
+/** One bar button per filter, each opening its own picker; "All …" clears it. */
+export function buildHomeListFilterMenus(
   props: {
     readonly environments: ReadonlyArray<HomeListFilterMenuEnvironment>;
     readonly projects: ReadonlyArray<HomeListFilterMenuProject>;
@@ -41,11 +42,24 @@ export function buildHomeListFilterMenuItems(
     readonly onProjectChange: (projectKey: string | null) => void;
   },
   resolve: MessageResolver = m,
-): AppBarMenuItem[] {
-  const items: AppBarMenuItem[] = [
+): AppBarMenu[] {
+  const selectedEnvironment = props.environments.find(
+    (environment) => environment.environmentId === props.selectedEnvironmentId,
+  );
+  const selectedProject = props.projects.find(
+    (project) => project.key === props.selectedProjectKey,
+  );
+  return [
     {
-      id: "environment",
-      title: resolve(msg("Environment", { $context: "filter menu heading" })),
+      title: selectedEnvironment
+        ? resolve(
+            msg("Filter threads by environment: {environment}", {
+              environment: selectedEnvironment.label,
+            }),
+          )
+        : resolve(msg("Filter threads by environment")),
+      icon: "server.rack",
+      selected: selectedEnvironment !== undefined,
       items: [
         {
           id: "environment:all",
@@ -62,12 +76,12 @@ export function buildHomeListFilterMenuItems(
         })),
       ],
     },
-  ];
-
-  if (props.projects.length > 0) {
-    items.push({
-      id: "project",
-      title: resolve(msg("Project", { $context: "filter menu heading" })),
+    {
+      title: selectedProject
+        ? resolve(msg("Filter threads by project: {project}", { project: selectedProject.label }))
+        : resolve(msg("Filter threads by project")),
+      icon: selectedProject ? "folder.fill" : "folder",
+      selected: selectedProject !== undefined,
       items: [
         {
           id: "project:all",
@@ -83,8 +97,6 @@ export function buildHomeListFilterMenuItems(
           onPress: () => props.onProjectChange(project.key),
         })),
       ],
-    });
-  }
-
-  return items;
+    },
+  ];
 }

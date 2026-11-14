@@ -137,7 +137,7 @@ const LIST_REFS_REFRESH_COALESCE_TTL = Duration.seconds(5);
 const LIST_REFS_REFRESH_FAILURE_COOLDOWN = Duration.seconds(30);
 const STATUS_DEFAULT_BRANCH_CACHE_TTL = Duration.minutes(5);
 const STATUS_ORIGIN_EXISTS_CACHE_TTL = Duration.minutes(5);
-const STATUS_UPSTREAM_REFRESH_ENV = Object.freeze({
+export const STATUS_UPSTREAM_REFRESH_ENV = Object.freeze({
   GCM_INTERACTIVE: "never",
   GIT_ASKPASS: "",
   GIT_TERMINAL_PROMPT: "0",
@@ -248,7 +248,7 @@ function rawChangeType(status: string): ReviewDiffChangeType {
 }
 
 // Parses `--numstat -z`, optionally preceded by `--raw` records that carry each file's change type.
-function parseReviewNumstat(stdout: string): ReviewDiffFileStat[] {
+export function parseReviewNumstat(stdout: string): ReviewDiffFileStat[] {
   const fields = stdout.split("\0");
   const changeTypes = new Map<string, ReviewDiffChangeType>();
   const files: ReviewDiffFileStat[] = [];
@@ -293,7 +293,7 @@ function parsePorcelainPath(record: string): string | null {
   return filePath.length > 0 ? filePath : null;
 }
 
-function filterBranchesForListQuery(
+export function filterBranchesForListQuery(
   refs: ReadonlyArray<VcsRef>,
   query?: string,
 ): ReadonlyArray<VcsRef> {
@@ -305,7 +305,7 @@ function filterBranchesForListQuery(
   return refs.filter((refName) => refName.name.toLowerCase().includes(normalizedQuery));
 }
 
-function paginateBranches(input: {
+export function paginateBranches(input: {
   refs: ReadonlyArray<VcsRef>;
   cursor?: number | undefined;
   limit?: number | undefined;
@@ -563,13 +563,13 @@ const GIT_DIAGNOSTIC_LINE_PATTERN = /^(?:fatal|error):|^!\s|^\s+!\s/;
 const SSH_TRANSPORT_REFUSAL_PATTERN =
   /Permission denied \((?:publickey|password|keyboard-interactive)|Permission denied, please try again|Host key verification failed/i;
 
-function classifyGitFailure(stderr: string): GitCommandFailureReason | null {
+export function classifyGitFailure(stderr: string): GitCommandFailureReason | null {
   const diagnostics = stderr
     .split(/\r?\n/)
     .filter(
       (line) =>
         GIT_DIAGNOSTIC_LINE_PATTERN.test(line) ||
-        (!/^remote:/.test(line) && SSH_TRANSPORT_REFUSAL_PATTERN.test(line)),
+        (!line.startsWith("remote:") && SSH_TRANSPORT_REFUSAL_PATTERN.test(line)),
     )
     .join("\n");
   if (diagnostics.length === 0) return null;
@@ -5261,180 +5261,228 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     worktreePath = path.resolve(input.cwd, worktreePath);
     // Read before the branch exists, so a missing pattern file leaves nothing behind.
     const sparsePatterns = yield* readWorktreeSparsePatterns(input.cwd, input.refName);
+    const requestedPath = worktreePath;
     const newRefName = input.newRefName;
-    // Older Git still creates worktrees normally, but cannot prove ownership for cancellation.
-    const addHelp = newRefName
-      ? yield* executeGit(
-          "GitVcsDriver.createWorktree.capabilities",
-          input.cwd,
-          ["worktree", "add", "-h"],
-          { allowNonZeroExit: true },
-        )
-      : null;
-    const lockReason =
-      addHelp && `${addHelp.stdout}\n${addHelp.stderr}`.includes("--reason")
-        ? `t3-create-${yield* random.uuidV4()}`
-        : undefined;
-
-    if (newRefName) {
-      // Kept apart from the checkout so the shared-config lock only covers the tracking write.
-      yield* createBranchAt(
-        "GitVcsDriver.createWorktree.createBranch",
-        { cwd: input.cwd, branch: newRefName, startPoint: input.refName },
-        "git branch failed",
-      );
-    }
-    const checkoutRef = newRefName ?? input.refName;
     const progress = options?.progress;
     const onCheckoutProgress = progress?.onCheckoutProgress;
-    const checkoutProgressOptions: ExecuteGitOptions = onCheckoutProgress
-      ? {
-          // Git only prints checkout progress when stderr is a tty or the
-          // delay elapsed. GIT_PROGRESS_DELAY=0 forces it through the pipe.
-          env: { GIT_PROGRESS_DELAY: "0" },
-          progress: {
-            onStderrLine: (line) => {
-              const parsed = parseGitCheckoutProgressLine(line);
-              return parsed ? onCheckoutProgress(parsed) : Effect.void;
-            },
-          },
-        }
-      : {};
+    const readBranchBase =
+      newRefName && input.baseRefName
+        ? resolveBranchBase(input.cwd, input.baseRefName)
+        : Effect.succeed(null);
 
-    // Both reads leave the repository alone, so they share one round trip before the checkout.
-    const [configuredCheckoutWorkers, base] = yield* Effect.all(
-      [
-        readConfigValue(input.cwd, "checkout.workers"),
-        input.newRefName && input.baseRefName
-          ? resolveBranchBase(input.cwd, input.baseRefName)
-          : Effect.succeed(null),
-      ],
-      { concurrency: "unbounded" },
-    );
-    const checkoutWorkers = configuredCheckoutWorkers ?? "0";
-    // The cache clones a full checkout, so a sparse worktree uses Git's own checkout.
-    const fastCheckout =
-      checkoutCache !== undefined && options?.fastCheckout === true && sparsePatterns === null;
-    const cacheGeneration = fastCheckout ? yield* checkoutCache.currentGeneration : 0;
-    const stockCheckout = executeGitWithStableDiagnostics(
-      "GitVcsDriver.createWorktree",
-      input.cwd,
-      [
-        "-c",
-        `checkout.workers=${checkoutWorkers}`,
-        "worktree",
-        "add",
-        ...(sparsePatterns === null ? [] : ["--no-checkout"]),
-        ...(lockReason ? ["--lock", "--reason", lockReason] : []),
-        "--",
+    let base: Effect.Success<typeof readBranchBase>;
+    if (options?.customCheckout) {
+      base = yield* readBranchBase;
+      // `git worktree add` creates missing parents; a custom command may not.
+      yield* fileSystem
+        .makeDirectory(path.dirname(requestedPath), { recursive: true })
+        .pipe(Effect.ignore);
+      const reportedPath = yield* options.customCheckout({
+        worktreePath: requestedPath,
+        branch: targetBranch,
+        startRef: input.refName,
+        createBranch: newRefName !== undefined,
+      });
+      worktreePath = reportedPath ?? requestedPath;
+      // T3 records the branch on the thread, so a command that checked out
+      // something else would leave every later git action lying.
+      const [topLevel = "", checkedOut = null] = yield* runGitStdout(
+        "GitVcsDriver.createWorktree.verifyCustomCheckout",
         worktreePath,
-        checkoutRef,
-      ],
-      {
-        fallbackErrorDetail: "git worktree add failed",
-        // Large checkouts and post-checkout hooks can legitimately run for many
-        // minutes; a fixed deadline kills them and leaves an orphaned worktree.
-        timeoutMs: null,
-        // Hooks and filter drivers may print without bound; only progress lines are read.
-        appendTruncationMarker: true,
-        keepLineCallbacksAfterTruncation: true,
-        ...(sparsePatterns === null ? checkoutProgressOptions : {}),
-      },
-    );
-    const sparseCheckout =
-      sparsePatterns === null
-        ? Effect.void
-        : Effect.gen(function* () {
-            // The first sparse-checkout in a repository enables extensions.worktreeConfig.
-            yield* runGit(
-              "GitVcsDriver.createWorktree.sparseCheckout",
-              worktreePath,
-              ["sparse-checkout", "set", "--no-cone", "--stdin"],
-              { stdin: sparsePatterns, writesSharedConfig: true },
-            );
-            yield* executeGitWithStableDiagnostics(
-              "GitVcsDriver.createWorktree.checkout",
-              worktreePath,
-              ["-c", `checkout.workers=${checkoutWorkers}`, "checkout"],
-              {
-                fallbackErrorDetail: "git checkout failed",
-                timeoutMs: null,
-                appendTruncationMarker: true,
-                keepLineCallbacksAfterTruncation: true,
-                ...checkoutProgressOptions,
+        ["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"],
+      ).pipe(
+        Effect.map((stdout) => stdout.trim().split("\n")),
+        Effect.orElseSucceed(() => []),
+      );
+      const realPath = (value: string) =>
+        fileSystem.realPath(value).pipe(Effect.orElseSucceed(() => value));
+      const isWorktreeRoot =
+        topLevel !== "" && (yield* realPath(topLevel)) === (yield* realPath(worktreePath));
+      if (!isWorktreeRoot || checkedOut !== targetBranch) {
+        return yield* new GitCommandError({
+          operation: "GitVcsDriver.createWorktree",
+          command: "custom worktree create command",
+          cwd: input.cwd,
+          detail:
+            !isWorktreeRoot || checkedOut === null
+              ? `The custom worktree create command did not create a git worktree at ${worktreePath}.`
+              : `The custom worktree create command checked out ${checkedOut} at ${worktreePath}, expected ${targetBranch}.`,
+        });
+      }
+      if (progress?.onWorktreeClaimed) {
+        yield* progress.onWorktreeClaimed(worktreePath);
+      }
+    } else {
+      // Older Git still creates worktrees normally, but cannot prove ownership for cancellation.
+      const addHelp = newRefName
+        ? yield* executeGit(
+            "GitVcsDriver.createWorktree.capabilities",
+            input.cwd,
+            ["worktree", "add", "-h"],
+            { allowNonZeroExit: true },
+          )
+        : null;
+      const lockReason =
+        addHelp && `${addHelp.stdout}\n${addHelp.stderr}`.includes("--reason")
+          ? `t3-create-${yield* random.uuidV4()}`
+          : undefined;
+
+      if (newRefName) {
+        // Kept apart from the checkout so the shared-config lock only covers the tracking write.
+        yield* createBranchAt(
+          "GitVcsDriver.createWorktree.createBranch",
+          { cwd: input.cwd, branch: newRefName, startPoint: input.refName },
+          "git branch failed",
+        );
+      }
+      const checkoutRef = newRefName ?? input.refName;
+      const checkoutProgressOptions: ExecuteGitOptions = onCheckoutProgress
+        ? {
+            // Git only prints checkout progress when stderr is a tty or the
+            // delay elapsed. GIT_PROGRESS_DELAY=0 forces it through the pipe.
+            env: { GIT_PROGRESS_DELAY: "0" },
+            progress: {
+              onStderrLine: (line) => {
+                const parsed = parseGitCheckoutProgressLine(line);
+                return parsed ? onCheckoutProgress(parsed) : Effect.void;
               },
+            },
+          }
+        : {};
+
+      // Both reads leave the repository alone, so they share one round trip before the checkout.
+      const [configuredCheckoutWorkers, resolvedBase] = yield* Effect.all(
+        [readConfigValue(input.cwd, "checkout.workers"), readBranchBase],
+        { concurrency: "unbounded" },
+      );
+      base = resolvedBase;
+      const checkoutWorkers = configuredCheckoutWorkers ?? "0";
+      // The cache clones a full checkout, so a sparse worktree uses Git's own checkout.
+      const fastCheckout =
+        checkoutCache !== undefined && options?.fastCheckout === true && sparsePatterns === null;
+      const cacheGeneration = fastCheckout ? yield* checkoutCache.currentGeneration : 0;
+      const stockCheckout = executeGitWithStableDiagnostics(
+        "GitVcsDriver.createWorktree",
+        input.cwd,
+        [
+          "-c",
+          `checkout.workers=${checkoutWorkers}`,
+          "worktree",
+          "add",
+          ...(sparsePatterns === null ? [] : ["--no-checkout"]),
+          ...(lockReason ? ["--lock", "--reason", lockReason] : []),
+          "--",
+          requestedPath,
+          checkoutRef,
+        ],
+        {
+          fallbackErrorDetail: "git worktree add failed",
+          // Large checkouts and post-checkout hooks can legitimately run for many
+          // minutes; a fixed deadline kills them and leaves an orphaned worktree.
+          timeoutMs: null,
+          // Hooks and filter drivers may print without bound; only progress lines are read.
+          appendTruncationMarker: true,
+          keepLineCallbacksAfterTruncation: true,
+          ...(sparsePatterns === null ? checkoutProgressOptions : {}),
+        },
+      );
+      const sparseCheckout =
+        sparsePatterns === null
+          ? Effect.void
+          : Effect.gen(function* () {
+              // The first sparse-checkout in a repository enables extensions.worktreeConfig.
+              yield* runGit(
+                "GitVcsDriver.createWorktree.sparseCheckout",
+                requestedPath,
+                ["sparse-checkout", "set", "--no-cone", "--stdin"],
+                { stdin: sparsePatterns, writesSharedConfig: true },
+              );
+              yield* executeGitWithStableDiagnostics(
+                "GitVcsDriver.createWorktree.checkout",
+                requestedPath,
+                ["-c", `checkout.workers=${checkoutWorkers}`, "checkout"],
+                {
+                  fallbackErrorDetail: "git checkout failed",
+                  timeoutMs: null,
+                  appendTruncationMarker: true,
+                  keepLineCallbacksAfterTruncation: true,
+                  ...checkoutProgressOptions,
+                },
+              );
+            }).pipe(
+              // A worktree without its files is no use. removeWorktree refuses a locked worktree,
+              // so one that carries the lock reason is unlocked first.
+              Effect.onError(() =>
+                (lockReason
+                  ? releaseWorktreeRegistration(input.cwd, lockReason, true)
+                  : removeWorktree({ cwd: input.cwd, path: requestedPath, force: true })
+                ).pipe(Effect.ignore),
+              ),
             );
-          }).pipe(
-            // A worktree without its files is no use. removeWorktree refuses a locked worktree,
-            // so one that carries the lock reason is unlocked first.
-            Effect.onError(() =>
-              (lockReason
-                ? releaseWorktreeRegistration(input.cwd, lockReason, true)
-                : removeWorktree({ cwd: input.cwd, path: worktreePath, force: true })
-              ).pipe(Effect.ignore),
-            ),
-          );
-    // Set inside the claim's uninterruptible region: a pending cancel still surfaces as it ends.
-    let claimed = false;
-    const onWorktreeClaimed = progress?.onWorktreeClaimed;
-    yield* (
-      fastCheckout
-        ? checkoutCache
-            .create({
-              cwd: input.cwd,
-              worktreePath,
-              refName: checkoutRef,
-              checkoutWorkers,
-              lockReason,
-            })
-            .pipe(Effect.flatMap((cloned) => (cloned ? Effect.void : stockCheckout)))
-        : stockCheckout
-    ).pipe(
-      Effect.andThen(sparseCheckout),
-      Effect.andThen(
-        fastCheckout ? checkoutCache.schedule(worktreePath, cacheGeneration) : Effect.void,
-      ),
-      Effect.andThen(
-        onWorktreeClaimed
-          ? Effect.uninterruptible(
-              onWorktreeClaimed(worktreePath).pipe(
+      // Set inside the claim's uninterruptible region: a pending cancel still surfaces as it ends.
+      let claimed = false;
+      const onWorktreeClaimed = progress?.onWorktreeClaimed;
+      yield* (
+        fastCheckout
+          ? checkoutCache
+              .create({
+                cwd: input.cwd,
+                worktreePath: requestedPath,
+                refName: checkoutRef,
+                checkoutWorkers,
+                lockReason,
+              })
+              .pipe(Effect.flatMap((cloned) => (cloned ? Effect.void : stockCheckout)))
+          : stockCheckout
+      ).pipe(
+        Effect.andThen(sparseCheckout),
+        Effect.andThen(
+          fastCheckout ? checkoutCache.schedule(requestedPath, cacheGeneration) : Effect.void,
+        ),
+        Effect.andThen(
+          onWorktreeClaimed
+            ? Effect.uninterruptible(
+                onWorktreeClaimed(requestedPath).pipe(
+                  Effect.andThen(
+                    Effect.sync(() => {
+                      claimed = true;
+                    }),
+                  ),
+                ),
+              )
+            : Effect.void,
+        ),
+        Effect.onError((cause) =>
+          newRefName && !claimed
+            ? // A failed hook keeps its worktree, as Git does; only a cancel abandons it.
+              (Cause.hasInterrupts(cause)
+                ? lockReason
+                  ? releaseWorktreeRegistration(input.cwd, lockReason, true)
+                  : Effect.void
+                : Effect.void
+              ).pipe(
                 Effect.andThen(
-                  Effect.sync(() => {
-                    claimed = true;
+                  deleteLocalBranch({ cwd: input.cwd, refName: newRefName, force: true }),
+                ),
+                Effect.catch((cause) =>
+                  Effect.logWarning("could not clean up a failed worktree or its branch", {
+                    cause,
                   }),
                 ),
-              ),
-            )
-          : Effect.void,
-      ),
-      Effect.onError((cause) =>
-        newRefName && !claimed
-          ? // A failed hook keeps its worktree, as Git does; only a cancel abandons it.
-            (Cause.hasInterrupts(cause)
-              ? lockReason
-                ? releaseWorktreeRegistration(input.cwd, lockReason, true)
-                : Effect.void
-              : Effect.void
-            ).pipe(
-              Effect.andThen(
-                deleteLocalBranch({ cwd: input.cwd, refName: newRefName, force: true }),
-              ),
-              Effect.catch((cause) =>
-                Effect.logWarning("could not clean up a failed worktree or its branch", { cause }),
-              ),
-            )
-          : Effect.void,
-      ),
-      Effect.onExit(() =>
-        lockReason
-          ? releaseWorktreeRegistration(input.cwd, lockReason, false).pipe(
-              Effect.catch((cause) =>
-                Effect.logWarning("could not unlock a created worktree", { cause }),
-              ),
-            )
-          : Effect.void,
-      ),
-    );
+              )
+            : Effect.void,
+        ),
+        Effect.onExit(() =>
+          lockReason
+            ? releaseWorktreeRegistration(input.cwd, lockReason, false).pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("could not unlock a created worktree", { cause }),
+                ),
+              )
+            : Effect.void,
+        ),
+      );
+    }
 
     // worktree add leaves submodules empty, potentially omitting project skills, tools or source.
     // Ask HEAD, because sparse patterns can leave .gitmodules out of the working tree.

@@ -6,7 +6,9 @@ import {
   type ProjectScript,
   type ProjectScriptIcon,
   type ResolvedKeybindingsConfig,
+  type T3ProjectFileScript,
 } from "@t3tools/contracts";
+import { GIT_VCS_TERMINOLOGY } from "@t3tools/shared/vcs";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -109,6 +111,36 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
   autoOpenPreview: false,
 };
 
+/** A `t3.json` script as an action to add, without a shortcut. */
+export function newScriptInputFromT3File(fileScript: T3ProjectFileScript): NewProjectScriptInput {
+  return {
+    name: fileScript.name,
+    command: fileScript.command,
+    icon: fileScript.icon ?? "play",
+    runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
+    waitForSetup: fileScript.runOnWorktreeCreate === true && fileScript.async === false,
+    runOnSettle: fileScript.runOnSettle ?? false,
+    keybinding: null,
+    previewUrl: fileScript.previewUrl ?? null,
+    autoOpenPreview: fileScript.previewUrl ? (fileScript.autoOpenPreview ?? false) : false,
+  };
+}
+
+/** Scripts from `t3.json` that the action list does not already have, by name or command. */
+export function importableT3FileScripts(
+  scripts: readonly ProjectScript[],
+  fileScripts: readonly T3ProjectFileScript[],
+): T3ProjectFileScript[] {
+  return fileScripts.filter(
+    (fileScript) =>
+      !scripts.some(
+        (script) =>
+          script.command === fileScript.command ||
+          script.name.toLowerCase() === fileScript.name.toLowerCase(),
+      ),
+  );
+}
+
 export interface ProjectScriptEditorRequest {
   scriptId: string | null;
   initial: NewProjectScriptInput;
@@ -139,6 +171,7 @@ export function editorRequestForScript(
 export function ProjectScriptEditorDialog({
   environmentId,
   editScope = AuthOrchestrationOperateScope,
+  workspaceNoun = GIT_VCS_TERMINOLOGY.workspaceNoun,
   request,
   scripts,
   onSubmit,
@@ -147,6 +180,7 @@ export function ProjectScriptEditorDialog({
 }: {
   environmentId: EnvironmentId;
   editScope?: typeof AuthOrchestrationOperateScope | typeof AuthSettingsWriteScope;
+  workspaceNoun?: string;
   request: ProjectScriptEditorRequest | null;
   scripts: ReadonlyArray<ProjectScript>;
   onSubmit: (
@@ -199,6 +233,7 @@ export function ProjectScriptEditorDialog({
               key={shown.key}
               environmentId={environmentId}
               editScope={editScope}
+              workspaceNoun={workspaceNoun}
               request={shown.request}
               scripts={scripts}
               validationError={validationError}
@@ -256,6 +291,7 @@ export function ProjectScriptEditorDialog({
 function ProjectScriptEditorForm({
   environmentId,
   editScope,
+  workspaceNoun,
   request,
   scripts,
   validationError,
@@ -266,6 +302,7 @@ function ProjectScriptEditorForm({
 }: {
   environmentId: EnvironmentId;
   editScope: typeof AuthOrchestrationOperateScope | typeof AuthSettingsWriteScope;
+  workspaceNoun: string;
   request: ProjectScriptEditorRequest;
   scripts: ReadonlyArray<ProjectScript>;
   validationError: string | null;
@@ -526,7 +563,9 @@ function ProjectScriptEditorForm({
             </div>
             <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
               <span>
-                <T>Run automatically on worktree creation</T>
+                <T>
+                  Run automatically on <Var>{workspaceNoun}</Var> creation
+                </T>
               </span>
               <Switch
                 checked={runOnWorktreeCreate}
@@ -549,7 +588,9 @@ function ProjectScriptEditorForm({
             </label>
             <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
               <span>
-                <T>Run in the thread's worktree when the thread settles</T>
+                <T>
+                  Run in the thread's <Var>{workspaceNoun}</Var> when the thread settles
+                </T>
               </span>
               <Switch
                 checked={runOnSettle}

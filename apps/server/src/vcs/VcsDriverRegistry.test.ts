@@ -8,9 +8,11 @@ import * as Path from "effect/Path";
 import { ChildProcessSpawner } from "effect/process";
 import { VcsProcessExitError } from "@t3tools/contracts";
 
+import * as JjVcsDriver from "./JjVcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
-import * as VcsProjectConfig from "./VcsProjectConfig.ts";
 import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
+import * as VcsProjectConfig from "./VcsProjectConfig.ts";
+import { describeJj, seedJjRepo } from "./testing/JjTestSupport.ts";
 
 const processOutput = (stdout: string): VcsProcess.VcsProcessOutput => ({
   exitCode: ChildProcessSpawner.ExitCode(0),
@@ -28,12 +30,14 @@ const DETECT_COMMAND = "rev-parse --is-inside-work-tree --show-toplevel --git-co
 describe("VcsDriverRegistry", () => {
   const makeDiskBackedLayer = (rootDir: string, calls: string[]) =>
     Layer.effect(VcsDriverRegistry.VcsDriverRegistry, VcsDriverRegistry.make).pipe(
+      Layer.provide(JjVcsDriver.layer),
       Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Layer.provide(
         Layer.mock(VcsProjectConfig.VcsProjectConfig)({
           resolveKind: (input) => Effect.succeed(input.requestedKind ?? "auto"),
         }),
       ),
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Layer.provide(
         Layer.mock(VcsProcess.VcsProcess)({
           run: (input) =>
@@ -66,6 +70,33 @@ describe("VcsDriverRegistry", () => {
         }),
       ),
     );
+
+  it.effect("skips plain Git facade detection without spawning processes", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-vcs-facade-" });
+      yield* fs.makeDirectory(path.join(root, ".git"));
+      const calls: string[] = [];
+      yield* Effect.gen(function* () {
+        const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+        assert.isNull(yield* registry.detect({ cwd: root, jjOnly: true }));
+        assert.isEmpty(calls);
+      }).pipe(Effect.provide(makeDiskBackedLayer(root, calls)));
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  describeJj("facade jj detection", () => {
+    it.effect("selects a real jj repository", () =>
+      Effect.gen(function* () {
+        const { root } = yield* seedJjRepo({ prefix: "t3-vcs-facade-jj-" });
+        yield* Effect.gen(function* () {
+          const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+          assert.equal((yield* registry.detect({ cwd: root, jjOnly: true }))?.kind, "jj");
+        }).pipe(Effect.provide(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))));
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    );
+  });
 
   it.effect("detects again when a cached repository is removed from disk", () =>
     Effect.gen(function* () {
@@ -132,6 +163,11 @@ describe("VcsDriverRegistry", () => {
   const makeFailingLayer = (detectOutput: VcsProcess.VcsProcessOutput) =>
     Layer.effect(VcsDriverRegistry.VcsDriverRegistry, VcsDriverRegistry.make).pipe(
       Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      Layer.provide(
+        Layer.succeed(JjVcsDriver.JjVcsDriver, {
+          detectRepository: () => Effect.succeed(null),
+        } as unknown as JjVcsDriver.JjVcsDriver["Service"]),
+      ),
       Layer.provide(
         Layer.mock(VcsProjectConfig.VcsProjectConfig)({
           resolveKind: (input) => Effect.succeed(input.requestedKind ?? "auto"),

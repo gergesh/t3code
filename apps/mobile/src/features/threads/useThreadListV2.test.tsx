@@ -49,7 +49,6 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
     settlementEnvironmentIds: environmentIds,
     snoozeEnvironmentIds: environmentIds,
     pinReorderEnvironmentIds: environmentIds,
-    activeReorderEnvironmentIds: environmentIds,
     queuedThreadKeys: new Set(),
     settledLimit: 10,
     now: "2026-01-02T00:00:00.000Z",

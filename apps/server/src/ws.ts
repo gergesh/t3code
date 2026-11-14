@@ -124,6 +124,7 @@ import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManag
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
+import { jjUnsupportedDetail } from "./jj/JjFailure.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
@@ -194,6 +195,7 @@ import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import { makePrepareTerminalLaunch } from "./workspace/restoreMissingWorktree.ts";
+import { makeThreadProjectCheckout } from "./workspace/threadProjectCheckout.ts";
 import { terminalOutputStream, withOutputWindow } from "./terminal/OutputProtocol.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
 import * as DeviceService from "./device/DeviceService.ts";
@@ -208,9 +210,11 @@ import {
 import { parseBase64DataUrl } from "./imageMime.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
+import * as FrecentDirectories from "./workspace/FrecentDirectories.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
+import * as AgentRoles from "./project/AgentRoles.ts";
 import { readWorkflowScript } from "./orchestration-v2/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
@@ -809,6 +813,14 @@ function shouldUseBoundedThreadSnapshot(input: {
 }): boolean {
   return input.acceptBoundedSnapshot === true;
 }
+
+export const threadLaunchErrorForWire = (cause: ThreadLaunchService.ThreadLaunchError) =>
+  new OrchestrationV2ThreadLaunchError({
+    commandId: cause.commandId,
+    projectId: cause.projectId,
+    message: jjUnsupportedDetail(cause) ?? "Failed to launch thread",
+    cause,
+  });
 
 // Keep telemetry per socket; several client types can connect simultaneously.
 function readClientAnalyticsProps(request: HttpServerRequest.HttpServerRequest) {
@@ -1536,6 +1548,7 @@ export const layerWsRpc = (
       const prepareTerminalLaunch = yield* makePrepareTerminalLaunch(
         threadManagement.getThreadShell,
       );
+      const threadProjectCheckout = yield* makeThreadProjectCheckout;
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
@@ -1559,7 +1572,9 @@ export const layerWsRpc = (
       const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+      const frecentDirectories = yield* FrecentDirectories.FrecentDirectories;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+      const agentRoles = yield* AgentRoles.AgentRoles;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
       const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
@@ -2205,6 +2220,7 @@ export const layerWsRpc = (
                           modelSelection: input.modelSelection,
                           runtimeMode: input.runtimeMode,
                           interactionMode: input.interactionMode,
+                          ...(input.role === undefined ? {} : { role: input.role }),
                           workspaceStrategy: input.workspaceStrategy,
                           ...(input.initialMessage === undefined
                             ? {}
@@ -2258,13 +2274,7 @@ export const layerWsRpc = (
                         message: cause.message,
                         cause,
                       }),
-                    ThreadLaunchError: (cause) =>
-                      new OrchestrationV2ThreadLaunchError({
-                        commandId: input.commandId,
-                        projectId: input.projectId,
-                        message: "Failed to launch thread",
-                        cause,
-                      }),
+                    ThreadLaunchError: threadLaunchErrorForWire,
                     ServerRuntimeStartupError: (cause) =>
                       new OrchestrationV2ThreadLaunchError({
                         commandId: input.commandId,
@@ -3003,6 +3013,7 @@ export const layerWsRpc = (
                 }),
             ),
           ),
+        [WS_METHODS.projectsListAgentRoles]: (input) => agentRoles.list(input.cwd),
         [WS_METHODS.projectsReadFile]: (input) =>
           workspaceFileSystem.readFile(input).pipe(
             Effect.mapError(
@@ -3042,6 +3053,7 @@ export const layerWsRpc = (
           ),
         [WS_METHODS.shellOpenInEditor]: (input) => externalLauncher.launchEditor(input),
         [WS_METHODS.filesystemGetMetadata]: (input) => workspaceFileSystem.getMetadata(input),
+        [WS_METHODS.filesystemListFrecentDirectories]: () => frecentDirectories.list(),
         [WS_METHODS.filesystemBrowse]: (input) =>
           workspaceEntries.browse(input).pipe(
             Effect.mapError(
@@ -3221,6 +3233,17 @@ export const layerWsRpc = (
                 .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid),
             ),
           ),
+        [WS_METHODS.vcsMergeWorktree]: (input) =>
+          threadProjectCheckout.mergeWorktree(input).pipe(
+            Effect.tap(() => refreshGitStatus(input.cwd)),
+            Effect.tap(() =>
+              vcsStatusBroadcaster
+                .refreshLocalStatus(input.path)
+                .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid),
+            ),
+          ),
+        [WS_METHODS.vcsContinueInProjectCheckout]: (input) =>
+          threadProjectCheckout.continueInProjectCheckout(input),
         [WS_METHODS.vcsCreateRef]: (input) =>
           gitWorkflow
             .createRef(input)
@@ -3715,7 +3738,7 @@ export const layer = Layer.unwrap(
                     SourceControlProviderRegistry.layer.pipe(
                       Layer.provide(SourceControlBuiltInDrivers.layer),
                       Layer.provideMerge(GitVcsDriver.layer),
-                      Layer.provide(
+                      Layer.provideMerge(
                         VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer)),
                       ),
                     ),

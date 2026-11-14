@@ -1,4 +1,5 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
+import { GIT_VCS_TERMINOLOGY, type VcsTerminology } from "@t3tools/shared/vcs";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 import { msg } from "gt-react";
 
@@ -6,6 +7,7 @@ import { m, type MessageResolver } from "../i18n/messages";
 
 export type ThreadActionMenuId =
   | "find"
+  | "media-links"
   | "new-thread-on-branch"
   | "filter-by-project"
   | "turn-into-project"
@@ -14,6 +16,7 @@ export type ThreadActionMenuId =
   | "unpin"
   | "settle"
   | "unsettle"
+  | "merge-worktree"
   | "auto-settle"
   | "auto-settle:enabled"
   | "auto-settle:disabled"
@@ -44,6 +47,7 @@ export function buildDraftActionMenuItems(
     readonly hasPath: boolean;
     readonly hasBranch: boolean;
     readonly hasProject: boolean;
+    readonly terminology?: VcsTerminology;
   },
   resolve: MessageResolver = m,
 ): ReadonlyArray<ContextMenuItem<DraftActionMenuId>> {
@@ -67,7 +71,7 @@ export function buildDraftActionMenuItems(
           ? [
               {
                 id: "copy-branch" as const,
-                label: resolve(msg("Branch", { $context: "copy the git branch name" })),
+                label: (options.terminology ?? GIT_VCS_TERMINOLOGY).refNounTitle,
                 icon: "git-branch",
               },
             ]
@@ -96,13 +100,17 @@ export function buildDraftActionMenuItems(
 export interface ThreadActionMenuState {
   readonly canOperate: boolean;
   readonly canFind?: boolean;
+  readonly canShowMediaLinks?: boolean;
   readonly branch: string | null;
   readonly projectFilter: {
     readonly label: string;
     readonly isActive: boolean;
   } | null;
+  readonly terminology?: VcsTerminology;
   readonly isPinned: boolean;
   readonly isSettled: boolean;
+  /** The thread has a worktree and its project a worktree merge command. */
+  readonly canMergeWorktree: boolean;
   readonly autoSettleEnabled: boolean;
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
@@ -127,6 +135,7 @@ export interface ThreadActionMenuState {
 export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
   return ![
     "find",
+    "media-links",
     "new-thread-on-branch",
     "project-settings",
     "mark-unread",
@@ -146,6 +155,9 @@ export function buildThreadActionMenuItems(
   const items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [
     ...(state.canFind
       ? [{ id: "find" as const, label: resolve(msg("Find in thread")), icon: "text-search" }]
+      : []),
+    ...(state.canShowMediaLinks
+      ? [{ id: "media-links" as const, label: "Media & links", icon: "images" }]
       : []),
     ...(state.branch
       ? [
@@ -173,6 +185,9 @@ export function buildThreadActionMenuItems(
               }
             : { id: "settle" as const, label: resolve(msg("Settle thread")), icon: "circle-check" },
         ]
+      : []),
+    ...(state.canMergeWorktree
+      ? [{ id: "merge-worktree" as const, label: "Merge into default branch", icon: "git-merge" }]
       : []),
     ...(state.supports.snooze
       ? [
@@ -272,7 +287,7 @@ export function buildThreadActionMenuItems(
           ? [
               {
                 id: "copy-branch" as const,
-                label: resolve(msg("Branch", { $context: "copy the git branch name" })),
+                label: (state.terminology ?? GIT_VCS_TERMINOLOGY).refNounTitle,
                 icon: "git-branch",
               },
             ]

@@ -91,6 +91,7 @@ import {
   FilesystemBrowseInput,
   FilesystemBrowseResult,
   FilesystemBrowseError,
+  FilesystemListFrecentDirectoriesResult,
 } from "./filesystem.ts";
 import {
   AgentSessionImportInput,
@@ -143,6 +144,9 @@ import {
   VcsPullInput,
   GitPullRequestRefInput,
   VcsPullResult,
+  VcsMergeWorktreeInput,
+  VcsContinueInProjectCheckoutInput,
+  VcsContinueInProjectCheckoutError,
   VcsRemoveWorktreeInput,
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
@@ -439,11 +443,13 @@ import {
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
+import { ProjectsListAgentRolesInput, ProjectsListAgentRolesResult } from "./agentRoles.ts";
 
 export const WS_METHODS = {
   projectsListEntries: "projects.listEntries",
   projectsListIgnoredFiles: "projects.listIgnoredFiles",
   projectsReadFile: "projects.readFile",
+  projectsListAgentRoles: "projects.listAgentRoles",
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
@@ -456,6 +462,7 @@ export const WS_METHODS = {
 
   filesystemBrowse: "filesystem.browse",
   filesystemGetMetadata: "filesystem.getMetadata",
+  filesystemListFrecentDirectories: "filesystem.listFrecentDirectories",
   agentSessionsScan: "agentSessions.scan",
   agentSessionsImport: "agentSessions.import",
   assetsCreateUrl: "assets.createUrl",
@@ -490,6 +497,8 @@ export const WS_METHODS = {
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
   vcsRemoveWorktree: "vcs.removeWorktree",
+  vcsMergeWorktree: "vcs.mergeWorktree",
+  vcsContinueInProjectCheckout: "vcs.continueInProjectCheckout",
   vcsCreateRef: "vcs.createRef",
   vcsSwitchRef: "vcs.switchRef",
   vcsInit: "vcs.init",
@@ -1546,6 +1555,12 @@ const WsProjectsReadFileRpc = Rpc.make(WS_METHODS.projectsReadFile, {
   error: Schema.Union([ProjectReadFileError, EnvironmentAuthorizationError]),
 });
 
+const WsProjectsListAgentRolesRpc = Rpc.make(WS_METHODS.projectsListAgentRoles, {
+  payload: ProjectsListAgentRolesInput,
+  success: ProjectsListAgentRolesResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   payload: ProjectWriteFileInput,
   success: ProjectWriteFileResult,
@@ -1592,6 +1607,15 @@ const WsFilesystemBrowseRpc = Rpc.make(WS_METHODS.filesystemBrowse, {
   success: FilesystemBrowseResult,
   error: Schema.Union([FilesystemBrowseError, EnvironmentAuthorizationError]),
 });
+
+const WsFilesystemListFrecentDirectoriesRpc = Rpc.make(
+  WS_METHODS.filesystemListFrecentDirectories,
+  {
+    payload: Schema.Struct({}),
+    success: FilesystemListFrecentDirectoriesResult,
+    error: EnvironmentAuthorizationError,
+  },
+);
 
 const WsAgentSessionsScanRpc = Rpc.make(WS_METHODS.agentSessionsScan, {
   payload: AgentSessionScanInput,
@@ -1745,6 +1769,16 @@ const WsVcsCreateWorktreeRpc = Rpc.make(WS_METHODS.vcsCreateWorktree, {
 const WsVcsRemoveWorktreeRpc = Rpc.make(WS_METHODS.vcsRemoveWorktree, {
   payload: VcsRemoveWorktreeInput,
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsMergeWorktreeRpc = Rpc.make(WS_METHODS.vcsMergeWorktree, {
+  payload: VcsMergeWorktreeInput,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsContinueInProjectCheckoutRpc = Rpc.make(WS_METHODS.vcsContinueInProjectCheckout, {
+  payload: VcsContinueInProjectCheckoutInput,
+  error: Schema.Union([VcsContinueInProjectCheckoutError, EnvironmentAuthorizationError]),
 });
 
 const WsVcsCreateRefRpc = Rpc.make(WS_METHODS.vcsCreateRef, {
@@ -2393,6 +2427,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsListEntriesRpc,
   WsProjectsListIgnoredFilesRpc,
   WsProjectsReadFileRpc,
+  WsProjectsListAgentRolesRpc,
   WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsEnsureScratchRpc,
@@ -2403,6 +2438,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsFilesystemGetMetadataRpc,
+  WsFilesystemListFrecentDirectoriesRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
   WsAssetsCreateUrlRpc,
@@ -2427,6 +2463,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsListRefsRpc,
   WsVcsCreateWorktreeRpc,
   WsVcsRemoveWorktreeRpc,
+  WsVcsMergeWorktreeRpc,
+  WsVcsContinueInProjectCheckoutRpc,
   WsVcsCreateRefRpc,
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,

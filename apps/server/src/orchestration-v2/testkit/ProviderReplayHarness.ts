@@ -27,6 +27,7 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import * as McpSessionRegistryTestkit from "../../mcp/McpSessionRegistry.testkit.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
+import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
 import * as CheckpointCaptureService from "../CheckpointCaptureService.ts";
 import * as CheckpointService from "../CheckpointService.ts";
@@ -55,6 +56,7 @@ import * as CommandOutputRecorder from "./CommandOutputRecorder.ts";
 import * as ProviderSwitchService from "../ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "../ProviderTurnControlService.ts";
 import * as ProviderTurnStartService from "../ProviderTurnStartService.ts";
+import * as AgentRoles from "../../project/AgentRoles.ts";
 import * as ProviderTurnStartServiceTestkit from "../ProviderTurnStartService.testkit.ts";
 import * as McpAppModelContext from "../../mcpApps/McpAppModelContext.ts";
 import * as PreviewAgentActivity from "../../preview/PreviewAgentActivity.ts";
@@ -367,9 +369,19 @@ export function layerWithRegistry<Error>(
         layerEventSinkProvided,
         IdAllocator.layer,
         ThreadCommandExecutor.layer,
-        GitVcsDriver.layer.pipe(
-          Layer.provide(layerServerConfig),
-          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        Layer.unwrap(
+          Effect.map(GitVcsDriver.GitVcsDriver, (git) =>
+            Layer.mock(GitWorkflowService.GitWorkflowService)({
+              currentRefName: (cwd) => git.resolveBranchName(cwd, "HEAD"),
+            }),
+          ),
+        ).pipe(
+          Layer.provide(
+            GitVcsDriver.layer.pipe(
+              Layer.provide(layerServerConfig),
+              Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+            ),
+          ),
         ),
       ),
     ),
@@ -437,6 +449,7 @@ export function layerWithRegistry<Error>(
   const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        AgentRoles.layer,
         layerContextHandoffServiceProvided,
         layerEventSinkProvided,
         IdAllocator.layer,
@@ -575,6 +588,7 @@ export function layerWithRegistry<Error>(
     ThreadCommandExecutor.layer,
   ).pipe(
     Layer.provide(ProviderTurnStartServiceTestkit.layer),
+    Layer.provide(layerVcsDriverRegistry),
     Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 

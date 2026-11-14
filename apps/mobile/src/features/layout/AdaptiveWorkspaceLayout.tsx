@@ -618,7 +618,7 @@ function AdaptiveWorkspaceLayoutContent(
       appAtomRegistry.get(savedConnectionsByIdAtom)[listFilters.environmentId] !== undefined
         ? listFilters.environmentId
         : null;
-    const filteredScope = resolveHomeProjectFilterScope(
+    const projectScope = resolveHomeProjectFilterScope(
       buildHomeProjectScopes({ projects, environmentId: listEnvironmentId, projectGroupingMode }),
       projects,
       { selectedProjectKey: listFilters?.projectKey ?? null, projectGroupingMode },
@@ -635,14 +635,16 @@ function AdaptiveWorkspaceLayoutContent(
         requestId: uuidv4(),
         useLastProject: saved?.useLastProjectForNewThreads,
         currentProject: environmentId && projectId ? { environmentId, projectId } : undefined,
-        filteredProject: filteredScope
-          ? newTaskFilteredProject(
-              filteredScope,
-              listEnvironmentId,
-              connectedEnvironmentIds,
-              saved?.lastThreadProject,
-            )
-          : undefined,
+        filteredProject: newTaskFilteredProject({
+          projectScope,
+          environmentId: listEnvironmentId,
+          scopes:
+            listEnvironmentId === null
+              ? []
+              : buildHomeProjectScopes({ projects, environmentId: null, projectGroupingMode }),
+          connectedEnvironmentIds,
+          lastProject: saved?.lastThreadProject,
+        }),
         lastProject: saved?.lastThreadProject,
       }),
     );

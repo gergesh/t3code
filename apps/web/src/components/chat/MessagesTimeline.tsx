@@ -4,6 +4,7 @@ import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import { AudioPreviewUnmountContext } from "../files/AudioPreview";
+import { useVcsTerminology, VcsTerminologyContext } from "~/state/vcs";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { MarkdownFindContext } from "./markdownFindContext";
 import { useChatCanvas } from "./ChatCanvasContext";
@@ -244,6 +245,7 @@ interface MessagesTimelineProps {
   onCancelWorktreeSetup?: () => void;
   retryableWorkspacePreparationRunIds?: ReadonlySet<RunId>;
   onRetryWorkspacePreparation?: (runId: RunId) => void;
+  onContinueInProjectCheckout?: () => void;
   onWorktreeSetupWorkLocally?: () => void;
   onOpenWorktreeSetupTerminal?: (terminalId: string) => void;
   isPreparingWorktree?: boolean;
@@ -364,6 +366,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onCancelWorktreeSetup,
   retryableWorkspacePreparationRunIds = EMPTY_RUN_IDS,
   onRetryWorkspacePreparation,
+  onContinueInProjectCheckout,
   onWorktreeSetupWorkLocally,
   onOpenWorktreeSetupTerminal,
   isPreparingWorktree = false,
@@ -425,6 +428,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
   historyControls,
 }: MessagesTimelineProps) {
   const gt = useGT();
+  const vcsTerminology = useVcsTerminology(
+    activeThreadEnvironmentId,
+    workspaceRoot ?? markdownCwd ?? null,
+  );
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
   // Find open at the opening is part of the snapshot: opening find later
@@ -1117,6 +1124,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     markdownCwd,
     resolvedTheme,
     workspaceRoot,
+    vcsTerminology,
     skills,
     runs,
     activeThreadEnvironmentId,
@@ -1158,6 +1166,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
     retryableWorkspacePreparationRunIds,
     onRetryWorkspacePreparation: onRetryWorkspacePreparation ?? null,
+    onContinueInProjectCheckout: onContinueInProjectCheckout ?? null,
     onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
     onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
     workGroupViewState,
@@ -1435,7 +1444,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   }
 
   return (
-    <>
+    <VcsTerminologyContext value={vcsTerminology}>
       {activityAnnouncer}
       <MarkdownFindContext value={findActive}>
         <TimelineRowActivityCtx value={activityState}>
@@ -1520,7 +1529,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
           </TooltipScrollDismissArea>
         </TimelineRowActivityCtx>
       </MarkdownFindContext>
-    </>
+    </VcsTerminologyContext>
   );
 });
 
@@ -1723,6 +1732,7 @@ function WorktreeSetupTimelineRow({
   return (
     <WorktreeSetupCard
       snapshot={row.snapshot}
+      terminology={ctx.vcsTerminology}
       embedded={row.embedded}
       onCancel={row.embedded ? null : ctx.onCancelWorktreeSetup}
       onWorkLocally={

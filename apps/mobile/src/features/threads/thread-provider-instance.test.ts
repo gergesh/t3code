@@ -202,10 +202,7 @@ describe("thread list reorder availability", () => {
           return {
             ordered,
             section,
-            reorderableEnvironmentIds:
-              section === "pinned"
-                ? current.pinReorderEnvironmentIds
-                : current.activeReorderEnvironmentIds,
+            reorderableEnvironmentIds: current.pinReorderEnvironmentIds,
           };
         };
         expect(createThreadMovePlanner(plannerInput())(movedId, "down")).toHaveLength(2);
@@ -259,7 +256,6 @@ describe("thread list reorder availability", () => {
           updatedConfig.settings.snoozePresets,
         );
         expect(updated.pinReorderEnvironmentIds.has(offlineId)).toBe(false);
-        expect(updated.activeReorderEnvironmentIds.has(offlineId)).toBe(false);
         expect(createThreadMovePlanner(plannerInput())(movedId, "down")).toBeNull();
 
         registry.set(

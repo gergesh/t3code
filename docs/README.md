@@ -6,7 +6,9 @@
 - [Messages and context](./user/composer.md)
 - [Working with threads](./user/thread-sidebar.md)
 - [Permission modes](./user/permission-modes.md)
+- [Agent roles](./user/agent-roles.md)
 - [Terminal history](./user/terminal.md)
+- [Chat from the terminal](./user/terminal-chat.md)
 - [Source control](./user/source-control.md)
 - [Project settings](./user/project-settings.md)
 - [Appearance and themes](./user/appearance.md)
@@ -61,6 +63,7 @@ source alone does not explain. Most code changes do not need an internal documen
 - [Terminal runtime](./internals/terminal-runtime.md)
 - [Devices](./internals/devices.md)
 - [Voice input](./internals/voice-input.md)
+- [Jujutsu](./internals/jujutsu.md)
 
 ### Runbooks
 

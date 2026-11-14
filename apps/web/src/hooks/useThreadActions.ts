@@ -5,6 +5,7 @@ import {
   scopeThreadRef,
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
+import { resolveVcsTerminology } from "@t3tools/shared/vcs";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { canSnooze, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
@@ -17,8 +18,9 @@ import {
   ThreadId,
   sessionGrantsScope,
 } from "@t3tools/contracts";
-import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings, resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 import { msg } from "gt-react";
@@ -178,18 +180,6 @@ export class ThreadPinReorderUnsupportedError extends Schema.TaggedError<ThreadP
   }
 }
 
-export class ThreadActiveReorderUnsupportedError extends Schema.TaggedError<ThreadActiveReorderUnsupportedError>()(
-  "ThreadActiveReorderUnsupportedError",
-  {
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-  },
-) {
-  override get message(): string {
-    return m(msg("Update this environment's server to reorder active threads."));
-  }
-}
-
 async function requestThreadUnpinConfirmation(input: {
   enabled: boolean;
   title: string | null;
@@ -300,6 +290,20 @@ function threadOperationFailure(target: ScopedThreadRef) {
       );
 }
 
+/** Whether the thread sits in a worktree whose project has a worktree merge command. */
+export function readThreadWorktreeMergeAvailable(target: ScopedThreadRef): boolean {
+  const thread = readThreadShell(target);
+  const settings = appAtomRegistry
+    .get(environmentServerConfigsAtom)
+    .get(target.environmentId)?.settings;
+  return (
+    thread?.worktreePath != null &&
+    thread.branch != null &&
+    settings !== undefined &&
+    resolveProjectSettings(settings, thread.projectId).settings.worktreeCommands.merge !== ""
+  );
+}
+
 export function useThreadActions() {
   const archiveThreadMutation = useOrchestrationCommand(threadEnvironment.archive, {
     reportFailure: false,
@@ -328,9 +332,6 @@ export function useThreadActions() {
   const reorderPinnedThreadMutation = useOrchestrationCommand(threadEnvironment.reorderPin, {
     reportFailure: false,
   });
-  const reorderActiveThreadMutation = useOrchestrationCommand(threadEnvironment.reorderActive, {
-    reportFailure: false,
-  });
   const snoozeThreadMutation = useOrchestrationCommand(threadEnvironment.snooze, {
     reportFailure: false,
   });
@@ -343,6 +344,9 @@ export function useThreadActions() {
   });
   const stopThreadSession = useOrchestrationCommand(threadEnvironment.stopSession);
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, {
+    reportFailure: false,
+  });
+  const mergeWorktree = useAtomCommand(vcsEnvironment.mergeWorktree, {
     reportFailure: false,
   });
   const loadSessionState = useAtomQueryRunner(environmentSession.sessionStateAtom, {
@@ -583,14 +587,32 @@ export function useThreadActions() {
     const automaticWorktreeCleanup = environmentSettings
       ? resolveWorktreeCleanup(environmentSettings, thread.projectId).worktreeOnDelete
       : false;
+    const terminology = resolveVcsTerminology(
+      canDeleteWorktree && orphanedWorktreePath
+        ? Option.getOrNull(
+            AsyncResult.value(
+              appAtomRegistry.get(
+                vcsEnvironment.status({
+                  environmentId: threadRef.environmentId,
+                  input: { cwd: orphanedWorktreePath, includeRemote: false },
+                }),
+              ),
+            ),
+          )
+        : null,
+    );
     if (canDeleteWorktree && localApi && !automaticWorktreeCleanup) {
       const confirmationResult = await settlePromise(() =>
         localApi.dialogs.confirm(
           [
-            m(msg("This thread is the only one linked to this worktree:")),
+            m(
+              msg("This thread is the only one linked to this {workspaceNoun}:", {
+                workspaceNoun: terminology.workspaceNoun,
+              }),
+            ),
             displayWorktreePath ?? orphanedWorktreePath,
             "",
-            m(msg("Delete the worktree too?")),
+            m(msg("Delete the {workspaceNoun} too?", { workspaceNoun: terminology.workspaceNoun })),
           ].join("\n"),
           { variant: "destructive" },
         ),
@@ -687,7 +709,11 @@ export function useThreadActions() {
       : AsyncResult.failure(
           Cause.fail(
             new EnvironmentAuthorizationError({
-              message: m(msg("This connection can no longer remove worktrees.")),
+              message: m(
+                msg("This connection can no longer remove {workspaceNounPlural}.", {
+                  workspaceNounPlural: terminology.workspaceNounPlural,
+                }),
+              ),
               requiredScope: AuthSourceControlWriteScope,
             }),
           ),
@@ -719,8 +745,17 @@ export function useThreadActions() {
         stackedThreadToast({
           type: "error",
           title: removalFailed
-            ? m(msg("Failed to delete worktree"))
-            : m(msg("Worktree deleted, but Git status refresh failed")),
+            ? m(
+                msg("Failed to delete {workspaceNoun}", {
+                  workspaceNoun: terminology.workspaceNoun,
+                }),
+              )
+            : m(
+                msg("{workspaceNounTitle} deleted, but {systemName} status refresh failed", {
+                  workspaceNounTitle: terminology.workspaceNounTitle,
+                  systemName: terminology.systemName,
+                }),
+              ),
           description: removalFailed
             ? m(
                 msg("Could not remove {path}. {message}", {
@@ -879,6 +914,74 @@ export function useThreadActions() {
     return result;
   };
 
+  /**
+   * Runs the project's worktree merge command, which merges the thread's branch into the default
+   * branch and deletes its worktree. The server moves the thread to the project checkout, and it
+   * is settled here: its work has landed. Reports its own progress and failures, since it
+   * outlives the control that started it.
+   */
+  const mergeThreadWorktree = async (target: ScopedThreadRef) => {
+    const thread = readThreadShell(target);
+    const project = thread
+      ? readProject({ environmentId: target.environmentId, projectId: thread.projectId })
+      : null;
+    if (!thread?.worktreePath || !thread.branch || !project) return;
+    const branch = thread.branch;
+    const failureDescription = (result: { readonly cause: Cause.Cause<unknown> }) => {
+      if (Cause.hasInterruptsOnly(result.cause)) return "The merge was interrupted.";
+      const error = squashAtomCommandFailure(result);
+      return error instanceof Error ? error.message : "An error occurred.";
+    };
+    // It carries no timeout of its own: a loading toast never expires.
+    const toastId = toastManager.add(
+      stackedThreadToast({ type: "loading", title: `Merging ${branch}...` }),
+    );
+    const merged = await mergeWorktree({
+      environmentId: target.environmentId,
+      input: {
+        cwd: project.workspaceRoot,
+        path: thread.worktreePath,
+        branch,
+        threadId: target.threadId,
+      },
+    });
+    if (merged._tag === "Failure") {
+      toastManager.update(toastId, {
+        type: "error",
+        title: `Could not merge ${branch}`,
+        description: failureDescription(merged),
+      });
+      return;
+    }
+    const settled = readEnvironmentServerConfigLoaded(target.environmentId)
+      ? await settleThreadMutation({
+          environmentId: target.environmentId,
+          input: { threadId: target.threadId },
+        })
+      : merged;
+    toastManager.update(
+      toastId,
+      settled._tag === "Failure"
+        ? {
+            type: "warning",
+            title: `Merged ${branch}, but could not settle the thread`,
+            description: failureDescription(settled),
+          }
+        : { type: "success", title: `Merged ${branch}` },
+    );
+  };
+
+  /** For surfaces that cannot arm an inline confirmation, such as the native context menu. */
+  const confirmAndMergeThreadWorktree = async (target: ScopedThreadRef) => {
+    const branch = readThreadShell(target)?.branch;
+    const localApi = readLocalApi();
+    if (!branch || !localApi) return;
+    const confirmed = await localApi.dialogs.confirm(
+      `Merge ${branch} into the default branch?\nThis runs the project's merge command and deletes the worktree. The thread settles and continues in the project checkout.`,
+    );
+    if (confirmed) await mergeThreadWorktree(target);
+  };
+
   const confirmAndUnpinThread = async (target: ScopedThreadRef) => {
     const permissionFailure = threadOperationFailure(target);
     if (permissionFailure) return permissionFailure;
@@ -911,23 +1014,6 @@ export function useThreadActions() {
     }
     ThreadUndo.invalidate("pin", scopedThreadKey(target));
     return reorderPinnedThreadMutation({
-      environmentId: target.environmentId,
-      input: { threadId: target.threadId, orderKey },
-    });
-  };
-
-  const reorderActiveThread = async (target: ScopedThreadRef, orderKey: string) => {
-    if (!readEnvironmentServerConfigLoaded(target.environmentId)) {
-      return AsyncResult.failure(
-        Cause.fail(
-          new ThreadActiveReorderUnsupportedError({
-            environmentId: target.environmentId,
-            threadId: target.threadId,
-          }),
-        ),
-      );
-    }
-    return reorderActiveThreadMutation({
       environmentId: target.environmentId,
       input: { threadId: target.threadId, orderKey },
     });
@@ -1004,7 +1090,8 @@ export function useThreadActions() {
           case "pin":
             return sendPin(target, step.orderKey === undefined ? {} : { orderKey: step.orderKey });
           case "reorderActive":
-            return reorderActiveThread(target, step.orderKey);
+            // Active threads sort by latest user message, so there is no position to restore.
+            return AsyncResult.success(undefined);
           case "snooze":
             return snoozeThreadMutation({
               environmentId: target.environmentId,
@@ -1052,13 +1139,14 @@ export function useThreadActions() {
     confirmAndDeleteThread,
     settleThread,
     unsettleThread,
+    mergeThreadWorktree,
+    confirmAndMergeThreadWorktree,
     snoozeThread,
     unsnoozeThread,
     pinThread,
     unpinThread,
     confirmAndUnpinThread,
     reorderPinnedThread,
-    reorderActiveThread,
     markThreadUnread,
     setThreadAutoSettle,
     turnThreadIntoProject: (target: ScopedThreadRef) =>

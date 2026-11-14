@@ -33,6 +33,7 @@ catalog:
   "@alchemy.run/cloudflare": 2.0.0-beta.85
   "@alchemy.run/drizzle": 2.0.0-beta.85
   "@alchemy.run/planetscale": 2.0.0-beta.85
+  "@alchemy.run/sql": 2.0.0-beta.85
   "@alchemy.run/test": 2.0.0-beta.85
   "@clerk/backend": 3.27.0
   "@clerk/clerk-js": 6.42.3
@@ -217,6 +218,12 @@ overrides:
   "@vercel/config>zod": 4.6.7
 
 packageExtensions:
+  # OpenTUI's struct helper declares TypeScript as a peer but never imports it;
+  # installing it would resolve every optional TypeScript peer in the repo.
+  "bun-ffi-structs@*":
+    peerDependenciesMeta:
+      typescript:
+        optional: true
   "@clerk/expo@*":
     dependencies:
       "@expo/config-plugins": 58.0.12

@@ -21,6 +21,7 @@ import {
 } from "../../composerDraftStore";
 import { openPullRequestThreadDialog } from "./ChatOverlayHosts";
 interface PullRequestDraftThreadInput {
+  readonly vcsActionsSupported: boolean;
   readonly routeKind: "server" | "draft";
   readonly draftId: DraftId | null;
   readonly settings: UnifiedSettings;
@@ -36,6 +37,7 @@ interface PullRequestDraftThreadInput {
  * worktree on the project's draft thread, reusing the one already open when there is one.
  */
 export function usePullRequestDraftThread(input: PullRequestDraftThreadInput) {
+  const vcsActionsSupported = input.vcsActionsSupported;
   const {
     routeKind,
     draftId,
@@ -57,7 +59,7 @@ export function usePullRequestDraftThread(input: PullRequestDraftThreadInput) {
   );
 
   const openPullRequestDialog = (reference?: string) => {
-    if (!canCheckoutPullRequestIntoThread) {
+    if (!canCheckoutPullRequestIntoThread || !vcsActionsSupported) {
       return;
     }
     if (activeThreadKey === null) return;
@@ -135,6 +137,7 @@ export function usePullRequestDraftThread(input: PullRequestDraftThreadInput) {
     worktreePath: string | null;
     pullRequestUrl: string;
   }) => {
+    if (!vcsActionsSupported) return;
     // The draft carries the pull request until its first send makes it a thread, which links it.
     await openOrReuseProjectDraftThread({
       branch: input.branch,

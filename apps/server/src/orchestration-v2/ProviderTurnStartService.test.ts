@@ -30,6 +30,7 @@ import {
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   type OrchestrationV2ThreadProjection,
   OrchestrationV2DomainEvent,
+  ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -61,6 +62,7 @@ import {
 } from "../workspace/restoreMissingWorktree.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { layerRealGit } from "./ProviderTurnStartService.testkit.ts";
+import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -83,10 +85,14 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
+import * as AgentRolesTestkit from "../project/AgentRoles.testkit.ts";
+import * as AgentRoles from "../project/AgentRoles.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
+
+const isWorkspaceMissing = Schema.is(ProviderWorkspaceMissingError);
 
 const isDomainEvent = Schema.is(OrchestrationV2DomainEvent);
 
@@ -226,6 +232,7 @@ function startWithMissingWorktree(
           tryHandlePromptCommand: () => Effect.succeed(false),
         }),
         Layer.mock(RunExecutionService.RunExecutionServiceV2)({ startRootRun }),
+        AgentRolesTestkit.layerNone,
         Layer.mock(RuntimePolicy.RuntimePolicyV2)({}),
       ),
     ),
@@ -453,6 +460,7 @@ it.each([
 
 function makeLocalCommandHarness(input: {
   readonly text: string;
+  readonly role?: string;
   readonly manualContinuation?: boolean;
   readonly nativeResumeUnsupported?: boolean;
   readonly steeringRestart?: boolean;
@@ -493,6 +501,8 @@ function makeLocalCommandHarness(input: {
    * the provider, or an earlier run that delivered it. `nativeForkFrom` plans a native fork of the
    * parent. `switchedProvider` puts the earlier run and its context on another provider thread.
    */
+  /** A notice for the agent, such as a merged worktree, recorded before this run. */
+  readonly agentNotice?: string;
   readonly sideChat?: {
     readonly contextRun: "current" | "failed" | "cancelled" | "delivered";
     readonly unsentResume?: boolean;
@@ -577,6 +587,7 @@ function makeLocalCommandHarness(input: {
       projectId: ProjectId.make("project-native-account-command"),
       branch: input.worktreePath === undefined ? null : "feature/restore",
       worktreePath: input.worktreePath ?? null,
+      ...(input.role === undefined ? {} : { role: input.role }),
       lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
     } as OrchestrationV2ThreadProjection["thread"],
     runs: [
@@ -674,7 +685,30 @@ function makeLocalCommandHarness(input: {
     providerTurns: [],
     contextHandoffs: [],
     contextTransfers: [],
-    turnItems: [],
+    turnItems:
+      input.agentNotice === undefined
+        ? []
+        : [
+            {
+              id: TurnItemId.make("agent-notice"),
+              threadId,
+              runId: null,
+              nodeId: null,
+              providerThreadId: null,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: 0,
+              status: "completed",
+              title: null,
+              startedAt: now,
+              completedAt: now,
+              updatedAt: now,
+              type: "system_notice",
+              message: input.agentNotice,
+              forAgent: true,
+            },
+          ],
     visibleTurnItems: [],
     runtimeRequests: [],
     subagents: [],
@@ -1166,7 +1200,7 @@ function makeLocalCommandHarness(input: {
           startTurn(ProviderAdapter.resumeTurnInput(input)),
   };
   const open = vi.fn(() =>
-    input.sideChat !== undefined
+    input.sideChat !== undefined || input.agentNotice !== undefined
       ? Effect.succeed(sideChatSession as never)
       : input.interruptOpen === true
         ? Effect.interrupt
@@ -1180,11 +1214,13 @@ function makeLocalCommandHarness(input: {
                 }).pipe(
                   Effect.andThen(
                     Effect.fail(
-                      new ProviderSessionManager.ProviderSessionOpenError({
-                        instanceId: newInstanceId,
-                        providerSessionId,
-                        cause: input.openFailure,
-                      }),
+                      isWorkspaceMissing(input.openFailure)
+                        ? input.openFailure
+                        : new ProviderSessionManager.ProviderSessionOpenError({
+                            instanceId: newInstanceId,
+                            providerSessionId,
+                            cause: input.openFailure,
+                          }),
                     ),
                   ),
                 )
@@ -1202,7 +1238,7 @@ function makeLocalCommandHarness(input: {
       input: RunExecutionService.RunExecutionServiceV2StartRootRunInput,
     ) => Effect.Effect<void, RunExecutionService.RunExecutionServiceV2Error>
   >((runInput) =>
-    input.sideChat !== undefined
+    input.sideChat !== undefined || input.agentNotice !== undefined
       ? (runInput.resume
           ? runInput.session.resumeTurn!({
               ...runInput,
@@ -1397,6 +1433,18 @@ function makeLocalCommandHarness(input: {
           turnCompleted: () => Effect.void,
           runSettled: (report) => Effect.sync(() => void settledRuns.push(report.status)),
         }),
+        Layer.succeed(
+          AgentRoles.AgentRoles,
+          AgentRoles.AgentRoles.of({
+            list: () => Effect.succeed({ roles: [], problems: [] }),
+            get: (_cwd, name) =>
+              Effect.succeed(
+                name === "engineer"
+                  ? { name, title: "Engineer", allow: ["qa"], instructions: "Build the app." }
+                  : undefined,
+              ),
+          }),
+        ),
         Layer.mock(RuntimePolicy.RuntimePolicyV2)({
           resolve: resolveRuntimePolicy,
         }),
@@ -2255,6 +2303,39 @@ effectIt.effect("sends new steering text when restarting a manual continuation",
   }),
 );
 
+effectIt.effect.each([undefined, "engineer", "designer"] as const)(
+  "sends the role brief once with the prompt and records it on the attempt: %s",
+  (role) =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "Ship the feature",
+        ...(role === undefined ? {} : { role }),
+        manualContinuation: true,
+        steeringRestart: true,
+        nativeResumeUnsupported: true,
+        sideChat: { contextRun: "delivered" },
+      });
+      yield* harness.start;
+      const brief =
+        role === undefined
+          ? undefined
+          : AgentRoles.agentRoleBrief({
+              name: role,
+              role:
+                role === "engineer"
+                  ? { name: role, title: "Engineer", allow: ["qa"], instructions: "Build the app." }
+                  : undefined,
+            });
+      expect(harness.startTurn.mock.calls[0]?.[0].message.text).toBe(
+        brief === undefined ? "Ship the feature" : withInlineContext(brief, "Ship the feature"),
+      );
+      expect(harness.projection().attempts.at(-1)?.roleNote).toBe(
+        brief === undefined ? undefined : `${role}:${AgentRoles.agentRoleBriefDigest(brief)}`,
+      );
+      if (role === "engineer") expect(brief).toContain("You may delegate to @qa.");
+    }),
+);
+
 effectIt.effect("refuses unsupported resume instead of manufacturing a user prompt", () =>
   Effect.gen(function* () {
     const harness = makeLocalCommandHarness({
@@ -2278,6 +2359,24 @@ effectIt.effect("refuses unsupported resume instead of manufacturing a user prom
         }),
       ]),
     );
+  }),
+);
+
+effectIt.effect("tells the agent about notices recorded since its last turn", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Keep going",
+      agentNotice: "Merged feature and removed its worktree.",
+    });
+
+    yield* harness.start;
+
+    expect(harness.startTurn.mock.calls.map(([turn]) => turn.message.text)).toEqual([
+      withInlineContext(
+        "Note: this happened in T3 Code since your last turn:\n- Merged feature and removed its worktree.",
+        "Keep going",
+      ),
+    ]);
   }),
 );
 
@@ -3118,6 +3217,30 @@ effectIt.effect("terminalizes a starting run when its provider session cannot op
           class: "provider_error",
           message: "DESCRIPTION is not valid ACP JSON",
         },
+      },
+    ]);
+  }),
+);
+
+effectIt.effect("marks a start that found its worktree folder gone as workspace_missing", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      openFailure: new ProviderWorkspaceMissingError({
+        threadId: "thread",
+        cwd: "/tmp/merged-worktree",
+      }),
+    });
+
+    yield* harness.start;
+
+    expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+    expect(harness.projection().turnItems).toMatchObject([
+      {
+        type: "error",
+        status: "failed",
+        title: "Workspace folder is missing",
+        failure: { code: ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE },
       },
     ]);
   }),

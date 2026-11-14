@@ -7,6 +7,7 @@ import {
   ProjectId,
   RunId,
   ThreadId,
+  ThreadTag,
   TrimmedNonEmptyString,
   type OrchestratorMcpThreadListItem,
   type OrchestratorMcpThreadRun,
@@ -142,7 +143,7 @@ const isThreadCliError = Schema.is(ThreadCliError);
  * These errors are expected outcomes for a script, so they print as one line
  * on stderr instead of the runtime's logged stack trace.
  */
-const reportThreadErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+export const reportThreadErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
     Effect.tapError((error) =>
       isThreadCliError(error) ? Console.error(error.message) : Effect.void,
@@ -321,7 +322,17 @@ export const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
   const projects = yield* listAllProjects(tools);
   const byId = projects.find((project) => project.id === identifier);
   if (byId !== undefined) return byId;
+  return (yield* locateProjectByPath(projects, identifier)).project;
+});
 
+/**
+ * The project a path belongs to. `worktree` is the git worktree the path is in
+ * when the project was found through another checkout of the same repository.
+ * `exact` matches only a project rooted at the path itself, never an ancestor.
+ */
+export const locateProjectByPath = Effect.fn("cli.thread.locateProjectByPath")(function* <
+  P extends { readonly id: ProjectId; readonly title: string; readonly workspaceRoot: string },
+>(projects: ReadonlyArray<P>, identifier: string, options: { readonly exact?: boolean } = {}) {
   const path = yield* Path.Path;
   const fileSystem = yield* FileSystem.FileSystem;
   // Stored roots keep the path the project was added with, which may pass
@@ -343,11 +354,11 @@ export const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
   };
   const deepestContaining = (candidate: string) =>
     roots
-      .filter(({ root }) => contains(root, candidate))
+      .filter(({ root }) => (options.exact ? root === candidate : contains(root, candidate)))
       .toSorted((left, right) => right.root.length - left.root.length)[0]?.project;
 
   const containing = deepestContaining(target);
-  if (containing !== undefined) return containing;
+  if (containing !== undefined) return { project: containing, worktree: null };
   const targetInfo = yield* fileSystem.stat(target).pipe(Effect.option);
   const gitDirectory =
     Option.isSome(targetInfo) && targetInfo.value.type === "File" ? path.dirname(target) : target;
@@ -358,11 +369,11 @@ export const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
   const ownCheckout = listed
     .filter((checkout) => contains(checkout, target))
     .toSorted((left, right) => right.length - left.length)[0];
-  if (ownCheckout === undefined) {
+  if (ownCheckout === undefined || (options.exact && ownCheckout !== target)) {
     return yield* new ThreadProjectNotFoundError({ identifier });
   }
   const relative = path.relative(ownCheckout, target);
-  const matches = new Map<ProjectId, (typeof projects)[number]>();
+  const matches = new Map<ProjectId, P>();
   for (const checkout of listed) {
     if (checkout === ownCheckout) continue;
     const project = deepestContaining(path.join(checkout, relative));
@@ -378,7 +389,7 @@ export const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
       detail: `'${identifier}' is in a git worktree shared by several projects: ${names.join(", ")}. Pass a project id instead.`,
     });
   }
-  return match;
+  return { project: match, worktree: ownCheckout };
 });
 
 /** Every item on a timeline view, oldest first. */
@@ -773,6 +784,7 @@ const threadArgument = Argument.String("thread").pipe(Argument.withDescription("
 
 const decodeThreadIdValue = Schema.decodeUnknownEffect(ThreadId);
 const decodeTitle = Schema.decodeUnknownEffect(TrimmedNonEmptyString);
+const decodeTag = Schema.decodeUnknownEffect(ThreadTag);
 const decodeThreadId = (value: string) =>
   decodeThreadIdValue(value.trim()).pipe(
     Effect.mapError(() => new ThreadUsageError({ detail: `'${value}' is not a thread id.` })),
@@ -848,6 +860,10 @@ const threadStartCommand = Command.make("start", {
     Flag.withDescription("Branch name for the new worktree."),
     Flag.optional,
   ),
+  tag: Flag.String("tag").pipe(
+    Flag.withDescription("Tag the thread. Repeat for more."),
+    Flag.atLeast(0),
+  ),
   wait: waitFlag,
   json: jsonFlag,
 }).pipe(
@@ -860,6 +876,14 @@ const threadStartCommand = Command.make("start", {
       const title = yield* decodeTitle(
         Option.getOrElse(flags.title, () => titleFromMessage(message)),
       ).pipe(Effect.mapError(() => new ThreadUsageError({ detail: "The title is empty." })));
+      const tags = yield* Effect.forEach(flags.tag, (tag) =>
+        decodeTag(tag).pipe(
+          Effect.mapError(
+            () =>
+              new ThreadUsageError({ detail: `'${tag}' is not a tag: one line, 1-64 characters.` }),
+          ),
+        ),
+      );
       yield* withThreadTools(
         flags,
         Effect.fn("cli.thread.start")(function* (tools) {
@@ -872,6 +896,7 @@ const threadStartCommand = Command.make("start", {
               message,
               ...(workspaceStrategy === undefined ? {} : { workspaceStrategy }),
               ...(modelSelection === undefined ? {} : { modelSelection }),
+              ...(tags.length === 0 ? {} : { tags }),
             },
             ThreadLaunchResult,
           );

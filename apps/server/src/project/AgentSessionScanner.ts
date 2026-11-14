@@ -44,6 +44,9 @@ import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { piHome, resolvePiSessionsDir } from "@t3tools/provider-pi/server/usage";
 import * as ServerSettings from "../serverSettings.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
+import { resolveJjRepoPaths } from "../vcs/JjRepo.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 import {
   createTranscriptJsonReader,
   createTranscriptJsonSelector,
@@ -893,6 +896,7 @@ function sameTranscriptIdentity(left: TranscriptIdentity, right: TranscriptIdent
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const processRunner = yield* ProcessRunner.ProcessRunner;
+  const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   // Concurrent client imports must not hold multiple selected-history budgets.
   const importReadLock = yield* Semaphore.make(1);
   const path = yield* Path.Path;
@@ -1062,8 +1066,26 @@ export const make = Effect.gen(function* () {
     for (const directory of directories) {
       const gitPath = path.join(directory, ".git");
       const gitStats = yield* statOption(gitPath);
-      if (Option.isNone(gitStats)) identities.set(directory, { _tag: "NotGit" });
-      else if (gitStats.value.type === "Directory") {
+      if (Option.isNone(gitStats)) {
+        const handle = yield* vcsRegistry
+          .detect({ cwd: directory, jjOnly: true })
+          .pipe(Effect.orElseSucceed(() => null));
+        // A registered secondary Jujutsu workspace can borrow its main repository's remote.
+        const jjPaths =
+          handle?.kind === "jj"
+            ? yield* resolveJjRepoPaths(fileSystem, path, directory).pipe(
+                Effect.orElseSucceed(() => null),
+              )
+            : null;
+        if (jjPaths === null) identities.set(directory, { _tag: "NotGit" });
+        else {
+          repositories.push({
+            directory,
+            gitDir: path.join(jjPaths.mainWorkspaceRoot, ".git"),
+            worktreeGitDir: null,
+          });
+        }
+      } else if (gitStats.value.type === "Directory") {
         repositories.push({ directory, gitDir: gitPath, worktreeGitDir: null });
       } else pointers.push({ directory, gitPath });
     }
@@ -1936,6 +1958,21 @@ export const make = Effect.gen(function* () {
     cachedCandidates = yield* collectCandidates();
     const { candidates: raw, truncated } = cachedCandidates;
 
+    // Resolve persisted roots too. A project and a transcript can name
+    // different symlinks to the same directory.
+    const importedProjects = yield* projectStore
+      .listShells()
+      .pipe(
+        Effect.mapError(
+          (cause) => new AgentSessionScanError({ operation: "read-projects", cause }),
+        ),
+      );
+    const importedProjectsByRoot = new Map<string, (typeof importedProjects)[number]>();
+    for (const project of importedProjects) {
+      const projectRoot = path.resolve(expandHomePath(project.workspaceRoot, homeDir));
+      importedProjectsByRoot.set(normalizeProjectPathForComparison(projectRoot), project);
+      importedProjectsByRoot.set(yield* directoryIdentity(projectRoot), project);
+    }
     const merged = new Map<
       string,
       {
@@ -1952,12 +1989,36 @@ export const make = Effect.gen(function* () {
         return path.isAbsolute(expanded) ? [path.resolve(expanded)] : [];
       }),
     );
+    // Secondary jj workspaces are offered only once imported, like linked git worktrees. An
+    // imported one stays its own project rather than folding into its main workspace.
+    const unimportedJjWorkspaces = new Set<string>();
+    const importedJjWorkspaceKeys = new Map<string, string>();
+    for (const [directory, project] of directoryProjects) {
+      if (project === null) continue;
+      const handle = yield* vcsRegistry
+        .detect({ cwd: directory, jjOnly: true })
+        .pipe(Effect.orElseSucceed(() => null));
+      const jjPaths =
+        handle?.kind === "jj"
+          ? yield* resolveJjRepoPaths(fileSystem, path, handle.repository.rootPath).pipe(
+              Effect.orElseSucceed(() => null),
+            )
+          : null;
+      if (jjPaths === null || jjPaths.workspaceRoot === jjPaths.mainWorkspaceRoot) continue;
+      const key = yield* directoryIdentity(directory);
+      if (importedProjectsByRoot.has(key)) importedJjWorkspaceKeys.set(directory, key);
+      else unimportedJjWorkspaces.add(directory);
+    }
 
     for (const candidate of raw) {
       const expanded = expandHomePath(candidate.cwd.trim(), homeDir);
       if (!path.isAbsolute(expanded)) continue;
-      const project = directoryProjects.get(path.resolve(expanded));
-      if (project === undefined || project === null) continue;
+      const resolved = path.resolve(expanded);
+      if (unimportedJjWorkspaces.has(resolved)) continue;
+      const found = directoryProjects.get(resolved);
+      if (found === undefined || found === null) continue;
+      const ownKey = importedJjWorkspaceKeys.get(resolved);
+      const project = ownKey === undefined ? found : { ...found, key: ownKey, path: resolved };
 
       const existing = merged.get(project.key);
       if (!existing) {
@@ -1978,21 +2039,6 @@ export const make = Effect.gen(function* () {
         existing.lastActiveAtMs === null || candidate.lastActiveAtMs === null
           ? (existing.lastActiveAtMs ?? candidate.lastActiveAtMs)
           : Math.max(existing.lastActiveAtMs, candidate.lastActiveAtMs);
-    }
-
-    // Resolve persisted roots too; transcripts may use different symlinks to the same directory.
-    const importedProjects = yield* projectStore
-      .listShells()
-      .pipe(
-        Effect.mapError(
-          (cause) => new AgentSessionScanError({ operation: "read-projects", cause }),
-        ),
-      );
-    const importedProjectsByRoot = new Map<string, (typeof importedProjects)[number]>();
-    for (const project of importedProjects) {
-      const projectRoot = path.resolve(expandHomePath(project.workspaceRoot, homeDir));
-      importedProjectsByRoot.set(normalizeProjectPathForComparison(projectRoot), project);
-      importedProjectsByRoot.set(yield* directoryIdentity(projectRoot), project);
     }
 
     const candidates: Array<AgentSessionProjectCandidate> = [];
@@ -2312,4 +2358,5 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(AgentSessionScanner, make).pipe(
   Layer.provide(ProcessRunner.layer),
+  Layer.provide(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
 );

@@ -26,6 +26,7 @@ import {
 import {
   launchModelSelection,
   readLatestMessages,
+  locateProjectByPath,
   resolveProject,
   threadCommand,
   type ThreadTools,
@@ -568,6 +569,24 @@ it.live("resolves a path inside a git worktree of the project's repository to th
     assert.deepStrictEqual(yield* resolveFrom([sample], path.join(worktree, "pkg")), sample);
     assert.deepStrictEqual(yield* resolveFrom([sample], worktree, "pkg/index.ts"), sample);
     assert.deepStrictEqual(yield* resolveFrom([featureProject], featureWorktree), featureProject);
+    const locateFrom = (workingDirectory: string) =>
+      locateProjectByPath([sample], ".").pipe(
+        Effect.provideService(HostProcess.WorkingDirectory, workingDirectory),
+      );
+    assert.deepStrictEqual(yield* locateFrom(path.join(worktree, "pkg")), {
+      project: sample,
+      worktree: yield* fileSystem.realPath(worktree),
+    });
+    assert.deepStrictEqual(yield* locateFrom(repo), { project: sample, worktree: null });
+    const locateExactlyFrom = (workingDirectory: string) =>
+      locateProjectByPath([sample], ".", { exact: true }).pipe(
+        Effect.provideService(HostProcess.WorkingDirectory, workingDirectory),
+        Effect.map(({ project }) => project.id),
+        Effect.orElseSucceed(() => null),
+      );
+    assert.strictEqual(yield* locateExactlyFrom(worktree), sample.id);
+    assert.strictEqual(yield* locateExactlyFrom(path.join(repo, "pkg")), null);
+    assert.strictEqual(yield* locateExactlyFrom(path.join(worktree, "pkg")), null);
     const ambiguous = yield* Effect.flip(resolveFrom([sample, featureProject], featureWorktree));
     assert.strictEqual(ambiguous._tag, "ThreadUsageError");
     assert.include(ambiguous.message, "sample (project-sample)");

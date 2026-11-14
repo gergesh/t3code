@@ -3,6 +3,7 @@ import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
+  type AgentRoleName,
   CommandId,
   type ChatAttachment,
   type MessageId,
@@ -10,6 +11,7 @@ import {
   type OrchestrationV2Actor,
   type OrchestrationV2CreationSource,
   type OrchestrationV2DelegatedFrom,
+  type ThreadTag,
   type OrchestrationV2LinkOrigin,
   type OrchestrationV2ProviderThreadNativeMetadata,
   type OrchestrationV2ThreadProjection,
@@ -114,6 +116,8 @@ export interface ThreadLaunchInput {
   readonly linkOrigin?: OrchestrationV2LinkOrigin;
   /** The parent there, when that environment's agent delegated this as a task. */
   readonly delegatedFrom?: OrchestrationV2DelegatedFrom;
+  readonly tags?: ReadonlyArray<ThreadTag>;
+  readonly role?: AgentRoleName;
 }
 
 type PreparationInput = Pick<
@@ -469,7 +473,7 @@ const make = Effect.gen(function* () {
       .pipe(Effect.orElseSucceed(() => Option.none()));
     if (Option.isNone(project)) return false;
     // Unlike `git.repositoryRoot`, this fails on a repository Git cannot read, which is not "no repository".
-    return yield* checkpointStore.isGitRepository(project.value.workspaceRoot).pipe(
+    return yield* checkpointStore.supportsCheckpoints(project.value.workspaceRoot).pipe(
       Effect.map((isRepository) => !isRepository),
       Effect.orElseSucceed(() => false),
     );
@@ -805,6 +809,21 @@ const make = Effect.gen(function* () {
             ),
             Effect.mapError(mapError(input, "provision-worktree", threadId)),
           );
+        if (
+          !(yield* git
+            .validateWorkspace(project.workspaceRoot, worktree.worktree.path)
+            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId))))
+        ) {
+          // An unverified path must not be removed as a failed workspace.
+          createdWorktreePath = null;
+          return yield* mapError(
+            input,
+            "provision-worktree",
+            threadId,
+          )(
+            "Jujutsu isolation requires a separate native workspace; no workspace was provisioned.",
+          );
+        }
         worktreePath = worktree.worktree.path;
         branch = worktree.worktree.refName;
         createdWorktreePath = worktreePath;
@@ -1281,6 +1300,20 @@ const make = Effect.gen(function* () {
         commandId: input.commandId,
         instanceId: input.modelSelection.instanceId,
       });
+      // Accepted launches replay without rechecking repository support.
+      if (
+        Option.isNone(launchReceipt) ||
+        launchReceipt.value.status !== "accepted" ||
+        launchReceipt.value.commandType !== "thread.create"
+      ) {
+        yield* git
+          .providerCwd(
+            input.workspaceStrategy.type === "existing_worktree"
+              ? input.workspaceStrategy.worktreePath
+              : project.workspaceRoot,
+          )
+          .pipe(Effect.mapError(mapError(input, "resolve-project")));
+      }
       return yield* Effect.gen(function* () {
         // Recover ids from accepted launch receipts before allocating; retries have no client id and new ids collide with receipts.
         const reusableLaunchReceipt =
@@ -1363,6 +1396,7 @@ const make = Effect.gen(function* () {
                 commandId: input.commandId,
                 threadId: candidateThreadId,
                 expectedEmpty: true,
+                ...(input.role === undefined ? {} : { role: input.role }),
               })
             : threads.dispatch({
                 type: "thread.create",
@@ -1382,6 +1416,8 @@ const make = Effect.gen(function* () {
                 ...(input.delegatedFrom === undefined
                   ? {}
                   : { delegatedFrom: input.delegatedFrom }),
+                ...(input.tags === undefined ? {} : { tags: input.tags }),
+                ...(input.role === undefined ? {} : { role: input.role }),
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
                 ...(initialMessage === undefined

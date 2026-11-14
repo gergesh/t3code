@@ -149,6 +149,8 @@ export interface UpdateThreadMetadataInput extends ThreadCommandInput {
   readonly regenerateTitle?: boolean;
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null;
   readonly expectedEmpty?: boolean;
+  /** A role name from `.agents/roles`, or null to take the thread's role away. */
+  readonly role?: import("@t3tools/contracts").AgentRoleName | null;
 }
 
 export interface SetThreadRuntimeModeInput extends ThreadCommandInput {
@@ -195,6 +197,8 @@ export interface StartThreadTurnInput extends ThreadCommandInput {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly bootstrap?: StartThreadBootstrap;
+  /** The role a new thread starts in; used only when this send creates the thread. */
+  readonly role?: import("@t3tools/contracts").AgentRoleName;
   readonly sourceProposedPlan?: { readonly threadId: ThreadId; readonly planId: PlanId };
   readonly dispatchMode?: "auto" | "queue" | "steer" | "restart" | "start";
   /** Start a new provider session; needs the server's `freshContext` capability. */
@@ -697,7 +701,8 @@ export const updateThreadMetadata = Effect.fn("EnvironmentCommands.updateThreadM
       input.worktreePath !== undefined ||
       input.regenerateTitle !== undefined ||
       input.linkedPullRequest !== undefined ||
-      input.limitRecovery !== undefined
+      input.limitRecovery !== undefined ||
+      input.role !== undefined
     ) {
       result = yield* dispatch({
         type: "thread.metadata.update",
@@ -712,6 +717,7 @@ export const updateThreadMetadata = Effect.fn("EnvironmentCommands.updateThreadM
         ...(input.linkedPullRequest === undefined
           ? {}
           : { linkedPullRequest: input.linkedPullRequest }),
+        ...(input.role === undefined ? {} : { role: input.role }),
       });
     }
     if (input.modelSelection !== undefined) {
@@ -805,6 +811,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       modelSelection: input.modelSelection ?? thread.modelSelection,
       runtimeMode: input.runtimeMode,
       interactionMode: input.interactionMode,
+      ...(input.role === undefined ? {} : { role: input.role }),
       workspaceStrategy,
       initialMessage: {
         messageId: input.message.messageId,

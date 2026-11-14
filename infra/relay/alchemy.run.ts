@@ -6,6 +6,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Drizzle from "@alchemy.run/drizzle";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Planetscale from "@alchemy.run/planetscale";
 
 import { PublishClientConfig, tokenDigest } from "./src/clientConfig.ts";
@@ -30,7 +31,7 @@ export default Alchemy.Stack(
   },
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
-    const db = yield* RelayDb.PlanetscaleDatabase;
+    const db = yield* RelayDb.RelayDatabase;
     const hyperdrive = yield* RelayDb.RelayHyperdrive;
     const managedEndpointZone = yield* ManagedEndpointZone.pipe(Effect.orDie);
     const relayApiZone = yield* RelayApiZone.pipe(Effect.orDie);
@@ -45,36 +46,39 @@ export default Alchemy.Stack(
         workerName: api.workerName,
       });
     }
+    const axiom = Option.getOrUndefined(observability.axiom);
+    const tracing = axiom && {
+      mobileTracingUrl: axiom.traces.otelTracesEndpoint,
+      mobileTracingDataset: axiom.traces.name,
+      mobileTracingToken: axiom.mobileIngestToken.token,
+      clientTracingUrl: axiom.traces.otelTracesEndpoint,
+      clientTracingDataset: axiom.traces.name,
+      clientTracingToken: axiom.clientIngestToken.token,
+    };
     yield* PublishClientConfig({
       url: api.url,
-      mobileTracingUrl: observability.traces.otelTracesEndpoint,
-      mobileTracingDataset: observability.traces.name,
-      mobileTracingToken: observability.mobileIngestToken.token,
-      clientTracingUrl: observability.traces.otelTracesEndpoint,
-      clientTracingDataset: observability.traces.name,
-      clientTracingToken: observability.clientIngestToken.token,
-      tokenDigest: Output.map(
-        Output.all(observability.mobileIngestToken.token, observability.clientIngestToken.token),
-        tokenDigest,
-      ),
+      ...tracing,
+      tokenDigest: axiom
+        ? Output.map(
+            Output.all(axiom.mobileIngestToken.token, axiom.clientIngestToken.token),
+            tokenDigest,
+          )
+        : "",
     });
 
     return {
-      databaseName: db.database.name,
-      databaseBranchName: db.branch?.name ?? "main",
+      databaseName: db.databaseName,
+      databaseBranchName: db.databaseBranchName,
       hyperdriveName: hyperdrive.name,
       workerName: api.workerName,
       url: api.url,
       relayApiZoneId: relayApiZone.zoneId,
       managedEndpointZoneId: managedEndpointZone.zoneId,
-      mobileTracingUrl: observability.traces.otelTracesEndpoint,
-      mobileTracingDataset: observability.traces.name,
-      mobileTracingToken: observability.mobileIngestToken.token,
-      clientTracingUrl: observability.traces.otelTracesEndpoint,
-      clientTracingDataset: observability.traces.name,
-      clientTracingToken: observability.clientIngestToken.token,
-      mobileLogsDataset: observability.mobileLogs.name,
-      mobileMetricsDataset: observability.mobileMetrics.name,
+      ...tracing,
+      ...(axiom && {
+        mobileLogsDataset: axiom.mobileLogs.name,
+        mobileMetricsDataset: axiom.mobileMetrics.name,
+      }),
       mobileSourceMapsBucket: observability.mobileSourceMaps.bucketName,
       // The MOBILE_SOURCEMAPS_R2 secret for GitHub Actions and EAS Build.
       mobileSourceMapsUploadCredentials,

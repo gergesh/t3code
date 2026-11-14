@@ -38,10 +38,7 @@ import {
   sidebarFolderExpansionKeys,
 } from "./Sidebar.logic";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import {
-  sortActiveThreadsByOrderKey,
-  sortPinnedThreadsByOrderKey,
-} from "@t3tools/client-runtime/state/thread-sort";
+import { sortPinnedThreadsByOrderKey } from "@t3tools/client-runtime/state/thread-sort";
 import { resolveProjectExpanded } from "../uiStateStore";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
@@ -357,13 +354,20 @@ describe("searchSidebarThreads", () => {
       ),
     );
 
+  const projectTitleOf = (thread: (typeof threads)[number]) =>
+    thread.id === "thread-2" ? "Payments" : "Workbench";
+
   it("ranks word matches by recent use, then lists message matches once", () => {
-    expect(searchSidebarThreads(threads, "work", contentKeys("thread-1", "thread-2"), now)).toEqual(
-      {
-        titleMatches: [threads[0], threads[2], threads[3]],
-        contentMatches: [threads[1]],
-      },
-    );
+    expect(
+      searchSidebarThreads(threads, "work", () => null, contentKeys("thread-1", "thread-2"), now),
+    ).toEqual({
+      titleMatches: [threads[0], threads[2], threads[3]],
+      contentMatches: [threads[1]],
+    });
+    expect(searchSidebarThreads(threads, "payments", projectTitleOf, new Set(), now)).toEqual({
+      titleMatches: [threads[1]],
+      contentMatches: [],
+    });
   });
 });
 
@@ -1140,11 +1144,11 @@ describe("Working shelf (beta)", () => {
     const items: readonly SidebarListItem[] = [
       marker("pinned-header"),
       row("p1", "pinned"),
+      marker("working-header"),
+      row("w1", "working"),
       marker("pinned-divider"),
       row("a1", "active"),
       row("a2", "active"),
-      marker("working-header"),
-      row("w1", "working"),
       marker("settled-header"),
       row("s1", "settled"),
     ];
@@ -1175,56 +1179,37 @@ describe("Working shelf (beta)", () => {
             target: target!,
             pinnedOrder: ["p1"],
             pinnedKeysById: new Map([["p1", "m"]]),
-            activeOrder: ["a1", "a2"],
-            activeKeysById: new Map([
-              ["a1", "f"],
-              ["a2", "t"],
-            ]),
-            activeTimeOrdered: true,
           }),
         ).toEqual({ kind: "none" });
       },
     );
 
-    it("arranges the rows it can write when another row's server cannot store an order", () => {
-      const plan = planSidebarThreadDrop({
-        activeKey: "a2",
-        activeSection: "active",
-        target: {
-          section: "active",
-          pinnedOrder: [],
-          activeOrder: ["offline", "a2", "a1"],
-        },
-        pinnedOrder: [],
-        pinnedKeysById: new Map(),
-        activeOrder: ["offline", "a1", "a2"],
-        activeKeysById: new Map([
-          ["offline", null],
-          ["a1", null],
-          ["a2", null],
-        ]),
-        activeReorderableKeys: new Set(["a1", "a2"]),
+    it("only changes lifecycle when dropping into the time-ordered inbox", () => {
+      const base = {
+        pinnedOrder: ["p1"],
+        pinnedKeysById: new Map([["p1", "m"]]),
+      };
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "a1",
+          activeSection: "active",
+          target: { section: "active", pinnedOrder: ["p1"], activeOrder: ["a2", "a1"] },
+        }),
+      ).toEqual({ kind: "none" });
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "p1",
+          activeSection: "pinned",
+          target: { section: "active", pinnedOrder: [], activeOrder: ["a1", "p1", "a2"] },
+        }),
+      ).toEqual({
+        kind: "move-active",
+        unpin: true,
+        unsettle: false,
+        unsnooze: false,
       });
-      expect(plan.kind).toBe("move-active");
-      if (plan.kind !== "move-active") return;
-      expect(plan.assignments.map(({ id }) => id)).toEqual(["a2", "a1"]);
-      const [a2, a1] = plan.assignments.map(({ orderKey }) => orderKey);
-      expect(a2! < a1!).toBe(true);
-
-      const above = planSidebarThreadDrop({
-        activeKey: "a2",
-        activeSection: "active",
-        target: { section: "active", pinnedOrder: [], activeOrder: ["a2", "offline"] },
-        pinnedOrder: [],
-        pinnedKeysById: new Map(),
-        activeOrder: ["offline", "a2"],
-        activeKeysById: new Map([
-          ["offline", "m"],
-          ["a2", "t"],
-        ]),
-        activeReorderableKeys: new Set(["a2"]),
-      });
-      expect(above.kind === "move-active" && above.assignments[0]!.orderKey < "m").toBe(true);
     });
 
     describe("reordering with cached offline configuration", () => {
@@ -1283,10 +1268,7 @@ describe("Working shelf (beta)", () => {
           serverConfigs,
           connectedEnvironmentIds: input.connectedEnvironmentIds ?? [onlineEnvironmentId],
         });
-        const sort = (rows: typeof input.rows) =>
-          input.section === "active"
-            ? sortActiveThreadsByOrderKey(rows)
-            : sortPinnedThreadsByOrderKey(rows);
+        const sort = (rows: typeof input.rows) => sortPinnedThreadsByOrderKey(rows);
         const originalOrder = sort(input.rows).map(keyOf);
         const targetOrder = input.order.map(keyOf);
         const keysById = new Map(input.rows.map((entry) => [keyOf(entry), entry.activeOrderKey]));
@@ -1295,14 +1277,11 @@ describe("Working shelf (beta)", () => {
           activeSection: input.from ?? input.section,
           target: { section: input.section, pinnedOrder: targetOrder, activeOrder: targetOrder },
           pinnedOrder: originalOrder,
-          activeOrder: originalOrder,
           pinnedKeysById: keysById,
-          activeKeysById: keysById,
           reorderableKeys: writable.draggableThreadKeys,
-          activeReorderableKeys: writable.activeReorderableThreadKeys,
         });
         const assignments =
-          plan.kind === "move-active" || plan.kind === "reorder-pinned"
+          plan.kind === "reorder-pinned"
             ? plan.assignments
             : plan.kind === "pin"
               ? [
@@ -1347,7 +1326,8 @@ describe("Working shelf (beta)", () => {
         expect([...changed.activeReorderableThreadKeys]).toEqual([keyOf(online)]);
       });
 
-      it.each(["active", "pinned"] as const)(
+      // Active is ordered by latest message, so only Pinned keeps positions to plan.
+      it.each<"active" | "pinned">(["pinned"])(
         "replans a disconnected drag source in %s",
         (section) => {
           const bound = thread("offline", offlineEnvironmentId, "m");
@@ -1364,17 +1344,22 @@ describe("Working shelf (beta)", () => {
         },
       );
 
-      it.each(["active", "pinned"] as const)("preserves a keyed offline bound in %s", (section) => {
-        const bound = thread("offline", offlineEnvironmentId, "m");
-        const moved = thread("online", onlineEnvironmentId, "t");
-        const result = planDrop({ section, rows: [bound, moved], moved, order: [moved, bound] });
+      // Active is ordered by latest message, so only Pinned keeps positions to plan.
+      it.each<"active" | "pinned">(["pinned"])(
+        "preserves a keyed offline bound in %s",
+        (section) => {
+          const bound = thread("offline", offlineEnvironmentId, "m");
+          const moved = thread("online", onlineEnvironmentId, "t");
+          const result = planDrop({ section, rows: [bound, moved], moved, order: [moved, bound] });
 
-        expect(result.plan.kind).toBe(section === "active" ? "move-active" : "reorder-pinned");
-        expect(result.assignments.map(({ id }) => id)).toEqual([keyOf(moved)]);
-        expect(result.actualOrder).toEqual(result.targetOrder);
-      });
+          expect(result.plan.kind).toBe(section === "active" ? "move-active" : "reorder-pinned");
+          expect(result.assignments.map(({ id }) => id)).toEqual([keyOf(moved)]);
+          expect(result.actualOrder).toEqual(result.targetOrder);
+        },
+      );
 
-      it.each(["active", "pinned"] as const)(
+      // Active is ordered by latest message, so only Pinned keeps positions to plan.
+      it.each<"active" | "pinned">(["pinned"])(
         "rejects rebalancing a keyed offline bound in %s",
         (section) => {
           const bound = thread("offline", offlineEnvironmentId, "m");
@@ -1391,7 +1376,8 @@ describe("Working shelf (beta)", () => {
         },
       );
 
-      it.each(["active", "pinned"] as const)(
+      // Active is ordered by latest message, so only Pinned keeps positions to plan.
+      it.each<"active" | "pinned">(["pinned"])(
         "rejects crossing the frozen keyless boundary in %s",
         (section) => {
           const bound = {
@@ -1407,7 +1393,8 @@ describe("Working shelf (beta)", () => {
         },
       );
 
-      it.each(["active", "pinned"] as const)(
+      // Active is ordered by latest message, so only Pinned keeps positions to plan.
+      it.each<"active" | "pinned">(["pinned"])(
         "allows realizable moves beside a frozen keyless row in %s",
         (section) => {
           const neighbor = thread("neighbor");
@@ -1427,7 +1414,8 @@ describe("Working shelf (beta)", () => {
         },
       );
 
-      it.each(["active", "pinned"] as const)(
+      // Active is ordered by latest message, so only Pinned keeps positions to plan.
+      it.each<"active" | "pinned">(["pinned"])(
         "checks fallback assignments to other rows at the %s boundary",
         (section) => {
           const neighbor = thread("neighbor");
@@ -1444,7 +1432,8 @@ describe("Working shelf (beta)", () => {
         },
       );
 
-      it.each(["active", "pinned"] as const)(
+      // Active is ordered by latest message, so only Pinned keeps positions to plan.
+      it.each<"active" | "pinned">(["pinned"])(
         "rejects impossible pin/unpin placement across the %s boundary",
         (section) => {
           const order = section === "active" ? [online, offline] : [offline, online];
@@ -1459,42 +1448,6 @@ describe("Working shelf (beta)", () => {
           expect(result.plan).toEqual({ kind: "none" });
         },
       );
-    });
-
-    it("only changes lifecycle when the inbox is time-ordered", () => {
-      const base = {
-        pinnedOrder: ["p1"],
-        pinnedKeysById: new Map([["p1", "m"]]),
-        activeOrder: ["a1", "a2"],
-        activeKeysById: new Map([
-          ["a1", "f"],
-          ["a2", "t"],
-        ]),
-        activeTimeOrdered: true,
-      };
-      expect(
-        planSidebarThreadDrop({
-          ...base,
-          activeKey: "a1",
-          activeSection: "active",
-          target: { section: "active", pinnedOrder: ["p1"], activeOrder: ["a2", "a1"] },
-        }),
-      ).toEqual({ kind: "none" });
-      expect(
-        planSidebarThreadDrop({
-          ...base,
-          activeKey: "p1",
-          activeSection: "pinned",
-          target: { section: "active", pinnedOrder: [], activeOrder: ["a1", "p1", "a2"] },
-        }),
-      ).toEqual({
-        kind: "move-active",
-        order: null,
-        assignments: [],
-        unpin: true,
-        unsettle: false,
-        unsnooze: false,
-      });
     });
   });
 });
