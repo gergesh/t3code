@@ -940,6 +940,8 @@ export const UsageLimitSourceConfig = Schema.Struct({
     secretSetting,
   ),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Writes the hub's per-account priorities so the account whose quota resets soonest is spent first. */
+  routeBySoonestReset: Schema.optional(Schema.Boolean),
 });
 export type UsageLimitSourceConfig = typeof UsageLimitSourceConfig.Type;
 

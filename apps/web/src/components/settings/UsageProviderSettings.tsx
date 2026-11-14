@@ -1,6 +1,6 @@
 import type { EnvironmentId, UnifiedSettings } from "@t3tools/contracts";
 import { T, useGT, Var } from "gt-react";
-import { PlusIcon } from "lucide-react";
+import { InfoIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 
 import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";
@@ -14,6 +14,8 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
+import { Switch } from "../ui/switch";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { AddUsageLimitSourceDialog } from "./AddUsageLimitSourceDialog";
 import { useSearchableSetting } from "./settingsSearch";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
@@ -69,10 +71,46 @@ export function UsageProviderSettings({
                 }
                 control={
                   !readOnly ? (
-                    <RemoveUsageProviderButton
-                      label={label}
-                      onConfirm={() => updateSettings({ usageLimitSources: { [id]: null } })}
-                    />
+                    <div className="flex items-center gap-3">
+                      <Tooltip>
+                        <TooltipTrigger
+                          delay={200}
+                          render={
+                            <Button
+                              size="icon-micro"
+                              variant="ghost-muted"
+                              aria-label={gt("About spending the soonest reset first")}
+                            >
+                              <InfoIcon className="size-3.5" />
+                            </Button>
+                          }
+                        />
+                        <TooltipPopup side="top">
+                          <T>
+                            Sets the hub's account priorities so the account whose weekly quota
+                            resets soonest takes every new conversation until it runs out.
+                          </T>
+                        </TooltipPopup>
+                      </Tooltip>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <T>Spend soonest reset first</T>
+                        <Switch
+                          size="sm"
+                          checked={source.routeBySoonestReset === true}
+                          onCheckedChange={(checked) =>
+                            updateSettings({
+                              usageLimitSources: {
+                                [id]: { ...source, routeBySoonestReset: checked },
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <RemoveUsageProviderButton
+                        label={label}
+                        onConfirm={() => updateSettings({ usageLimitSources: { [id]: null } })}
+                      />
+                    </div>
                   ) : null
                 }
               />
@@ -117,8 +155,8 @@ function RemoveUsageProviderButton({
             <AlertDialogDescription>
               <T>
                 The hub's management key is deleted from this server. Its accounts leave the Limits
-                view; the hub itself is untouched. Add it again with the URL and key to bring them
-                back.
+                view, and any account priorities T3 Code set are reset. Add it again with the URL
+                and key to bring them back.
               </T>
             </AlertDialogDescription>
           </AlertDialogHeader>
