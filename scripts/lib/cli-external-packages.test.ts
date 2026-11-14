@@ -16,6 +16,9 @@ import {
   shouldBundleCliDependency,
 } from "./cli-external-packages.ts";
 
+// Declared peers the package never imports at runtime, so staging them only adds weight.
+const UNIMPORTED_PEERS = new Set(["bun-ffi-structs -> typescript"]);
+
 // Native bindings live in optionalDependencies; checking dependencies alone misses them.
 const PackageManifest = Schema.Struct({
   dependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
@@ -158,6 +161,7 @@ it.layer(NodeServices.layer)("external package dependency closure", (it) => {
         const manifest = installed.get(name);
         return Object.keys(manifest?.peerDependencies ?? {})
           .filter((peer) => !manifest?.peerDependenciesMeta?.[peer]?.optional && !staged.has(peer))
+          .filter((peer) => !UNIMPORTED_PEERS.has(`${name} -> ${peer}`))
           .map((peer) => `${name} -> ${peer}`);
       });
 
