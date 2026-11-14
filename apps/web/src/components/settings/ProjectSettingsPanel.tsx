@@ -23,7 +23,10 @@ import { useComposerDraftStore } from "../../composerDraftStore";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
 import { persistClientSettingsUpdate, useClientSettings } from "../../hooks/useSettings";
 import { readLocalApi } from "../../localApi";
-import { derivePhysicalProjectKey } from "@t3tools/client-runtime/state/project-grouping";
+import {
+  derivePhysicalProjectKey,
+  inheritedProjectGroupingMode,
+} from "@t3tools/client-runtime/state/project-grouping";
 import {
   PROJECT_GROUPING_MODE_LABELS,
   withProjectGroupingOverride,
@@ -86,6 +89,7 @@ function CheckoutGroupingSelect({ member }: { member: SidebarProjectGroupMember 
   const m = useMessages();
   const overrideKey = derivePhysicalProjectKey(member);
   const globalMode = useClientSettings((settings) => settings.sidebarProjectGroupingMode);
+  const inheritedMode = inheritedProjectGroupingMode(member, globalMode);
   const selection = useClientSettings(
     (settings) => settings.sidebarProjectGroupingOverrides?.[overrideKey] ?? "inherit",
   );
@@ -127,7 +131,7 @@ function CheckoutGroupingSelect({ member }: { member: SidebarProjectGroupMember 
       >
         <SelectValue>
           {selection === "inherit"
-            ? gt("Default ({mode})", { mode: m(PROJECT_GROUPING_MODE_LABELS[globalMode]) })
+            ? gt("Default ({mode})", { mode: m(PROJECT_GROUPING_MODE_LABELS[inheritedMode]) })
             : m(PROJECT_GROUPING_MODE_LABELS[selection])}
         </SelectValue>
       </SelectTrigger>

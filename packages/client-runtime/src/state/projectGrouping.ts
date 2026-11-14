@@ -92,13 +92,23 @@ export function getProjectOrderKey(
   return derivePhysicalProjectKey(project);
 }
 
+/** The mode a checkout follows without its own grouping rule. */
+export function inheritedProjectGroupingMode(
+  project: Pick<EnvironmentProject, "repositoryIdentity">,
+  globalMode: SidebarProjectGroupingMode,
+): SidebarProjectGroupingMode {
+  // A worktree or workspace added as its own project is usually its own line of work, such as a
+  // long-lived branch; T3's own worktrees for a project's threads are never projects.
+  return project.repositoryIdentity?.linkedCheckout === true ? "separate" : globalMode;
+}
+
 function resolveProjectGroupingMode(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
+  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot" | "repositoryIdentity">,
   settings: ProjectGroupingSettings,
 ): SidebarProjectGroupingMode {
   return (
     settings.sidebarProjectGroupingOverrides?.[deriveProjectGroupingOverrideKey(project)] ??
-    settings.sidebarProjectGroupingMode
+    inheritedProjectGroupingMode(project, settings.sidebarProjectGroupingMode)
   );
 }
 
@@ -345,7 +355,7 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(
     );
     const identitySource = selectProjectIdentitySource(physicalProjects, winner);
     const logicalKey = deriveLogicalProjectKey(identitySource, {
-      groupingMode: resolveProjectGroupingMode(winner, input.settings),
+      groupingMode: resolveProjectGroupingMode(identitySource, input.settings),
       groupScratchProjects: input.groupScratchProjects ?? false,
     });
     logicalKeyByPhysicalKey.set(physicalProjectKey, logicalKey);

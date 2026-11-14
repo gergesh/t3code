@@ -247,6 +247,8 @@ export const RepositoryIdentity = Schema.Struct({
   webUrl: Schema.optionalKey(TrimmedNonEmptyString),
   /** Work tree root, or the git dir for a bare repository. */
   rootPath: Schema.optionalKey(TrimmedNonEmptyString),
+  /** A git linked worktree or secondary jj workspace: one of several working copies of one repository. */
+  linkedCheckout: Schema.optionalKey(Schema.Boolean),
   displayName: Schema.optionalKey(TrimmedNonEmptyString),
   provider: Schema.optionalKey(SourceControlProviderKind),
   owner: Schema.optionalKey(TrimmedNonEmptyString),

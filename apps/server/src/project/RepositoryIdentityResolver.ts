@@ -204,6 +204,7 @@ function buildRepositoryIdentity(input: {
   readonly originUrl: string | undefined;
   readonly originKeyUrl: string | undefined;
   readonly rootPath: string;
+  readonly linkedCheckout: boolean;
 }): RepositoryIdentity {
   const canonicalKey = sourceControlDefinitions.repositoryKeyFromRemote(input.keyUrl);
   const sourceControlProvider = sourceControlDefinitions.recognizeRemote(input.remoteUrl);
@@ -221,6 +222,7 @@ function buildRepositoryIdentity(input: {
       remoteUrl: input.remoteUrl,
     },
     rootPath: input.rootPath,
+    ...(input.linkedCheckout ? { linkedCheckout: true } : {}),
     ...(repositoryPath ? { displayName: repositoryPath } : {}),
     ...(sourceControlProvider ? { provider: sourceControlProvider.kind } : {}),
     ...(owner ? { owner } : {}),
@@ -232,6 +234,8 @@ function buildRepositoryIdentity(input: {
 class RepositoryIdentityCacheKey extends Data.Class<{
   readonly rootPath: string;
   readonly isBare: boolean;
+  /** A secondary jj workspace, whose rootPath is its main workspace. */
+  readonly isSecondaryWorkspace?: boolean;
 }> {}
 
 const gitEnv = (platform: NodeJS.Platform): NodeJS.ProcessEnv => ({
@@ -257,6 +261,12 @@ function statIfExistsSync(candidate: string): NodeFS.Stats | null {
 
 // Non-colocated secondary workspaces need jj's repo pointer instead of Git discovery.
 export function resolveRepositoryRootFromMarkers(cwd: string): string | null {
+  return resolveJjWorkspaceFromMarkers(cwd)?.mainWorkspaceRoot ?? null;
+}
+
+function resolveJjWorkspaceFromMarkers(
+  cwd: string,
+): { readonly workspaceRoot: string; readonly mainWorkspaceRoot: string } | null {
   if (!statIfExistsSync(cwd)?.isDirectory()) {
     return null;
   }
@@ -264,15 +274,19 @@ export function resolveRepositoryRootFromMarkers(cwd: string): string | null {
   for (;;) {
     if (statIfExistsSync(NodePath.join(current, ".jj"))?.isDirectory()) {
       const repoPointer = NodePath.join(current, ".jj", "repo");
+      const own = { workspaceRoot: current, mainWorkspaceRoot: current };
       try {
         if (statIfExistsSync(repoPointer)?.isDirectory()) {
-          return current;
+          return own;
         }
-        return NodeFS.realpathSync(
-          mainWorkspaceRootFromRepoPointer(current, NodeFS.readFileSync(repoPointer, "utf8")),
-        );
+        return {
+          workspaceRoot: current,
+          mainWorkspaceRoot: NodeFS.realpathSync(
+            mainWorkspaceRootFromRepoPointer(current, NodeFS.readFileSync(repoPointer, "utf8")),
+          ),
+        };
       } catch {
-        return current;
+        return own;
       }
     }
     if (
@@ -310,18 +324,22 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
     const detected = yield* registry
       .detect({ cwd, jjOnly: true })
       .pipe(Effect.orElseSucceed(() => null));
-    const markerRoot =
+    const markerWorkspace =
       detected?.kind === "jj"
         ? yield* Effect.sync(() => {
             try {
-              return resolveRepositoryRootFromMarkers(cwd);
+              return resolveJjWorkspaceFromMarkers(cwd);
             } catch {
               return null;
             }
           })
         : null;
-    if (markerRoot !== null) {
-      return new RepositoryIdentityCacheKey({ rootPath: markerRoot, isBare: false });
+    if (markerWorkspace !== null) {
+      return new RepositoryIdentityCacheKey({
+        rootPath: markerWorkspace.mainWorkspaceRoot,
+        isBare: false,
+        isSecondaryWorkspace: markerWorkspace.workspaceRoot !== markerWorkspace.mainWorkspaceRoot,
+      });
     }
 
     // git is always a real executable; cmd shell mode would split spaced paths on re-tokenization.
@@ -409,8 +427,15 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
         timeoutBehavior: "timedOutResult",
       })
       .pipe(Effect.option);
-  const [remoteResult, resolvedResult] = yield* Effect.all(
-    [runGit(["remote", "-v"]), runGit(["config", "--get-regexp", "^remote\\..*\\.gh-resolved$"])],
+  const [remoteResult, resolvedResult, gitDirsResult] = yield* Effect.all(
+    [
+      runGit(["remote", "-v"]),
+      runGit(["config", "--get-regexp", "^remote\\..*\\.gh-resolved$"]),
+      // Run from the top level, both print paths relative to it; a linked worktree's differ.
+      cacheKey.isBare || cacheKey.isSecondaryWorkspace
+        ? Effect.succeedNone
+        : runGit(["rev-parse", "--git-dir", "--git-common-dir"]),
+    ],
     { concurrency: "unbounded" },
   );
   if (remoteResult._tag === "None" || remoteResult.value.code !== 0) {
@@ -431,12 +456,21 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     originUrl === undefined || originUrl === remote.remoteUrl
       ? keyUrl
       : yield* sshResolvedRemoteUrl(originUrl);
+  const [gitDir, commonDir] =
+    gitDirsResult._tag === "Some" && gitDirsResult.value.code === 0
+      ? gitDirsResult.value.stdout
+          .split(/\r?\n/)
+          .map((line) => NodePath.resolve(cacheKey.rootPath, line))
+      : [];
   return buildRepositoryIdentity({
     ...remote,
     keyUrl,
     originUrl,
     originKeyUrl,
     rootPath: cacheKey.rootPath,
+    linkedCheckout:
+      cacheKey.isSecondaryWorkspace === true ||
+      (gitDir !== undefined && commonDir !== undefined && gitDir !== commonDir),
   });
 });
 

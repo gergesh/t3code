@@ -48,6 +48,14 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
+## Group checkouts
+
+Checkouts of the same repository share one project in the sidebar, with one name and icon, and
+**Settings → General → Project grouping** turns this off for every project. A Git worktree or jj
+workspace added as its own project, such as one folder per long-lived branch, stays its own
+project. To change that for one checkout, pick its **Grouping rule** under **Checkouts** in the
+project's settings.
+
 ## Pin and archive projects
 
 Pinned projects come first in the project pickers: the project picker on a new thread, the
