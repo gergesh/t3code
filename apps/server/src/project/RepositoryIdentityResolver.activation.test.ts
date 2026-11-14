@@ -136,14 +136,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
             const identity = yield* resolver.resolve(nested);
             expect(identity?.canonicalKey).toBe("github.com/t3tools/parent");
             expect(identity?.rootPath).toBe(marker === ".jj" ? root : nested);
-            expect(calls).toEqual(
-              marker === ".jj"
-                ? [
-                    ["-C", nested, "rev-parse", "--show-toplevel"],
-                    ["-C", root, "remote", "-v"],
-                  ]
-                : [["-C", nested, "remote", "-v"]],
-            );
+            const identityRoot = marker === ".jj" ? root : nested;
+            expect(calls).toEqual([
+              ...(marker === ".jj" ? [["-C", nested, "rev-parse", "--show-toplevel"]] : []),
+              ["-C", identityRoot, "remote", "-v"],
+              ["-C", identityRoot, "config", "--get-regexp", "^remote\\..*\\.gh-resolved$"],
+              ["-C", identityRoot, "rev-parse", "--git-dir", "--git-common-dir"],
+            ]);
           } finally {
             markerStatInterceptor.failPath = null;
           }
@@ -176,6 +175,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
           expect(identity).not.toBeNull();
           expect(identity?.canonicalKey).toBe("github.com/t3tools/t3code");
           expect(normalizeResolvedPath(identity?.rootPath ?? "")).toBe(normalizeResolvedPath(root));
+          expect(identity?.linkedCheckout).toBe(true);
+          expect((yield* resolver.resolve(root))?.linkedCheckout).toBeUndefined();
         }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
     );
   },

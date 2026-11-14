@@ -319,6 +319,23 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
           expect(normalizeResolvedPath(resolvedIdentityRoot)).toBe(
             normalizeResolvedPath(resolvedRepoRoot),
           );
+          expect(identity?.linkedCheckout).toBeUndefined();
+
+          const worktree = path.join(tempDir, `${rootName}-feature`);
+          yield* git(repoRoot, [
+            "-c",
+            "user.name=T3",
+            "-c",
+            "user.email=t3@example.test",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "seed",
+          ]);
+          yield* git(repoRoot, ["worktree", "add", "-b", "feature", worktree]);
+          const worktreeIdentity = yield* resolver.resolve(worktree);
+          expect(worktreeIdentity?.canonicalKey).toBe("github.com/t3tools/t3code");
+          expect(worktreeIdentity?.linkedCheckout).toBe(true);
         }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
     );
 

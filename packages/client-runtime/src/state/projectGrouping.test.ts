@@ -314,6 +314,33 @@ describe("buildProjectGroups", () => {
     expect(resolveGroupDefaultProject(archivedTool, all, settings("separate")).id).toBe("old-tool");
   });
 
+  it("keeps a linked worktree project apart unless its checkout opts into grouping", () => {
+    const main = makeProject("t3code", "/work/t3code", {
+      repositoryIdentity: { ...repositoryIdentity, rootPath: "/work/t3code" },
+    });
+    const feature = makeProject("t3code-feature", "/work/t3code-feature", {
+      repositoryIdentity: { ...repositoryIdentity, rootPath: "/work/t3code", linkedCheckout: true },
+    });
+    const remoteMain = makeProject("remote", "/srv/t3code", {
+      environmentId: EnvironmentId.make("remote"),
+    });
+    const projects = [main, feature, remoteMain];
+
+    for (const mode of ["repository", "repository_path"] as const) {
+      const groups = buildProjectGroups({ projects, settings: settings(mode) });
+      expect(groups.map((group) => group.members.map((member) => member.project.id))).toEqual([
+        ["t3code", "remote"],
+        ["t3code-feature"],
+      ]);
+      expect(groups[1]?.label).toBe("t3code-feature");
+    }
+    const optedIn = buildProjectGroups({
+      projects,
+      settings: settings("repository", { [derivePhysicalProjectKey(feature)]: "repository" }),
+    });
+    expect(optedIn).toHaveLength(1);
+  });
+
   it("keeps a fork apart from its upstream checkout and labels it by its own remote", () => {
     const fork = makeProject("fork", "/work/t3code-fork", {
       repositoryIdentity: {
