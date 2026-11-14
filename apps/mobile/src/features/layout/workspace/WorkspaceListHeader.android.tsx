@@ -1,4 +1,3 @@
-import { useGT } from "gt-react-native";
 import { useEffect, useState } from "react";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { BackHandler, Keyboard } from "react-native";
@@ -8,13 +7,9 @@ import { useWorkspaceConnectionState } from "../../../state/workspace";
 import { useHardwareKeyboardCommand } from "../../keyboard/hardwareKeyboardCommands";
 import { WorkspaceBrandTitle } from "./WorkspaceBrandTitle";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
-import {
-  workspaceListFilterIcon,
-  type WorkspaceListHeaderProps,
-} from "./WorkspaceListHeader.types";
+import type { WorkspaceListHeaderProps } from "./WorkspaceListHeader.types";
 
 export function WorkspaceListHeader(props: WorkspaceListHeaderProps) {
-  const gt = useGT();
   const navigation = useNavigation();
   const workspace = useWorkspaceTabs();
   const isTabActive = workspace?.isTabActive;
@@ -76,17 +71,7 @@ export function WorkspaceListHeader(props: WorkspaceListHeaderProps) {
         onOpen: openSearch,
         onClose: closeSearch,
       }}
-      menus={
-        connectionState.hasConnections
-          ? [
-              {
-                title: gt("Filter threads"),
-                icon: workspaceListFilterIcon(props.filter.customized),
-                items: props.filter.items,
-              },
-            ]
-          : undefined
-      }
+      menus={connectionState.hasConnections ? props.filters : undefined}
     />
   );
 }

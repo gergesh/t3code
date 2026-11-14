@@ -46,10 +46,7 @@ import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { requestThreadMessageJump } from "./threadMessageJump";
 import { useThreadListSearchMatches } from "./useThreadListSearchMatches";
 import { useHomeListOptions } from "../home/home-list-options";
-import {
-  buildHomeListFilterMenuItems,
-  homeListFilterEnvironments,
-} from "../home/home-list-filter-menu";
+import { buildHomeListFilterMenus, homeListFilterEnvironments } from "../home/home-list-filter-menu";
 import {
   buildHomeProjectScopes,
   resolveHomeProjectFilterScope,
@@ -545,20 +542,17 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
         placeholder: gt("Search", { $context: "search field placeholder" }),
         accessibilityLabel: gt("Search threads"),
       }}
-      filter={{
-        customized: options.selectedEnvironmentId !== null || selectedProjectKey !== null,
-        items: buildHomeListFilterMenuItems(
-          {
-            environments,
-            projects: projectFilterOptions,
-            selectedEnvironmentId: options.selectedEnvironmentId,
-            selectedProjectKey,
-            onEnvironmentChange: setSelectedEnvironmentId,
-            onProjectChange: setSelectedProjectKey,
-          },
-          messages,
-        ),
-      }}
+      filters={buildHomeListFilterMenus(
+        {
+          environments,
+          projects: projectFilterOptions,
+          selectedEnvironmentId: options.selectedEnvironmentId,
+          selectedProjectKey,
+          onEnvironmentChange: setSelectedEnvironmentId,
+          onProjectChange: setSelectedProjectKey,
+        },
+        messages,
+      )}
       sidebar={{
         width: props.width,
         visible: props.visible,

@@ -126,33 +126,60 @@ describe("getProjectScopeSelectionTarget", () => {
 });
 
 describe("newTaskFilteredProject", () => {
+  type Last = { readonly environmentId: string; readonly projectId: string };
+  const mac = makeProject("t3code", "mac");
+  const server = makeProject("t3code", "server");
+  const docs = makeProject("docs", "mac");
+  const connected = new Set([mac.environmentId, server.environmentId]);
+  const filtered = (input: {
+    readonly projectScope?: HomeProjectScope;
+    readonly environmentId?: string;
+    readonly last?: Last;
+  }) =>
+    newTaskFilteredProject({
+      projectScope: input.projectScope ?? null,
+      environmentId:
+        input.environmentId === undefined ? null : EnvironmentId.make(input.environmentId),
+      scopes: [makeScope([mac, server]), makeScope([docs])],
+      connectedEnvironmentIds: connected,
+      lastProject: input.last,
+    });
+
   it("never starts in an archived copy of the filtered project", () => {
-    const mac = { ...makeProject("t3code", "mac"), archivedAt: "2026-01-01T00:00:00.000Z" };
-    const server = makeProject("t3code", "server");
+    const archived = { ...mac, archivedAt: "2026-01-01T00:00:00.000Z" };
     expect(
-      newTaskFilteredProject(
-        makeScope([mac, server]),
-        null,
-        new Set([mac.environmentId, server.environmentId]),
-        { environmentId: "mac", projectId: "t3code" },
-      ),
+      filtered({
+        projectScope: makeScope([archived, server]),
+        last: { environmentId: "mac", projectId: "t3code" },
+      }),
     ).toEqual({ environmentId: "server", projectId: "t3code" });
   });
 
   it("prefers the remembered copy of the filtered project", () => {
-    const mac = makeProject("t3code", "mac");
-    const server = makeProject("t3code", "server");
-    const connected = new Set([mac.environmentId, server.environmentId]);
-    const filtered = (last?: { readonly environmentId: string; readonly projectId: string }) =>
-      newTaskFilteredProject(makeScope([mac, server]), null, connected, last);
-    expect(filtered({ environmentId: "server", projectId: "t3code" })).toEqual({
+    const projectScope = makeScope([mac, server]);
+    expect(
+      filtered({ projectScope, last: { environmentId: "server", projectId: "t3code" } }),
+    ).toEqual({ environmentId: "server", projectId: "t3code" });
+    expect(
+      filtered({ projectScope, last: { environmentId: "server", projectId: "other" } }),
+    ).toEqual({ environmentId: "mac", projectId: "t3code" });
+  });
+
+  it("starts in the filtered environment's copy of the remembered project", () => {
+    const last = { environmentId: "mac", projectId: "t3code" };
+    expect(filtered({ last })).toBeUndefined();
+    expect(filtered({ environmentId: "mac", last })).toEqual(last);
+    expect(filtered({ environmentId: "server", last })).toEqual({
       environmentId: "server",
       projectId: "t3code",
     });
-    expect(filtered({ environmentId: "server", projectId: "other" })).toEqual({
-      environmentId: "mac",
-      projectId: "t3code",
-    });
+  });
+
+  it("finds nothing when the remembered project is not on the filtered environment", () => {
+    expect(
+      filtered({ environmentId: "server", last: { environmentId: "mac", projectId: "docs" } }),
+    ).toBeNull();
+    expect(filtered({ environmentId: "server" })).toBeNull();
   });
 });
 
@@ -279,7 +306,7 @@ describe("newTaskDestination", () => {
     readonly useLastProject: boolean | undefined;
     readonly projects: ReadonlyArray<EnvironmentProject>;
     readonly current?: EnvironmentProject;
-    readonly filtered?: EnvironmentProject;
+    readonly filtered?: EnvironmentProject | null;
     readonly last?: { readonly environmentId: string; readonly projectId: string };
   }) {
     return newTaskDestination({
@@ -325,6 +352,18 @@ describe("newTaskDestination", () => {
     ).toEqual({
       draft: { requestId: "request", environmentId: "environment", projectId: "alpha" },
     });
+  });
+
+  it("opens the picker instead of a remembered project outside the thread list's filters", () => {
+    const projects = [makeProject("remembered")];
+    expect(
+      destination({
+        useLastProject: true,
+        projects,
+        filtered: null,
+        last: { environmentId: "environment", projectId: "remembered" },
+      }),
+    ).toEqual(picker);
   });
 
   it("opens the picker for an archived last project, but keeps an archived current one", () => {
