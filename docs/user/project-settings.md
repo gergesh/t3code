@@ -247,7 +247,9 @@ Git worktree with uncommitted changes unless the removal is forced.
 action next to **Settle** in the sidebar (click it twice to confirm), in the thread menu, and in the
 mobile thread menu. The command must merge `T3CODE_BRANCH` into the default branch and delete
 `T3CODE_WORKTREE_PATH`. T3 Code refuses to run it while the worktree has uncommitted changes, checks
-that the worktree is gone afterwards, and then settles the thread.
+that the worktree is gone afterwards, and then settles the thread. The thread keeps working: it moves
+to the project checkout, and a notice in the chat says what happened. Nothing is sent to the agent
+until your next message, which carries that notice along.
 
 A repository can suggest commands in `t3.json`:
 

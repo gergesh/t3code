@@ -231,7 +231,8 @@ function confirmThreadDeletion(
 
 /**
  * Runs the project's worktree merge command, which merges the thread's branch into the default
- * branch and deletes its worktree, then settles the thread: its work has landed.
+ * branch and deletes its worktree. The server moves the thread to the project checkout, and it
+ * is settled here: its work has landed.
  */
 export function useMergeThreadWorktree() {
   const mergeMutation = useAtomCommand(vcsEnvironment.mergeWorktree, { reportFailure: false });
@@ -250,7 +251,7 @@ export function useMergeThreadWorktree() {
     selectionHaptic();
     const merged = await mergeMutation({
       environmentId: thread.environmentId,
-      input: { cwd: project.workspaceRoot, path: worktreePath, branch },
+      input: { cwd: project.workspaceRoot, path: worktreePath, branch, threadId: thread.id },
     });
     if (merged._tag === "Failure") {
       const error = Cause.squash(merged.cause);
@@ -277,7 +278,7 @@ export function useMergeThreadWorktree() {
     Dialog.confirm({
       title: `Merge ${branch}?`,
       message:
-        "This runs the project's merge command, which merges it into the default branch and deletes the worktree, then settles the thread.",
+        "This runs the project's merge command, which merges it into the default branch and deletes the worktree. The thread settles and continues in the project checkout.",
       confirmText: "Merge",
       onConfirm: () => {
         void merge(thread, branch, worktreePath);

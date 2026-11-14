@@ -189,6 +189,8 @@ export const VcsMergeWorktreeInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   path: TrimmedNonEmptyStringSchema,
   branch: TrimmedNonEmptyStringSchema,
+  /** The thread working in `path`; after the merge it continues in the project checkout. */
+  threadId: Schema.optional(ThreadId),
 });
 export type VcsMergeWorktreeInput = typeof VcsMergeWorktreeInput.Type;
 

@@ -138,6 +138,7 @@ export interface IdAllocatorV2Derive {
   readonly delegatedTaskMessage: (input: { readonly commandId: CommandId }) => MessageId;
   readonly delegatedTaskTurnItem: (input: { readonly commandId: CommandId }) => TurnItemId;
   readonly createdThreadTurnItem: (input: { readonly commandId: CommandId }) => TurnItemId;
+  readonly noticeTurnItem: (input: { readonly commandId: CommandId }) => TurnItemId;
   readonly threadFromProviderThread: (input: {
     readonly driver: ProviderDriverKind;
     readonly nativeThreadId: string;
@@ -290,6 +291,7 @@ export const derive: IdAllocatorV2Derive = {
     TurnItemId.make(joinId("turn-item", "delegated-task", input.commandId)),
   createdThreadTurnItem: (input) =>
     TurnItemId.make(joinId("turn-item", "created-thread", input.commandId)),
+  noticeTurnItem: (input) => TurnItemId.make(joinId("turn-item", "notice", input.commandId)),
   threadFromProviderThread: deriveThreadFromProviderThread,
   subagentThread: makeDeriveSubagentThread(new Set()),
   run: (input) => RunId.make(joinId("run", "thread", input.threadId, "ordinal", input.ordinal)),

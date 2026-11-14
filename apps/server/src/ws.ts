@@ -202,6 +202,7 @@ import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import { makePrepareTerminalLaunch } from "./workspace/restoreMissingWorktree.ts";
+import { makeMergeThreadWorktree } from "./workspace/mergeThreadWorktree.ts";
 import { terminalOutputStream, withOutputWindow } from "./terminal/OutputProtocol.ts";
 import { withSocketHeartbeat } from "./socketHeartbeat.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
@@ -1560,6 +1561,7 @@ export const layerWsRpc = (
       const prepareTerminalLaunch = yield* makePrepareTerminalLaunch(
         threadManagement.getThreadShell,
       );
+      const mergeThreadWorktree = yield* makeMergeThreadWorktree;
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
@@ -3323,7 +3325,7 @@ export const layerWsRpc = (
             ),
           ),
         [WS_METHODS.vcsMergeWorktree]: (input) =>
-          gitWorkflow.mergeWorktree(input).pipe(
+          mergeThreadWorktree(input).pipe(
             Effect.tap(() => refreshGitStatus(input.cwd)),
             Effect.tap(() =>
               vcsStatusBroadcaster

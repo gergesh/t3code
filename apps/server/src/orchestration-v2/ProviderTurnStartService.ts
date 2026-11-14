@@ -35,6 +35,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
 import * as ServerConfig from "../config.ts";
+import { agentNoticeText } from "./AgentNotices.ts";
 import {
   CLAUDE_PROVIDER,
   CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL,
@@ -1086,6 +1087,21 @@ export const layer: Layer.Layer<
       ]
         .filter((part) => part !== "")
         .join("\n\n");
+      const agentNotes = yield* projectionStore
+        .getThreadRecords(projection.thread.id, ["turnItems"], {
+          turnItemTypes: ["system_notice"],
+          turnItemRunIds: [null],
+        })
+        .pipe(
+          Effect.map(({ turnItems }) => agentNoticeText(turnItems, projection.runs, run)),
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Failed to read notices for the agent", {
+              runId: run.id,
+              cause,
+            }).pipe(Effect.as("")),
+          ),
+        );
+      const turnNote = [restartNote, agentNotes].filter((part) => part !== "").join("\n\n");
       const tokenCap = yield* handoffTokenCapConfig.pipe(
         Effect.orElseSucceed(() => DEFAULT_HANDOFF_TOKEN_CAP),
       );
@@ -1235,7 +1251,7 @@ export const layer: Layer.Layer<
             return handoffBudget({
               tokenCap,
               modelContextWindow,
-              userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
+              userText: turnNote === "" ? userText : `${turnNote}\n\n${userText}`,
               attachments: providerMessage.attachments,
               providerThread: budgetProviderThread,
               nativeContextEstimate:
@@ -1908,7 +1924,7 @@ export const layer: Layer.Layer<
         retryHandoff.handoffs.length > 0 ||
         retryHandoff.attachments.length > 0 ||
         sideChatHandoff !== undefined ||
-        restartNote !== "" ||
+        turnNote !== "" ||
         noteContinuation;
       // Pending context turns the resume into a prompted turn, which needs no native resume.
       if (
@@ -2135,7 +2151,7 @@ export const layer: Layer.Layer<
             ),
             ...(sideChatContext === "" || sideChatHandoff === undefined ? [] : [sideChatHandoff]),
           ];
-          const context = [delivery.context, sideChatContext, restartNote]
+          const context = [delivery.context, sideChatContext, turnNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;

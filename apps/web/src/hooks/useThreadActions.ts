@@ -931,8 +931,9 @@ export function useThreadActions() {
 
   /**
    * Runs the project's worktree merge command, which merges the thread's branch into the default
-   * branch and deletes its worktree, then settles the thread: its work has landed. Reports its
-   * own progress and failures, since it outlives the control that started it.
+   * branch and deletes its worktree. The server moves the thread to the project checkout, and it
+   * is settled here: its work has landed. Reports its own progress and failures, since it
+   * outlives the control that started it.
    */
   const mergeThreadWorktree = async (target: ScopedThreadRef) => {
     const thread = readThreadShell(target);
@@ -952,7 +953,12 @@ export function useThreadActions() {
     );
     const merged = await mergeWorktree({
       environmentId: target.environmentId,
-      input: { cwd: project.workspaceRoot, path: thread.worktreePath, branch },
+      input: {
+        cwd: project.workspaceRoot,
+        path: thread.worktreePath,
+        branch,
+        threadId: target.threadId,
+      },
     });
     if (merged._tag === "Failure") {
       toastManager.update(toastId, {
@@ -986,7 +992,7 @@ export function useThreadActions() {
     const localApi = readLocalApi();
     if (!branch || !localApi) return;
     const confirmed = await localApi.dialogs.confirm(
-      `Merge ${branch} into the default branch?\nThis runs the project's merge command, deletes the worktree and settles the thread.`,
+      `Merge ${branch} into the default branch?\nThis runs the project's merge command and deletes the worktree. The thread settles and continues in the project checkout.`,
     );
     if (confirmed) await mergeThreadWorktree(target);
   };
