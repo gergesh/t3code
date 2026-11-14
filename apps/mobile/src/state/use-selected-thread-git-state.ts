@@ -64,6 +64,5 @@ export function useSelectedThreadGitState(repository?: GitRepositoryTarget) {
     vcsTerminology,
     sourceControlDiscovery,
     selectedThreadBranches,
-    selectedThreadBranchesLoading: selectedThreadBranchState.isPending,
   };
 }

@@ -5,7 +5,7 @@ import { expect, it, vi } from "vite-plus/test";
 const checkout = vi.hoisted(() => ({
   projectRoot: "",
   worktreePath: null as string | null,
-  branches: [] as Array<{ name: string; worktreePath: string | null }>,
+  branches: [] as Array<{ name: string; worktreePath: string | null; isRemote?: boolean }>,
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -45,10 +45,17 @@ vi.mock("../../../state/use-thread-detail", () => ({
   useSelectedThreadWorktreePath: () => checkout.worktreePath,
 }));
 vi.mock("../../../state/use-selected-thread-git-state", () => ({
-  useSelectedThreadGitState: () => ({
-    selectedThreadBranches: checkout.branches,
-    selectedThreadBranchesLoading: false,
-    gitOperationLabel: null,
+  useSelectedThreadGitState: () => ({ gitOperationLabel: null }),
+}));
+vi.mock("../../../state/queries", () => ({
+  useDebouncedValue: <A,>(value: A) => value,
+  usePaginatedBranches: () => ({
+    data: null,
+    refs: checkout.branches,
+    error: null,
+    isPending: false,
+    isFetchingNextPage: false,
+    loadNext: () => {},
   }),
 }));
 vi.mock("../../../state/use-selected-thread-git-actions", () => ({
@@ -67,6 +74,7 @@ it("recognizes both the main checkout and a linked worktree as this thread's che
     { name: "feature/available", worktreePath: null },
     { name: "feature/linked", worktreePath: linked },
     { name: "main", worktreePath: directory },
+    { name: "origin/feature/remote-only", worktreePath: null, isRemote: true },
   ];
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const container = document.createElement("div");
@@ -91,6 +99,7 @@ it("recognizes both the main checkout and a linked worktree as this thread's che
       { name: "feature/available", subtitle: "Local branch", disabled: false },
       { name: "feature/linked", subtitle: "Checked out in another worktree", disabled: true },
       { name: "main", subtitle: "Checked out in this thread", disabled: false },
+      { name: "origin/feature/remote-only", subtitle: "Remote branch", disabled: false },
     ]);
 
     checkout.worktreePath = linked;
@@ -98,6 +107,7 @@ it("recognizes both the main checkout and a linked worktree as this thread's che
       { name: "feature/available", subtitle: "Local branch", disabled: false },
       { name: "feature/linked", subtitle: "Checked out in this thread", disabled: false },
       { name: "main", subtitle: "Checked out in another worktree", disabled: true },
+      { name: "origin/feature/remote-only", subtitle: "Remote branch", disabled: false },
     ]);
   } finally {
     act(() => root.unmount());

@@ -1,4 +1,4 @@
-import { sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import { sanitizeFeatureBranchName, sanitizeNewRefName } from "@t3tools/shared/git";
 import {
   resolveVcsTerminology,
   resolveVcsUnsupportedReason,
@@ -15,13 +15,17 @@ import { FormField, FormSection } from "../../../components/ui/FormSection";
 import { ListChoiceRow } from "../../../components/ui/ListChoiceRow";
 import { ListSection } from "../../../components/ui/ListSection";
 import { useEnvironmentQuery } from "../../../state/query";
+import { useDebouncedValue, usePaginatedBranches } from "../../../state/queries";
 import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
 import { useSelectedThreadWorktree } from "../../../state/use-selected-thread-worktree";
 import { vcsEnvironment } from "../../../state/vcs";
 import { useRefreshBranchesOnFocus } from "../use-refresh-branches-on-focus";
+import { filterNewTaskBranches } from "../new-task-context-presentation";
 import { SheetActionButton } from "./gitSheetComponents";
+
+const BRANCH_SEARCH_DEBOUNCE_MS = 150;
 
 type GitBranchesSheetProps = StaticScreenProps<{
   readonly environmentId: string;
@@ -52,8 +56,22 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   const vcsActionsSupported = supportsVcsActions(gitStatus.data);
   const currentBranch = gitStatus.data?.refName ?? selectedThread?.branch ?? null;
   const currentWorktreePath = selectedThreadCwd;
-  const availableBranches = gitState.selectedThreadBranches;
-  const branchesLoading = gitState.selectedThreadBranchesLoading;
+  const [branchQuery, setBranchQuery] = useState("");
+  const branchSearchQuery = sanitizeNewRefName(branchQuery);
+  const debouncedBranchQuery = useDebouncedValue(branchSearchQuery, BRANCH_SEARCH_DEBOUNCE_MS);
+  // Server order: current, default, local by recency, then remote-only refs. The query runs on the
+  // server so it reaches refs past the first page; the local filter keeps typing instant.
+  const branchState = usePaginatedBranches({
+    environmentId: selectedThread?.environmentId ?? null,
+    cwd: selectedThreadCwd,
+    query: debouncedBranchQuery,
+  });
+  const availableBranches = filterNewTaskBranches(branchState.refs, branchQuery);
+  const branchesLoading =
+    branchSearchQuery !== debouncedBranchQuery ||
+    (branchState.isPending && branchState.data === null);
+  const hasMoreBranches =
+    branchState.data?.nextCursor !== null && branchState.data?.nextCursor !== undefined;
   const busy = gitState.gitOperationLabel !== null;
 
   const [newBranchName, setNewBranchName] = useState("");
@@ -119,7 +137,9 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
         />
       </FormSection>
 
-      <FormSection title={gt("New {workspaceNoun}", { workspaceNoun: vcsTerminology.workspaceNoun })}>
+      <FormSection
+        title={gt("New {workspaceNoun}", { workspaceNoun: vcsTerminology.workspaceNoun })}
+      >
         <FormField
           label={gt("Base {refNoun}", { refNoun: vcsTerminology.refNoun })}
           value={worktreeBaseBranch}
@@ -167,16 +187,30 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
         />
       </FormSection>
 
-      <ListSection
+      <FormSection
         title={gt("Existing {refNounPlural}", { refNounPlural: vcsTerminology.refNounPlural })}
+      >
+        <FormField
+          value={branchQuery}
+          onChangeText={setBranchQuery}
+          placeholder={gt("Search {refNounPlural}", {
+            refNounPlural: vcsTerminology.refNounPlural,
+          })}
+          accessibilityLabel={gt("Search {refNounPlural}", {
+            refNounPlural: vcsTerminology.refNounPlural,
+          })}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </FormSection>
+      <ListSection
         footer={
           branchesLoading
             ? gt("Loading {refNounPlural}...", { refNounPlural: vcsTerminology.refNounPlural })
-            : availableBranches.length === 0
-              ? gt("No local {refNounPlural} found.", {
-                  refNounPlural: vcsTerminology.refNounPlural,
-                })
-              : undefined
+            : (branchState.error ??
+              (availableBranches.length === 0
+                ? gt("No {refNounPlural} found.", { refNounPlural: vcsTerminology.refNounPlural })
+                : undefined))
         }
       >
         {availableBranches.map((branch, index) => {
@@ -189,7 +223,9 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
                 })
             : branch.isDefault
               ? vcsTerminology.defaultRefLabel
-              : gt("Local {refNoun}", { refNoun: vcsTerminology.refNoun });
+              : branch.isRemote
+                ? gt("Remote {refNoun}", { refNoun: vcsTerminology.refNoun })
+                : gt("Local {refNoun}", { refNoun: vcsTerminology.refNoun });
 
           return (
             <ListChoiceRow
@@ -210,6 +246,14 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
           );
         })}
       </ListSection>
+      {hasMoreBranches ? (
+        <SheetActionButton
+          icon="chevron.down"
+          label={gt("Show more {refNounPlural}", { refNounPlural: vcsTerminology.refNounPlural })}
+          disabled={branchState.isFetchingNextPage}
+          onPress={branchState.loadNext}
+        />
+      ) : null}
     </FitSheet>
   );
 }

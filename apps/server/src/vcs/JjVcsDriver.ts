@@ -126,6 +126,7 @@ export class JjVcsDriver extends Context.Service<JjVcsDriver, JjVcsDriverShape>(
 const REPO_METADATA_CACHE_CAPACITY = 512;
 const REPO_METADATA_CACHE_TTL = Duration.minutes(5);
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
+const BOOKMARK_LIST_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const DEFAULT_BASE_BOOKMARK_CANDIDATES = ["main", "master"] as const;
 /** 64 KiB of one-byte rows caps the count near 32k commits, far past anything the UI renders. */
 const COUNT_REVSET_MAX_OUTPUT_BYTES = 64 * 1024;
@@ -603,8 +604,10 @@ const makeVcsDriverShape = Effect.gen(function* () {
         {
           ignoreWorkingCopy: true,
           timeoutMs: 10_000,
-          maxOutputBytes: 1024 * 1024,
-          outputMode: "truncate",
+          // Rows are sorted by name, so a truncated list silently drops `main` and everything
+          // after it. Forks with several remotes reach megabytes; fail rather than lie.
+          maxOutputBytes: BOOKMARK_LIST_MAX_OUTPUT_BYTES,
+          outputMode: "error",
         },
       );
 
