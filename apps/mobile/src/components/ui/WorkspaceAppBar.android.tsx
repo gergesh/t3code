@@ -14,6 +14,7 @@ import { Pressable, View } from "react-native";
 
 import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu.android";
 import { AndroidHeaderIconButton } from "./AndroidScreenHeader.android";
+import type { AppSymbolName } from "./AppSymbol";
 import { AppText } from "./AppText";
 import { NativeAppBar } from "./NativeAppBar.android";
 import { useControlTheme } from "./useControlTheme";
@@ -21,7 +22,16 @@ import { useToolbarLayout } from "./useToolbarLayout";
 
 const SEARCH_ICON = require("../../../assets/icons/search.xml");
 const FILTER_ICON = require("../../../assets/icons/filter.xml");
-const FILTER_FILLED_ICON = require("../../../assets/icons/filter-filled.xml");
+// Compose draws these, so each filter glyph a bar can show needs a vector here.
+const FILTER_GLYPHS: Partial<Record<Extract<AppSymbolName, string>, number>> = {
+  "line.3.horizontal.decrease.circle": FILTER_ICON,
+  "line.3.horizontal.decrease.circle.fill": require("../../../assets/icons/filter-filled.xml"),
+  folder: require("../../../assets/icons/folder.xml"),
+  "folder.fill": require("../../../assets/icons/folder-filled.xml"),
+  "server.rack": require("../../../assets/icons/server.xml"),
+};
+// Every bar keeps these filter slots; see WorkspaceAppBarView.
+const FILTER_SLOTS = ["leading", "trailing"] as const;
 // Material TopAppBar: 48dp icon buttons, the last one 4dp from the end.
 const ACTION_SIZE = 48;
 const ACTION_END_INSET = 4;
@@ -36,13 +46,18 @@ export interface WorkspaceAppBarProps {
     readonly onOpen: () => void;
     readonly onClose: () => void;
   };
-  /** Stays trailing while searching, so it never moves and still narrows the results. */
-  readonly filter?: {
-    readonly accessibilityLabel: string;
-    readonly customized: boolean;
-    readonly actions: MenuAction[];
-    readonly onSelect: (id: string) => void;
-  };
+  /** Stay trailing while searching, so they never move and still narrow the results. */
+  readonly filters?: ReadonlyArray<WorkspaceAppBarFilter>;
+}
+
+interface WorkspaceAppBarFilter {
+  readonly accessibilityLabel: string;
+  /** Needs a glyph in FILTER_GLYPHS. */
+  readonly icon: AppSymbolName;
+  /** Tints the glyph, such as for an applied filter. */
+  readonly selected: boolean;
+  readonly actions: MenuAction[];
+  readonly onSelect: (id: string) => void;
 }
 
 function createWorkspaceAppBarStore() {
@@ -129,13 +144,21 @@ export function WorkspaceAppBar(props: WorkspaceAppBarProps) {
  */
 function WorkspaceAppBarView(props: WorkspaceAppBarProps) {
   const gt = useGT();
-  const { search, filter } = props;
+  const { search } = props;
+  const filters = props.filters?.slice(-FILTER_SLOTS.length) ?? [];
   const searching = search?.active === true;
   const { colors } = useControlTheme();
   const tint = colors["--color-header-foreground"];
+  const selectedTint = colors["--color-primary"];
   const { height, paddingTop, paddingBottom } = useToolbarLayout();
-  const filterMenu = filter ? (
+  // Filters fill the trailing slots, so a bar with one keeps it at the edge.
+  const filterSlots = FILTER_SLOTS.map((slot, index) => ({
+    slot,
+    filter: filters[index - (FILTER_SLOTS.length - filters.length)],
+  }));
+  const filterMenu = (slot: string, filter: WorkspaceAppBarFilter) => (
     <AndroidAnchoredMenu
+      key={slot}
       actions={filter.actions}
       onPressAction={({ nativeEvent }) => filter.onSelect(nativeEvent.event)}
     >
@@ -143,11 +166,8 @@ function WorkspaceAppBarView(props: WorkspaceAppBarProps) {
         searching ? (
           <AndroidHeaderIconButton
             accessibilityLabel={filter.accessibilityLabel}
-            icon={
-              filter.customized
-                ? "line.3.horizontal.decrease.circle.fill"
-                : "line.3.horizontal.decrease.circle"
-            }
+            icon={filter.icon}
+            highlighted={filter.selected}
             onPress={open}
           />
         ) : (
@@ -162,7 +182,10 @@ function WorkspaceAppBarView(props: WorkspaceAppBarProps) {
         )
       }
     </AndroidAnchoredMenu>
-  ) : null;
+  );
+  const filterMenus = filterSlots.flatMap(({ slot, filter }) =>
+    filter ? [filterMenu(slot, filter)] : [],
+  );
   return (
     <View className="bg-header" style={{ paddingTop, paddingBottom }}>
       <View
@@ -183,8 +206,9 @@ function WorkspaceAppBarView(props: WorkspaceAppBarProps) {
               </View>
             </RNHostView>
           }
-          // Both slots always exist: Expo UI applies a child insert or removal a frame before the
+          // Every slot always exists: Expo UI applies a child insert or removal a frame before the
           // other children's new props, so changing the slot count drew the wrong glyph mid-switch.
+          // An unused leading slot collapses instead.
           nativeActions={
             <>
               <IconButton enabled={search !== undefined} onClick={search?.onOpen}>
@@ -195,22 +219,31 @@ function WorkspaceAppBarView(props: WorkspaceAppBarProps) {
                   contentDescription={search?.accessibilityLabel}
                 />
               </IconButton>
-              <Box contentAlignment="center" modifiers={[size(ACTION_SIZE, ACTION_SIZE)]}>
-                <Icon
-                  source={filter?.customized ? FILTER_FILLED_ICON : FILTER_ICON}
-                  size={24}
-                  tint={filter ? tint : "transparent"}
-                />
-              </Box>
+              {filterSlots.map(({ slot, filter }) => (
+                <Box
+                  key={slot}
+                  contentAlignment="center"
+                  modifiers={[size(filter || slot === "trailing" ? ACTION_SIZE : 0, ACTION_SIZE)]}
+                >
+                  <Icon
+                    source={
+                      (typeof filter?.icon === "string" ? FILTER_GLYPHS[filter.icon] : undefined) ??
+                      FILTER_ICON
+                    }
+                    size={24}
+                    tint={filter ? (filter.selected ? selectedTint : tint) : "transparent"}
+                  />
+                </Box>
+              ))}
             </>
           }
         />
-        {filter && !searching ? (
+        {filters.length > 0 && !searching ? (
           <View
-            className="absolute"
+            className="absolute flex-row"
             style={{ right: ACTION_END_INSET, top: (height - ACTION_SIZE) / 2 }}
           >
-            {filterMenu}
+            {filterMenus}
           </View>
         ) : null}
       </View>
@@ -226,7 +259,7 @@ function WorkspaceAppBarView(props: WorkspaceAppBarProps) {
               onPress={search.onClose}
             />
             {search.field}
-            {filterMenu}
+            {filterMenus}
           </View>
         </View>
       ) : null}

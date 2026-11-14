@@ -1,0 +1,7 @@
+<!-- Tabler Icons folder, filled (MIT), matching AppSymbol's folder.fill. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#000000"
+        android:pathData="M9,3 a1,1 0 0,1 0.608,0.206 l0.1,0.087 l2.706,2.707 h6.586 a3,3 0 0,1 2.995,2.824 l0.005,0.176 v8 a3,3 0 0,1 -2.824,2.995 l-0.176,0.005 h-14 a3,3 0 0,1 -2.995,-2.824 l-0.005,-0.176 v-11 a3,3 0 0,1 2.824,-2.995 l0.176,-0.005 h4 z" />
+</vector>

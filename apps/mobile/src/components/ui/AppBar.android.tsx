@@ -117,8 +117,6 @@ function AppBarView(props: AppBarProps & { readonly searchState?: SearchState })
     ) : null;
 
   if (inWorkspace) {
-    const menu = props.menus?.[0];
-    const icon = typeof menu?.icon === "string" ? menu.icon : menu?.icon.android;
     return (
       <WorkspaceAppBar
         title={props.title}
@@ -134,16 +132,13 @@ function AppBarView(props: AppBarProps & { readonly searchState?: SearchState })
               }
             : undefined
         }
-        filter={
-          menu
-            ? {
-                accessibilityLabel: menu.title,
-                customized: icon?.endsWith(".fill") === true,
-                actions: menuActionsFromAppBarItems(menu.items),
-                onSelect: (id) => selectMenuItem(menu.items, id),
-              }
-            : undefined
-        }
+        filters={props.menus?.map((menu) => ({
+          accessibilityLabel: menu.title,
+          icon: menu.icon,
+          selected: menu.selected === true,
+          actions: menuActionsFromAppBarItems(menu.items),
+          onSelect: (id) => selectMenuItem(menu.items, id),
+        }))}
       />
     );
   }
@@ -156,7 +151,11 @@ function AppBarView(props: AppBarProps & { readonly searchState?: SearchState })
       title={menu.status ?? menu.title}
       onPressAction={({ nativeEvent }) => selectMenuItem(menu.items, nativeEvent.event)}
     >
-      <ScreenHeaderButton accessibilityLabel={menu.title} icon={menu.icon} />
+      <ScreenHeaderButton
+        accessibilityLabel={menu.title}
+        icon={menu.icon}
+        highlighted={menu.selected}
+      />
     </Menu>
   ));
   const confirmButton = props.confirm ? (
