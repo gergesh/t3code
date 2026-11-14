@@ -6,6 +6,7 @@ import * as Axiom from "@alchemy.run/axiom";
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Output from "alchemy/Output";
 import * as Cause from "effect/Cause";
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
@@ -28,8 +29,7 @@ const relayRecentSpansQuery = (dataset: string) =>
     `| limit 200`,
   ].join("\n");
 
-export const RelayObservability = Effect.gen(function* () {
-  const { stage } = yield* Alchemy.Stack;
+const AxiomObservability = Effect.fn("AxiomObservability")(function* (stage: string) {
   const traces = yield* Axiom.Dataset("RelayTracesDataset", {
     name: relayResourceNameForStage("t3-code-relay-traces", stage),
     kind: "otel:traces:v1",
@@ -87,12 +87,6 @@ export const RelayObservability = Effect.gen(function* () {
     ),
   });
 
-  const mobileSourceMaps = yield* Cloudflare.R2.Bucket("MobileSourceMapsBucket", {
-    name: mobileSourceMapsBucketName(stage),
-    // R2 refuses to delete a non-empty bucket, which would half tear down every non-prod stage.
-    forceDestroy: stage !== "prod",
-  });
-
   yield* Axiom.View("RelayRecentSpansView", {
     name: relayResourceNameForStage("t3-code-relay-recent-spans", stage),
     description: "Recent relay HTTP request spans.",
@@ -111,8 +105,20 @@ export const RelayObservability = Effect.gen(function* () {
     mobileLogs,
     mobileMetrics,
     mobileTelemetryIngestToken,
-    mobileSourceMaps,
   } as const;
+});
+
+// Self-hosted relays can run without an Axiom account; tracing and mobile telemetry then go nowhere.
+export const RelayObservability = Effect.gen(function* () {
+  const { stage } = yield* Alchemy.Stack;
+  const axiomEnabled = yield* Config.Boolean("RELAY_AXIOM_ENABLED").pipe(Config.withDefault(true));
+  const axiom = axiomEnabled ? Option.some(yield* AxiomObservability(stage)) : Option.none();
+  const mobileSourceMaps = yield* Cloudflare.R2.Bucket("MobileSourceMapsBucket", {
+    name: mobileSourceMapsBucketName(stage),
+    // R2 refuses to delete a non-empty bucket, which would half tear down every non-prod stage.
+    forceDestroy: stage !== "prod",
+  });
+  return { axiom, mobileSourceMaps } as const;
 });
 
 const mobileSourceMapsBucketName = (stage: string) =>

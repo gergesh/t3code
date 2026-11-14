@@ -217,13 +217,17 @@ export const layer = Api.make(
       },
     });
     const mobileSourceMaps = yield* Cloudflare.R2.ReadBucket(observability.mobileSourceMaps);
-    const mobileTelemetryToken = yield* observability.mobileTelemetryIngestToken.token;
-    const mobileTracesUrl = yield* observability.traces.otelTracesEndpoint;
-    const mobileTracesDataset = yield* observability.traces.name;
-    const mobileLogsUrl = yield* observability.mobileLogs.otelLogsEndpoint;
-    const mobileLogsDataset = yield* observability.mobileLogs.name;
-    const mobileMetricsUrl = yield* observability.mobileMetrics.otelMetricsEndpoint;
-    const mobileMetricsDataset = yield* observability.mobileMetrics.name;
+    const mobileTelemetryAxiom = Option.isNone(observability.axiom)
+      ? Option.none()
+      : Option.some({
+          token: yield* observability.axiom.value.mobileTelemetryIngestToken.token,
+          tracesUrl: yield* observability.axiom.value.traces.otelTracesEndpoint,
+          tracesDataset: yield* observability.axiom.value.traces.name,
+          logsUrl: yield* observability.axiom.value.mobileLogs.otelLogsEndpoint,
+          logsDataset: yield* observability.axiom.value.mobileLogs.name,
+          metricsUrl: yield* observability.axiom.value.mobileMetrics.otelMetricsEndpoint,
+          metricsDataset: yield* observability.axiom.value.mobileMetrics.name,
+        });
 
     const alchemyRuntimeContext: Alchemy.BaseRuntimeContext = yield* Cloudflare.Worker;
 
@@ -397,32 +401,37 @@ export const layer = Api.make(
           ),
       }),
     );
-    const layerMobileTelemetry = MobileTelemetry.layer.pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          Layer.effect(
-            MobileTelemetry.MobileTelemetrySettings,
-            Effect.gen(function* () {
-              return MobileTelemetry.MobileTelemetrySettings.of({
-                axiomToken: yield* mobileTelemetryToken,
-                destinations: {
-                  traces: { url: yield* mobileTracesUrl, dataset: yield* mobileTracesDataset },
-                  logs: { url: yield* mobileLogsUrl, dataset: yield* mobileLogsDataset },
-                  metrics: { url: yield* mobileMetricsUrl, dataset: yield* mobileMetricsDataset },
-                },
-              });
-            }),
-          ),
-          Layer.succeed(MobileTelemetry.MobileTelemetryRateLimiter, {
-            allow: allowWith(
-              mobileTelemetryRateLimit,
-              "relay.mobile_telemetry.rate_limiter_failed_open",
+    const layerMobileTelemetryForward = (axiom: Option.Option.Value<typeof mobileTelemetryAxiom>) =>
+      MobileTelemetry.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.effect(
+              MobileTelemetry.MobileTelemetrySettings,
+              Effect.gen(function* () {
+                return MobileTelemetry.MobileTelemetrySettings.of({
+                  axiomToken: yield* axiom.token,
+                  destinations: {
+                    traces: { url: yield* axiom.tracesUrl, dataset: yield* axiom.tracesDataset },
+                    logs: { url: yield* axiom.logsUrl, dataset: yield* axiom.logsDataset },
+                    metrics: { url: yield* axiom.metricsUrl, dataset: yield* axiom.metricsDataset },
+                  },
+                });
+              }),
             ),
-          }),
-          Layer.succeed(MobileTelemetry.SourceMaps, mobileSourceMapLookups),
+            Layer.succeed(MobileTelemetry.MobileTelemetryRateLimiter, {
+              allow: allowWith(
+                mobileTelemetryRateLimit,
+                "relay.mobile_telemetry.rate_limiter_failed_open",
+              ),
+            }),
+            Layer.succeed(MobileTelemetry.SourceMaps, mobileSourceMapLookups),
+          ),
         ),
-      ),
-    );
+      );
+    const layerMobileTelemetry = Option.match(mobileTelemetryAxiom, {
+      onNone: () => MobileTelemetry.layerDiscard,
+      onSome: layerMobileTelemetryForward,
+    });
 
     const layerApp = Layer.mergeAll(
       layerRelayApi,
@@ -566,11 +575,15 @@ export const layer = Api.make(
         ),
         Layer.provideMerge(
           Layer.unwrap(
-            Effect.map(RelayObservability, (observability) =>
-              Axiom.Telemetry({
-                serviceName: "t3code-relay",
-                token: observability.workerIngestToken,
-                traces: observability.traces,
+            Effect.map(RelayObservability, ({ axiom }) =>
+              Option.match(axiom, {
+                onNone: () => Layer.empty,
+                onSome: ({ workerIngestToken, traces }) =>
+                  Axiom.Telemetry({
+                    serviceName: "t3code-relay",
+                    token: workerIngestToken,
+                    traces,
+                  }),
               }),
             ),
           ),

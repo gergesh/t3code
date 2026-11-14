@@ -10,7 +10,12 @@ import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vite-plus/test";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
-import { PublishClientConfig, reconcileEnvFile, tokenDigest } from "./clientConfig.ts";
+import {
+  PublishClientConfig,
+  reconcileEnvFile,
+  relayClientConfigEnv,
+  tokenDigest,
+} from "./clientConfig.ts";
 
 describe("reconcileEnvFile", () => {
   it("replaces stale values and keeps unrelated lines", () => {
@@ -71,6 +76,14 @@ const clientConfig = (token: string) => ({
   clientTracingDataset: "relay-traces",
   clientTracingToken: Redacted.make(`client-${token}`),
   tokenDigest: tokenDigest([Redacted.make(`mobile-${token}`), Redacted.make(`client-${token}`)]),
+});
+
+describe("relayClientConfigEnv", () => {
+  it("writes only the relay url when the relay has no tracing", () => {
+    expect(relayClientConfigEnv({ url: "https://relay.example.com", tokenDigest: "" })).toEqual({
+      T3CODE_RELAY_URL: "https://relay.example.com",
+    });
+  });
 });
 
 describe("PublishClientConfig", () => {
