@@ -1,4 +1,5 @@
 import { DEFAULT_SERVER_SETTINGS, type ServerSettingsPatch } from "@t3tools/contracts";
+import { GIT_VCS_TERMINOLOGY } from "@t3tools/shared/vcs";
 import { AsyncResult } from "effect/reactivity";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -62,6 +63,7 @@ vi.mock("../../state/session", () => ({
 }));
 vi.mock("../../state/server", () => ({ serverEnvironment: { updateSettings: {} } }));
 vi.mock("../../state/environments", () => ({ useEnvironments: () => ({ environments: [] }) }));
+vi.mock("../../state/vcs", () => ({ useVcsTerminology: () => GIT_VCS_TERMINOLOGY }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: () => mocks.updateSettings,
 }));
@@ -70,7 +72,7 @@ vi.mock("../threads/thread-settings-options", () => ({
   withManagedRuntimeModeLimits: (choices: readonly unknown[]) => choices,
 }));
 vi.mock("../../components/ui/ScreenScrollView", () => ({ ScreenScrollView: Children }));
-vi.mock("../../components/ui/AppText", () => ({ AppText: Children }));
+vi.mock("../../components/ui/AppText", () => ({ AppText: Children, AppTextInput: () => null }));
 vi.mock("../../components/ui/Button", () => ({
   Button: ({
     label,

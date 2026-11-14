@@ -112,6 +112,7 @@ import * as DesktopBrowserChannel from "./preview/DesktopBrowserChannel.ts";
 import * as ServerBrowserStream from "./preview/ServerBrowserStream.ts";
 import * as PreviewBrowser from "./preview/PreviewBrowser.ts";
 import * as ProcessRunner from "./processRunner.ts";
+import * as WorktreeCommands from "./vcs/WorktreeCommands.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
@@ -136,12 +137,14 @@ import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
+import * as FrecentDirectories from "./workspace/FrecentDirectories.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFolders from "./workspace/WorkspaceFolders.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
 import * as TaskFolderStore from "./workspace/TaskFolderStore.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
+import * as AgentRoles from "./project/AgentRoles.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsAutomaticFetchInterval from "./vcs/VcsAutomaticFetchInterval.ts";
@@ -152,6 +155,8 @@ import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import * as JjWorkflow from "./jj/JjWorkflow.ts";
+import * as JjVcsDriver from "./vcs/JjVcsDriver.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
@@ -416,6 +421,7 @@ const layerPlatformServices = DocumentText.layer.pipe(
 
 const layerPersistence = Layer.empty.pipe(Layer.provideMerge(SqlitePersistence.layerConfig));
 
+// The registry and workflow must reuse JjVcsDriver.layer so Effect shares their repository caches.
 const layerVcsDriverRegistry = VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer));
 
 const layerSourceControlProviderRegistry = SourceControlProviderRegistry.layer.pipe(
@@ -478,14 +484,24 @@ const layerGit = Layer.empty.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
 );
 
+const layerJjWorkflow = JjWorkflow.layer.pipe(
+  Layer.provide(Layer.merge(ProjectionStoreV2.layer, ProjectStore.layer)),
+  Layer.provideMerge(JjVcsDriver.layer),
+  Layer.provideMerge(layerGitManager),
+);
+
 const layerGitWorkflow = GitWorkflowService.layer.pipe(
+  Layer.provide(WorktreeCommands.layer.pipe(Layer.provide(RuntimeLayer.layerProjectService))),
   Layer.provideMerge(layerVcsDriverRegistry),
   Layer.provideMerge(layerGit),
+  Layer.provideMerge(layerJjWorkflow),
 );
 
 const layerSourceControlRepositoryService = SourceControlRepositoryService.layer.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(layerSourceControlProviderRegistry),
+  Layer.provideMerge(layerVcsDriverRegistry),
+  Layer.provideMerge(layerJjWorkflow),
 );
 
 const layerProjectCloneTracker = ProjectCloneTracker.layer.pipe(
@@ -495,6 +511,8 @@ const layerProjectCloneTracker = ProjectCloneTracker.layer.pipe(
 const layerKnownWorkspaces = KnownWorkspaces.layer.pipe(
   Layer.provide(ProjectStore.layer),
   Layer.provide(GitVcsDriver.layer),
+  Layer.provide(layerVcsDriverRegistry),
+  Layer.provide(JjVcsDriver.layer),
 );
 
 const layerReview = ReviewService.layer.pipe(
@@ -564,11 +582,13 @@ const layerWorkspaceFileSystem = WorkspaceFileSystem.layer.pipe(
 
 const layerWorkspace = Layer.mergeAll(
   WorkspacePaths.layer,
+  AgentRoles.layer,
   layerWorkspaceEntries,
   layerWorkspaceFileSystem,
   WorkspaceFolders.layer.pipe(
     Layer.provide(Layer.merge(ProjectStore.layer, TaskFolderStore.layer)),
   ),
+  FrecentDirectories.layer.pipe(Layer.provide(ProcessRunner.layer)),
 );
 
 const layerProjectFaviconResolver = ProjectFaviconResolver.layer.pipe(

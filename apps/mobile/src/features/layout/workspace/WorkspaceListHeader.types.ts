@@ -1,4 +1,4 @@
-import type { AppBarMenuItem } from "../../../components/ui/AppBar.types";
+import type { AppBarMenu } from "../../../components/ui/AppBar.types";
 
 /** The header of the workspace thread list, on Home and in the sidebar column. */
 export interface WorkspaceListHeaderProps {
@@ -12,10 +12,8 @@ export interface WorkspaceListHeaderProps {
     readonly placeholder: string;
     readonly accessibilityLabel: string;
   };
-  readonly filter: {
-    readonly customized: boolean;
-    readonly items: ReadonlyArray<AppBarMenuItem>;
-  };
+  /** One bar button per filter, in reading order. */
+  readonly filters: ReadonlyArray<AppBarMenu>;
   /** iOS: a settings button. Android reaches Settings from the workspace navigation. */
   readonly onOpenSettings?: () => void;
   /**
@@ -27,10 +25,4 @@ export interface WorkspaceListHeaderProps {
     readonly visible: boolean;
     readonly onRequestVisibility: () => void;
   };
-}
-
-export function workspaceListFilterIcon(customized: boolean) {
-  return customized
-    ? "line.3.horizontal.decrease.circle.fill"
-    : "line.3.horizontal.decrease.circle";
 }

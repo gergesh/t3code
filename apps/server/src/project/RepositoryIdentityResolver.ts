@@ -1,3 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off - synchronous marker discovery keeps the resolver layer platform-independent.
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+
 import type { RepositoryIdentity, SourceControlProviderError } from "@t3tools/contracts";
 import { parseGitRemoteHost } from "@t3tools/source-control-core/shared/definition";
 import { repositoryPathFromRemoteUrl } from "@t3tools/source-control-core/server/SourceControlProvider";
@@ -13,6 +17,9 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
+import { mainWorkspaceRootFromRepoPointer } from "../vcs/JjRepo.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import { explicitBareRepositoryEnv, unsetInheritedRepositoryEnv } from "../vcs/VcsProcess.ts";
@@ -197,6 +204,7 @@ function buildRepositoryIdentity(input: {
   readonly originUrl: string | undefined;
   readonly originKeyUrl: string | undefined;
   readonly rootPath: string;
+  readonly linkedCheckout: boolean;
 }): RepositoryIdentity {
   const canonicalKey = sourceControlDefinitions.repositoryKeyFromRemote(input.keyUrl);
   const sourceControlProvider = sourceControlDefinitions.recognizeRemote(input.remoteUrl);
@@ -214,6 +222,7 @@ function buildRepositoryIdentity(input: {
       remoteUrl: input.remoteUrl,
     },
     rootPath: input.rootPath,
+    ...(input.linkedCheckout ? { linkedCheckout: true } : {}),
     ...(repositoryPath ? { displayName: repositoryPath } : {}),
     ...(sourceControlProvider ? { provider: sourceControlProvider.kind } : {}),
     ...(owner ? { owner } : {}),
@@ -225,12 +234,76 @@ function buildRepositoryIdentity(input: {
 class RepositoryIdentityCacheKey extends Data.Class<{
   readonly rootPath: string;
   readonly isBare: boolean;
+  /** A secondary jj workspace, whose rootPath is its main workspace. */
+  readonly isSecondaryWorkspace?: boolean;
 }> {}
 
 const gitEnv = (platform: NodeJS.Platform): NodeJS.ProcessEnv => ({
   ...unsetInheritedRepositoryEnv(process.env, platform),
   ...explicitBareRepositoryEnv(process.env, platform),
 });
+
+function statIfExistsSync(candidate: string): NodeFS.Stats | null {
+  try {
+    return NodeFS.statSync(candidate);
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "ENOTDIR")
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+// Non-colocated secondary workspaces need jj's repo pointer instead of Git discovery.
+export function resolveRepositoryRootFromMarkers(cwd: string): string | null {
+  return resolveJjWorkspaceFromMarkers(cwd)?.mainWorkspaceRoot ?? null;
+}
+
+function resolveJjWorkspaceFromMarkers(
+  cwd: string,
+): { readonly workspaceRoot: string; readonly mainWorkspaceRoot: string } | null {
+  if (!statIfExistsSync(cwd)?.isDirectory()) {
+    return null;
+  }
+  let current = NodeFS.realpathSync(cwd);
+  for (;;) {
+    if (statIfExistsSync(NodePath.join(current, ".jj"))?.isDirectory()) {
+      const repoPointer = NodePath.join(current, ".jj", "repo");
+      const own = { workspaceRoot: current, mainWorkspaceRoot: current };
+      try {
+        if (statIfExistsSync(repoPointer)?.isDirectory()) {
+          return own;
+        }
+        return {
+          workspaceRoot: current,
+          mainWorkspaceRoot: NodeFS.realpathSync(
+            mainWorkspaceRootFromRepoPointer(current, NodeFS.readFileSync(repoPointer, "utf8")),
+          ),
+        };
+      } catch {
+        return own;
+      }
+    }
+    if (
+      NodeFS.existsSync(NodePath.join(current, ".git")) ||
+      (statIfExistsSync(NodePath.join(current, "HEAD"))?.isFile() &&
+        statIfExistsSync(NodePath.join(current, "objects"))?.isDirectory() &&
+        statIfExistsSync(NodePath.join(current, "refs"))?.isDirectory())
+    ) {
+      return null;
+    }
+    const parent = NodePath.dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
 
 const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.resolveCacheKey")(
   function* (cwd: string) {
@@ -246,6 +319,28 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
       Effect.orElseSucceed(() => true),
     );
     if (!isFolder) return null;
+
+    const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+    const detected = yield* registry
+      .detect({ cwd, jjOnly: true })
+      .pipe(Effect.orElseSucceed(() => null));
+    const markerWorkspace =
+      detected?.kind === "jj"
+        ? yield* Effect.sync(() => {
+            try {
+              return resolveJjWorkspaceFromMarkers(cwd);
+            } catch {
+              return null;
+            }
+          })
+        : null;
+    if (markerWorkspace !== null) {
+      return new RepositoryIdentityCacheKey({
+        rootPath: markerWorkspace.mainWorkspaceRoot,
+        isBare: false,
+        isSecondaryWorkspace: markerWorkspace.workspaceRoot !== markerWorkspace.mainWorkspaceRoot,
+      });
+    }
 
     // git is always a real executable; cmd shell mode would split spaced paths on re-tokenization.
     const topLevelResult = yield* processRunner
@@ -332,8 +427,15 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
         timeoutBehavior: "timedOutResult",
       })
       .pipe(Effect.option);
-  const [remoteResult, resolvedResult] = yield* Effect.all(
-    [runGit(["remote", "-v"]), runGit(["config", "--get-regexp", "^remote\\..*\\.gh-resolved$"])],
+  const [remoteResult, resolvedResult, gitDirsResult] = yield* Effect.all(
+    [
+      runGit(["remote", "-v"]),
+      runGit(["config", "--get-regexp", "^remote\\..*\\.gh-resolved$"]),
+      // Run from the top level, both print paths relative to it; a linked worktree's differ.
+      cacheKey.isBare || cacheKey.isSecondaryWorkspace
+        ? Effect.succeedNone
+        : runGit(["rev-parse", "--git-dir", "--git-common-dir"]),
+    ],
     { concurrency: "unbounded" },
   );
   if (remoteResult._tag === "None" || remoteResult.value.code !== 0) {
@@ -354,12 +456,21 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     originUrl === undefined || originUrl === remote.remoteUrl
       ? keyUrl
       : yield* sshResolvedRemoteUrl(originUrl);
+  const [gitDir, commonDir] =
+    gitDirsResult._tag === "Some" && gitDirsResult.value.code === 0
+      ? gitDirsResult.value.stdout
+          .split(/\r?\n/)
+          .map((line) => NodePath.resolve(cacheKey.rootPath, line))
+      : [];
   return buildRepositoryIdentity({
     ...remote,
     keyUrl,
     originUrl,
     originKeyUrl,
     rootPath: cacheKey.rootPath,
+    linkedCheckout:
+      cacheKey.isSecondaryWorkspace === true ||
+      (gitDir !== undefined && commonDir !== undefined && gitDir !== commonDir),
   });
 });
 
@@ -369,6 +480,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const cacheCapacity = options.cacheCapacity ?? DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY;
   const refine = options.refine ?? Effect.succeed;
   const timeToLive = (exit: Exit.Exit<unknown>) =>
@@ -384,6 +496,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
+        Effect.provideService(VcsDriverRegistry.VcsDriverRegistry, vcsRegistry),
       ),
     { capacity: cacheCapacity, timeToLive },
   );
@@ -418,4 +531,5 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
 
 export const layer = Layer.effect(RepositoryIdentityResolver, make()).pipe(
   Layer.provide(ProcessRunner.layer),
+  Layer.provide(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
 );

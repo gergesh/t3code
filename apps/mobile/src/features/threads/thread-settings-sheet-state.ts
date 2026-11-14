@@ -1,5 +1,5 @@
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
-import type { ModelSelection, ProviderInstanceId } from "@t3tools/contracts";
+import type { AgentRole, ModelSelection, ProviderInstanceId } from "@t3tools/contracts";
 
 export function modelFavoriteKey(provider: ProviderInstanceId, model: string): string {
   return `${provider}:${model}`;
@@ -102,4 +102,25 @@ export function providerSectionIsCollapsed(input: {
     return false;
   }
   return input.defaultExpanded ? input.hasExpansionOverride : !input.hasExpansionOverride;
+}
+
+/**
+ * The model a role names, when the picker offers it. `provider` matches an instance id first,
+ * then a driver kind, so `provider: codex` still finds a renamed Codex instance.
+ */
+export function agentRoleModelOption(
+  role: Pick<AgentRole, "provider" | "model">,
+  modelOptions: ReadonlyArray<ModelOption>,
+): ModelOption | null {
+  if (role.model === undefined) return null;
+  const candidates = modelOptions.filter(
+    (option) => option.selection.model === role.model && option.isUnavailable !== true,
+  );
+  const provider = role.provider;
+  if (provider === undefined) return candidates[0] ?? null;
+  return (
+    candidates.find((option) => option.selection.instanceId === provider) ??
+    candidates.find((option) => option.providerDriver === provider) ??
+    null
+  );
 }

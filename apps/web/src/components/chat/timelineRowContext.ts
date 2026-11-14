@@ -1,3 +1,4 @@
+import type { VcsTerminology } from "@t3tools/shared/vcs";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import type { SideThreadOpenIntent } from "@t3tools/client-runtime/side-thread";
 import type {
@@ -46,6 +47,7 @@ export interface TurnItemSource {
 }
 
 export interface TimelineRowSharedState {
+  vcsTerminology: VcsTerminology;
   pendingApprovals: ReadonlyMap<RuntimeRequestId, PendingApproval>;
   respondingRequestIds: ReadonlyArray<RuntimeRequestId>;
   canOperateThread: boolean;
@@ -105,6 +107,8 @@ export interface TimelineRowSharedState {
   onCancelWorktreeSetup: (() => void) | null;
   retryableWorkspacePreparationRunIds: ReadonlySet<RunId>;
   onRetryWorkspacePreparation: ((runId: RunId) => void) | null;
+  /** Set while the thread is in a worktree; its missing-folder errors offer the move. */
+  onContinueInProjectCheckout: (() => void) | null;
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
   workGroupViewState: WorkGroupViewState;

@@ -1,5 +1,8 @@
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
+import { getVcsTerminology, type VcsTerminology } from "@t3tools/shared/vcs";
+import { selectKind, selectUnsupportedReason, vcsEnvironment } from "../../state/vcs";
+import { useEnvironmentQuerySelector } from "../../state/query";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import { LegendList } from "@legendapp/list/react-native";
@@ -63,6 +66,7 @@ import type { usePullRequestFileFilter } from "../pull-requests/usePullRequestFi
 
 function ReviewHeader(
   props: Parameters<typeof useReviewHeaderPresentation>[0] & {
+    readonly vcsTerminology: VcsTerminology;
     readonly sectionMenu: ReturnType<typeof buildReviewSectionMenu>;
     readonly showSectionToolbar: boolean;
     readonly showChangedFilesToggle: boolean;
@@ -121,11 +125,17 @@ function ReviewHeader(
                     items: [
                       sectionAction(
                         props.sectionMenu.branchChanges,
-                        gt("Changes", { $context: "diff section: branch changes" }),
+                        props.vcsTerminology.preserveReviewSectionTitles
+                          ? (props.sectionMenu.branchChanges?.title ??
+                              gt("Changes", { $context: "diff section: branch changes" }))
+                          : gt("Changes", { $context: "diff section: branch changes" }),
                       ),
                       sectionAction(
                         props.sectionMenu.workingTree,
-                        gt("Uncommitted", { $context: "diff section: working tree" }),
+                        props.vcsTerminology.preserveReviewSectionTitles
+                          ? (props.sectionMenu.workingTree?.title ??
+                              props.vcsTerminology.workingTreeNounTitle)
+                          : gt("Uncommitted", { $context: "diff section: working tree" }),
                       ),
                       sectionAction(props.sectionMenu.latestTurn, gt("Latest turn")),
                     ],
@@ -413,6 +423,14 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const topContentInset = useContentTopInset();
   const bottomContentInset = useSheetContentBottomInset();
+  const vcsStatusAtom =
+    selectedThreadCwd === null
+      ? null
+      : vcsEnvironment.status({ environmentId, input: { cwd: selectedThreadCwd } });
+  const vcsKind = useEnvironmentQuerySelector(vcsStatusAtom, selectKind);
+  const vcsTerminology = getVcsTerminology(vcsKind);
+  const vcsUnsupportedReason = useEnvironmentQuerySelector(vcsStatusAtom, selectUnsupportedReason);
+  const vcsActionsSupported = vcsUnsupportedReason === null;
 
   const {
     error,
@@ -422,15 +440,16 @@ export function ReviewSheet(props: ReviewSheetProps) {
     selectSection,
     isSelectedSectionPending,
   } = useReviewSections({
-    enabled: isEnvironmentReady,
+    enabled: isEnvironmentReady && vcsActionsSupported,
     environmentId,
     threadId,
     reviewCache,
+    vcsKind,
   });
   useReviewDiffPrewarming({
     threadKey: reviewCache.threadKey,
-    sections: reviewSections,
-    selectedSectionId: selectedSection?.id ?? null,
+    sections: vcsActionsSupported ? reviewSections : [],
+    selectedSectionId: vcsActionsSupported ? (selectedSection?.id ?? null) : null,
   });
   const [repositorySelection, setRepositorySelection] = useState<{
     readonly sectionId: string;
@@ -454,8 +473,8 @@ export function ReviewSheet(props: ReviewSheetProps) {
   } = useReviewDiffData({
     threadKey: reviewCache.threadKey,
     environmentId,
-    cwd: selectedThreadCwd,
-    selectedSection,
+    cwd: vcsActionsSupported ? selectedThreadCwd : null,
+    selectedSection: vcsActionsSupported ? selectedSection : null,
     draftMessage,
     draftContext,
     repositoryFilter:
@@ -699,6 +718,16 @@ export function ReviewSheet(props: ReviewSheetProps) {
     .join(" · ");
   const headerTitleText = selectedSection?.title ?? gt("Review changes");
 
+  if (!vcsActionsSupported) {
+    return (
+      <ScreenContent>
+        <Text accessibilityRole="alert" className="p-4 text-sm text-danger-foreground">
+          {vcsUnsupportedReason}
+        </Text>
+      </ScreenContent>
+    );
+  }
+
   return (
     <>
       {showChangedFilesPane ? (
@@ -713,6 +742,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
         title={headerTitleText}
         subtitle={headerSubtitle}
         androidSubtitle={androidHeaderSubtitle}
+        vcsTerminology={vcsTerminology}
         selectedThreadCwd={selectedThreadCwd}
         sectionMenu={sectionMenu}
         selectedSection={selectedSection}

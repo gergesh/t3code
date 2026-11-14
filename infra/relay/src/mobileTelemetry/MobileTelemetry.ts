@@ -328,6 +328,16 @@ const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(MobileTelemetry, make);
 
+/** Without Axiom, accept and drop uploads so Observe does not keep retrying them. */
+export const layerDiscard = Layer.succeed(
+  MobileTelemetry,
+  MobileTelemetry.of({
+    handle: Effect.fn("relay.mobile_telemetry.discard")(function* () {
+      return HttpServerResponse.empty({ status: 200 });
+    }),
+  }),
+);
+
 /** Raw so the body is read once, capped. */
 export const layerApi = HttpApiBuilder.group(
   RelayApi,

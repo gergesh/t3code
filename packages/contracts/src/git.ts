@@ -185,6 +185,31 @@ export const VcsRemoveWorktreeInput = Schema.Struct({
 });
 export type VcsRemoveWorktreeInput = typeof VcsRemoveWorktreeInput.Type;
 
+export const VcsMergeWorktreeInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  path: TrimmedNonEmptyStringSchema,
+  branch: TrimmedNonEmptyStringSchema,
+  /** The thread working in `path`; after the merge it continues in the project checkout. */
+  threadId: Schema.optional(ThreadId),
+});
+export type VcsMergeWorktreeInput = typeof VcsMergeWorktreeInput.Type;
+
+export const VcsContinueInProjectCheckoutInput = Schema.Struct({
+  threadId: ThreadId,
+  /** The missing worktree the thread was in; rejects once the thread has moved elsewhere. */
+  worktreePath: TrimmedNonEmptyStringSchema,
+});
+export type VcsContinueInProjectCheckoutInput = typeof VcsContinueInProjectCheckoutInput.Type;
+
+export class VcsContinueInProjectCheckoutError extends Schema.TaggedError<VcsContinueInProjectCheckoutError>()(
+  "VcsContinueInProjectCheckoutError",
+  { threadId: ThreadId, detail: Schema.String },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
 export const VcsCreateRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   refName: TrimmedNonEmptyStringSchema,
@@ -222,6 +247,22 @@ const VcsStatusChangeRequest = Schema.Struct({
 
 const VcsStatusLocalShape = {
   isRepo: Schema.Boolean,
+  /**
+   * Absent for ordinary Git. Jujutsu may report an unsupported reason; a Git fallback
+   * carries an informational notice without disabling source-control operations.
+   */
+  vcs: Schema.optional(
+    Schema.Union([
+      Schema.Struct({
+        kind: Schema.Literal("jj"),
+        unsupportedReason: Schema.optional(TrimmedNonEmptyStringSchema),
+      }),
+      Schema.Struct({
+        kind: Schema.Literal("git"),
+        notice: TrimmedNonEmptyStringSchema,
+      }),
+    ]),
+  ),
   sourceControlProvider: Schema.optional(SourceControlProviderInfo),
   hasPrimaryRemote: Schema.Boolean,
   isDefaultRef: Schema.Boolean,
@@ -363,7 +404,8 @@ export type VcsPullResult = typeof VcsPullResult.Type;
 
 // Git stderr can echo credentials from argv and remote URLs. Only a fixed
 // reason reaches the error and its diagnostic suffix; newer, unknown reasons
-// decode as absent through GitCommandError.
+// decode as absent through GitCommandError. unsupported_repository lets clients
+// display the safe, server-authored detail.
 export const GitCommandFailureReason = Schema.Literals([
   "authentication_failed",
   "branch_already_exists",
@@ -378,6 +420,7 @@ export const GitCommandFailureReason = Schema.Literals([
   "ref_not_found",
   "remote_unreachable",
   "tag_would_be_clobbered",
+  "unsupported_repository",
 ]);
 export type GitCommandFailureReason = typeof GitCommandFailureReason.Type;
 

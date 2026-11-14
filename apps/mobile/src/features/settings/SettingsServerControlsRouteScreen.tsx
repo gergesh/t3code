@@ -10,6 +10,7 @@ import {
   type ServerSettings,
   type ServerSettingsPatch,
   type ThreadEnvMode,
+  type WorktreeCommands,
   type WorktreeSubmodules,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   type ProjectScopedServerSettingKey,
@@ -24,6 +25,7 @@ import {
 } from "../threads/thread-settings-options";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
+import { useVcsTerminology } from "../../state/vcs";
 import { BranchNamingSettings } from "./components/BranchNamingSettings";
 import { DatabaseStorageNotice } from "./components/DatabaseStorageNotice";
 import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
@@ -31,6 +33,7 @@ import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { IssueTrackerSection } from "./components/IssueTrackerSection";
 import { SourceControlProvidersSection } from "./components/SourceControlProvidersSection";
+import { WorktreeCommandField } from "./components/WorktreeCommandField";
 import { SettingsProjectOverridesSection } from "./components/SettingsProjectOverridesSection";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import { useSettingsWriter } from "./useSettingsWriter";
@@ -68,6 +71,7 @@ const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettin
   worktrees: [
     "newWorktreesStartFromOrigin",
     "worktreeSubmodules",
+    "worktreeCommands",
     "branchNamingMode",
     "branchNamePrefix",
     "branchNameInstructions",
@@ -101,6 +105,27 @@ const SUBMODULE_CHOICES: ReadonlyArray<{
     description: msg("Leave submodules empty for a setup script."),
   },
 ];
+
+const WORKTREE_COMMAND_FIELDS = [
+  {
+    kind: "create",
+    label: "Create command",
+    subtitle:
+      "Runs instead of the built-in worktree creation. It must check out $T3CODE_BRANCH at $T3CODE_WORKTREE_PATH, or print the path it used.",
+  },
+  {
+    kind: "remove",
+    label: "Remove command",
+    subtitle:
+      "Runs instead of the built-in worktree removal. It must delete $T3CODE_WORKTREE_PATH.",
+  },
+  {
+    kind: "merge",
+    label: "Merge command",
+    subtitle:
+      "Runs from the Merge action on worktree threads. It must merge $T3CODE_BRANCH into the default branch and delete $T3CODE_WORKTREE_PATH.",
+  },
+] as const;
 
 const WORKSPACE_CHOICES: ReadonlyArray<{
   readonly mode: ThreadEnvMode | null;
@@ -191,6 +216,15 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
   const navigation = useNavigation();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const selectedProject = projectGroups.find((group) => group.key === selectedProjectKey);
+  const terminologyProjects = selectedProject?.members.filter((member) =>
+    selectedTargets.some((target) => target.environmentId === member.project.environmentId),
+  );
+  const terminologyProject =
+    terminologyProjects?.length === 1 ? terminologyProjects[0]?.project : undefined;
+  const vcsTerminology = useVcsTerminology(
+    terminologyProject?.environmentId ?? null,
+    terminologyProject?.workspaceRoot ?? null,
+  );
   const writableEnvironments = useEnvironmentsWithScope(selectedTargets, AuthSettingsWriteScope);
   const projectSelected = selectedProjectKey !== null;
   const targets = resolveMobileSettingsTargets(
@@ -285,6 +319,25 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
     targets.map((target) => target.environment.serverConfig.managedPolicy),
     m,
   );
+  const uniformWorktreeCommand = (kind: keyof WorktreeCommands) => {
+    const value = displayTargets[0]?.settings.worktreeCommands[kind] ?? null;
+    return displayTargets.every((target) => target.settings.worktreeCommands[kind] === value)
+      ? value
+      : null;
+  };
+  // An environment patch merges, but a project write replaces the whole override value, so
+  // it carries the other command along.
+  const writeWorktreeCommand = (kind: keyof WorktreeCommands, value: string) => {
+    const current = displayTargets[0]?.settings.worktreeCommands ?? {
+      create: "",
+      remove: "",
+      merge: "",
+    };
+    write({
+      worktreeCommands: projectSelected ? { ...current, [kind]: value } : { [kind]: value },
+    });
+  };
+
   const disabledFor = (key: string) =>
     disabled ||
     managed(key) !== undefined ||
@@ -480,6 +533,17 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     disabled={disabledFor("newWorktreesStartFromOrigin")}
                     onValueChange={(value) => write({ newWorktreesStartFromOrigin: value })}
                   />
+                  {WORKTREE_COMMAND_FIELDS.map((field) => (
+                    <WorktreeCommandField
+                      key={field.kind}
+                      label={field.label}
+                      subtitle={field.subtitle}
+                      emptyPlaceholder={field.kind === "merge" ? "None" : "Built-in"}
+                      value={uniformWorktreeCommand(field.kind)}
+                      disabled={disabledFor("worktreeCommands")}
+                      onCommit={(value) => writeWorktreeCommand(field.kind, value)}
+                    />
+                  ))}
                 </SettingsSection>
                 <SettingsSection
                   title={gt("Worktree submodules")}
@@ -518,6 +582,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     instructions: disabledFor("branchNameInstructions"),
                   }}
                   onChange={write}
+                  terminology={vcsTerminology}
                 />
               </>
             ) : null}

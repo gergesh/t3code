@@ -100,6 +100,7 @@ vi.mock("./server", async () => {
 });
 
 vi.mock("./git", () => ({ gitEnvironment: {} }));
+vi.mock("./vcs", () => ({ readVcsUnsupportedReason: () => null }));
 
 vi.mock("./threads", async () => {
   const { Atom } = await import("effect/reactivity");

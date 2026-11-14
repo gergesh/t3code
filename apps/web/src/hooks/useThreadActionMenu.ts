@@ -29,6 +29,7 @@ import { copyThreadReference } from "../lib/copyThreadReference";
 import { m } from "../i18n/messages";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { threadEnvironment } from "../state/threads";
+import { useVcsTerminology } from "../state/vcs";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { readEnvironmentScope } from "../state/session";
 import {
@@ -50,7 +51,11 @@ import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
-import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
+import {
+  canTurnThreadIntoProject,
+  readThreadWorktreeMergeAvailable,
+  useThreadActions,
+} from "./useThreadActions";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -67,12 +72,17 @@ export function useThreadActionMenu(input: {
   readonly projectCwd: string | null;
   readonly onStartRename: () => void;
   readonly onFind?: ((threadRef: ScopedThreadRef) => void) | undefined;
+  readonly onShowMediaLinks?: ((threadRef: ScopedThreadRef) => void) | undefined;
   readonly canShareWithGuest: boolean;
 }) {
-  const { threadRef, projectCwd, onStartRename, onFind, canShareWithGuest } = input;
+  const { threadRef, projectCwd, onStartRename, onFind, onShowMediaLinks, canShareWithGuest } =
+    input;
   const router = useRouter();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const threadWorkspacePath =
+    threadRef === null ? null : (readThreadShell(threadRef)?.worktreePath ?? projectCwd);
+  const terminology = useVcsTerminology(threadRef?.environmentId ?? null, threadWorkspacePath);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const logicalProjectKeyByPhysicalKey = buildPhysicalToLogicalProjectKeyMap({
     projects,
@@ -82,6 +92,7 @@ export function useThreadActionMenu(input: {
   const {
     settleThread,
     unsettleThread,
+    confirmAndMergeThreadWorktree,
     snoozeThread,
     unsnoozeThread,
     pinThread,
@@ -104,11 +115,16 @@ export function useThreadActionMenu(input: {
   });
   const { copyToClipboard: copyBranchToClipboard } = useCopyToClipboard<{ branch: string }>({
     target: {
-      target: "branch name",
-      unavailableMessage: msg("Clipboard API is unavailable while copying branch name."),
-      failureMessage: msg("Failed to copy branch name to the clipboard."),
+      target: `${terminology.refNoun} name`,
+      unavailableMessage: msg("Clipboard API is unavailable while copying {refNoun} name.", {
+        refNoun: terminology.refNoun,
+      }),
+      failureMessage: msg("Failed to copy {refNoun} name to the clipboard.", {
+        refNoun: terminology.refNoun,
+      }),
     },
-    onError: (error) => failureToast(m(msg("Failed to copy branch")), error),
+    onError: (error) =>
+      failureToast(m(msg("Failed to copy {refNoun}", { refNoun: terminology.refNoun })), error),
   });
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
     onError: (error) => failureToast(m(msg("Failed to copy thread ID")), error),
@@ -141,10 +157,13 @@ export function useThreadActionMenu(input: {
       const items = buildThreadActionMenuItems({
         canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
         canFind: onFind !== undefined,
+        canShowMediaLinks: onShowMediaLinks !== undefined,
         branch: thread.branch ?? null,
+        terminology,
         projectFilter: null,
         isPinned: thread.pinnedAt != null,
         isSettled: supports.settlement && thread.settledOverride === "settled",
+        canMergeWorktree: readThreadWorktreeMergeAvailable(threadRef),
         autoSettleEnabled: thread.autoSettleDisabledAt == null,
         isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
@@ -198,6 +217,9 @@ export function useThreadActionMenu(input: {
         case "find":
           onFind?.(threadRef);
           return;
+        case "media-links":
+          onShowMediaLinks?.(threadRef);
+          return;
         case "project-settings": {
           const project = projects.find(
             (candidate) =>
@@ -234,6 +256,9 @@ export function useThreadActionMenu(input: {
           await reportFailure(m(msg("Failed to un-settle thread")), () =>
             unsettleThread(threadRef),
           );
+          return;
+        case "merge-worktree":
+          await confirmAndMergeThreadWorktree(threadRef);
           return;
         case "unsnooze":
           await reportFailure(m(msg("Failed to wake thread")), () => unsnoozeThread(threadRef));

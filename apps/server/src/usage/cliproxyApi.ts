@@ -45,6 +45,7 @@ const AuthFile = Schema.Struct({
   provider: Schema.String,
   email: Schema.optional(Schema.String),
   disabled: Schema.optional(Schema.Boolean),
+  priority: Schema.optional(Schema.Number),
   project_id: Schema.optional(Schema.String),
   id_token: Schema.optional(
     Schema.Struct({
@@ -412,6 +413,7 @@ export const makeCliproxyApi = Effect.gen(function* () {
     hub: CliproxyHub,
     path: string,
     body?: unknown,
+    method: "POST" | "PATCH" = "POST",
   ) {
     const url = yield* Effect.try({
       try: () => {
@@ -423,7 +425,11 @@ export const makeCliproxyApi = Effect.gen(function* () {
       catch: () => new UsageLimitSourceError({ detail: "The hub URL is not valid." }),
     });
     const request = (
-      body === undefined ? HttpClientRequest.get(url) : HttpClientRequest.post(url)
+      body === undefined
+        ? HttpClientRequest.get(url)
+        : method === "PATCH"
+          ? HttpClientRequest.patch(url)
+          : HttpClientRequest.post(url)
     ).pipe(HttpClientRequest.setHeader("Authorization", `Bearer ${hub.managementKey}`));
     const response = yield* client
       .execute(body === undefined ? request : request.pipe(HttpClientRequest.bodyJsonUnsafe(body)))
@@ -604,5 +610,29 @@ export const makeCliproxyApi = Effect.gen(function* () {
       ),
     );
   });
-  return { readAccounts, consume };
+  /** Patches only accounts whose priority differs. The default priority 0 is written as a removal. */
+  const setPriorities = Effect.fn("CliproxyApi.setPriorities")(function* (
+    hub: CliproxyHub,
+    priorities: ReadonlyMap<string, number>,
+  ): Effect.fn.Return<void, UsageLimitSourceError> {
+    const files = yield* authFiles(hub).pipe(
+      Effect.mapError((error) =>
+        isUsageLimitSourceError(error)
+          ? error
+          : new UsageLimitSourceError({ detail: "The hub could not list accounts." }),
+      ),
+    );
+    const changed = files.flatMap((file) => {
+      const priority = priorities.get(file.id);
+      if (priority === undefined || (file.priority ?? 0) === priority) return [];
+      return [{ name: file.id, priority: priority === 0 ? null : priority }];
+    });
+    yield* Effect.forEach(
+      changed,
+      (patch) => management(hub, "auth-files/fields", patch, "PATCH"),
+      { concurrency: 4, discard: true },
+    );
+  });
+
+  return { readAccounts, consume, setPriorities };
 });

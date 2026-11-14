@@ -12,6 +12,7 @@ import {
   resolveModelPreferences,
 } from "@t3tools/shared/serverSettings";
 import type {
+  AgentRole,
   EnvironmentId,
   ModelSelection,
   ProjectId,
@@ -100,6 +101,8 @@ import { threadAllowsProviderSwitch } from "../../state/thread-provider-switchin
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { projectEnvironment } from "../../state/projects";
+import { threadEnvironment } from "../../state/threads";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import {
@@ -283,7 +286,13 @@ function SwitchRow(props: {
 
 type ThreadSettingsSubmenuPage =
   | { readonly kind: "descriptor"; readonly id: string }
-  | { readonly kind: "runtime" };
+  | { readonly kind: "runtime" }
+  | { readonly kind: "role" };
+
+type ThreadSettingsRole = {
+  readonly current: string | null;
+  readonly onSelect: (role: AgentRole | null) => void;
+};
 
 type ThreadSettingsSessionProps = {
   readonly environmentId: EnvironmentId | null;
@@ -302,6 +311,7 @@ type ThreadSettingsSessionProps = {
   readonly onUpdateOptionSelections: (selections: ReadonlyArray<ProviderOptionSelection>) => void;
   readonly runtimeMode: RuntimeMode;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
+  readonly role?: ThreadSettingsRole;
 };
 
 /** The composer draft the sheet edits: the thread's own, or a queued message being edited. */
@@ -325,6 +335,8 @@ type ThreadSettingsSessionValue = {
   readonly runtimeMode: RuntimeMode;
   readonly runtimeModeChoices: ReadonlyArray<RuntimeModeChoice>;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
+  /** Null while the checkout defines no roles and the thread has none. */
+  readonly role: (ThreadSettingsRole & { readonly roles: ReadonlyArray<AgentRole> }) | null;
   readonly displayedDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly promptTraits: ReturnType<typeof getPromptControlledTraits>;
   readonly displayedModelSelection: ModelSelection | null;
@@ -366,6 +378,15 @@ function ThreadSettingsSessionProvider(
     props.environmentId ? environmentCatalog.stateAtom(props.environmentId) : null,
   ).data;
   const connectionGeneration = connection?.phase === "connected" ? connection.generation : null;
+  const agentRoles =
+    useEnvironmentQuery(
+      props.role && props.environmentId && props.cwd
+        ? projectEnvironment.listAgentRoles({
+            environmentId: props.environmentId,
+            input: { cwd: props.cwd },
+          })
+        : null,
+    ).data?.roles ?? [];
   const [manageHidden, setManageHidden] = useState(false);
   const pendingHidden = useRef(new Set<string>());
   const pendingFavorites = useRef(
@@ -647,6 +668,10 @@ function ThreadSettingsSessionProvider(
     runtimeMode: compatibleRuntimeMode,
     runtimeModeChoices,
     onUpdateRuntimeMode: props.onUpdateRuntimeMode,
+    role:
+      props.role && (agentRoles.length > 0 || props.role.current !== null)
+        ? { ...props.role, roles: agentRoles }
+        : null,
     displayedDescriptors,
     promptTraits,
     displayedModelSelection: pendingModel?.selection ?? props.selectedModel,
@@ -1026,6 +1051,15 @@ function ThreadSettingsOptionsItem(props: {
             </Animated.View>
           );
         })}
+        {session.role ? (
+          <Animated.View layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}>
+            <DisclosureRow
+              label={gt("Role", { $context: "agent role setting" })}
+              value={session.role.current === null ? gt("No role") : `@${session.role.current}`}
+              onPress={() => props.onOpenSubmenu({ kind: "role" })}
+            />
+          </Animated.View>
+        ) : null}
         <Animated.View layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}>
           <DisclosureRow
             isLast
@@ -1220,59 +1254,88 @@ function ThreadSettingsChoiceContent(props: {
         )
       : undefined;
 
+  const role = session.role;
+  const selectRole = (next: AgentRole | null) => {
+    void Haptics.selectionAsync();
+    role?.onSelect(next);
+    props.onSelected();
+  };
   const submenuContent =
-    props.submenu.kind === "runtime"
-      ? {
-          rows: session.runtimeModeChoices.map((choice) => ({
-            id: choice.mode,
-            label: m(choice.label),
-            description: choice.disabledReason ?? m(choice.description),
-            disabled: choice.disabledReason !== undefined,
-            selected: choice.mode === session.runtimeMode,
-            onPress: () => {
-              void Haptics.selectionAsync();
-              session.onUpdateRuntimeMode(choice.mode);
-              props.onSelected();
-            },
-          })),
-        }
-      : activeDescriptor?.type === "select"
+    props.submenu.kind === "role"
+      ? role
         ? {
-            rows: selectableChoices(activeDescriptor).map((choice) => ({
-              id: choice.id,
-              label: choice.label,
-              description: choice.description,
-              disabled: false,
-              selected:
-                choice.id ===
-                (session.promptTraits.ultrathinkPromptControlled &&
-                activeDescriptor.id === session.promptTraits.primarySelectDescriptor?.id
-                  ? "ultrathink"
-                  : getProviderOptionCurrentValue(
-                      activeDescriptor,
-                      session.displayedModelSelection,
-                      session.reportedModelSelection,
-                    )),
+            rows: [
+              {
+                id: "no-role",
+                label: gt("No role"),
+                description: gt("The agent gets no role brief."),
+                disabled: false,
+                selected: role.current === null,
+                onPress: () => selectRole(null),
+              },
+              ...role.roles.map((entry) => ({
+                id: entry.name,
+                label: `@${entry.name}`,
+                description: entry.title !== entry.name ? entry.title : entry.description,
+                disabled: false,
+                selected: entry.name === role.current,
+                onPress: () => selectRole(entry),
+              })),
+            ],
+          }
+        : null
+      : props.submenu.kind === "runtime"
+        ? {
+            rows: session.runtimeModeChoices.map((choice) => ({
+              id: choice.mode,
+              label: m(choice.label),
+              description: choice.disabledReason ?? m(choice.description),
+              disabled: choice.disabledReason !== undefined,
+              selected: choice.mode === session.runtimeMode,
               onPress: () => {
                 void Haptics.selectionAsync();
-                if (
-                  session.promptTraits.ultrathinkInBodyText &&
-                  activeDescriptor.id === session.promptTraits.primarySelectDescriptor?.id
-                ) {
-                  Dialog.alert(
-                    gt("Reasoning controlled by prompt"),
-                    gt(
-                      'Your prompt contains "ultrathink" in the text. Remove it to change this option.',
-                    ),
-                  );
-                  return;
-                }
-                session.applyOptionChange(activeDescriptor.id, choice.id);
+                session.onUpdateRuntimeMode(choice.mode);
                 props.onSelected();
               },
             })),
           }
-        : null;
+        : activeDescriptor?.type === "select"
+          ? {
+              rows: selectableChoices(activeDescriptor).map((choice) => ({
+                id: choice.id,
+                label: choice.label,
+                description: choice.description,
+                disabled: false,
+                selected:
+                  choice.id ===
+                  (session.promptTraits.ultrathinkPromptControlled &&
+                  activeDescriptor.id === session.promptTraits.primarySelectDescriptor?.id
+                    ? "ultrathink"
+                    : getProviderOptionCurrentValue(
+                        activeDescriptor,
+                        session.displayedModelSelection,
+                        session.reportedModelSelection,
+                      )),
+                onPress: () => {
+                  void Haptics.selectionAsync();
+                  if (
+                    session.promptTraits.ultrathinkInBodyText &&
+                    activeDescriptor.id === session.promptTraits.primarySelectDescriptor?.id
+                  ) {
+                    Dialog.alert(
+                      gt("Reasoning controlled by prompt"),
+                      gt(
+                        'Your prompt contains "ultrathink" in the text. Remove it to change this option.',
+                      ),
+                    );
+                    return;
+                  }
+                  session.applyOptionChange(activeDescriptor.id, choice.id);
+                  props.onSelected();
+                },
+              })),
+            }
+          : null;
 
   if (!submenuContent) {
     return <View className="flex-1 bg-sheet" />;
@@ -1422,11 +1485,13 @@ function ThreadSettingsModelsScreen() {
           bottomInset={searchToolbarInset}
           onOpenSubmenu={(submenu) => {
             const title =
-              submenu.kind === "runtime"
-                ? gt("Runtime", { $context: "agent permission mode setting" })
-                : (session.displayedDescriptors.find(
-                    (descriptor) => descriptor.type === "select" && descriptor.id === submenu.id,
-                  )?.label ?? gt("Option"));
+              submenu.kind === "role"
+                ? gt("Role", { $context: "agent role setting" })
+                : submenu.kind === "runtime"
+                  ? gt("Runtime", { $context: "agent permission mode setting" })
+                  : (session.displayedDescriptors.find(
+                      (descriptor) => descriptor.type === "select" && descriptor.id === submenu.id,
+                    )?.label ?? gt("Option"));
             navigation.navigate("ThreadSettingsChoice", { ...submenu, title });
           }}
         />
@@ -1507,6 +1572,7 @@ export function ExistingThreadSettingsRouteScreen({
   // A queued edit can end while the sheet is open; the prompt then belongs to the thread's draft.
   const draftKey = activeComposerDraftKey(threadKey, route.params.draftKey, queuedRunEdit);
   const prompt = useComposerDraft(draftKey).text;
+  const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, "set thread role");
 
   if (!selectedThread) {
     return <View className="flex-1 bg-sheet" />;
@@ -1569,6 +1635,14 @@ export function ExistingThreadSettingsRouteScreen({
       }}
       runtimeMode={draftSettings.runtimeMode ?? selectedThread.runtimeMode}
       onUpdateRuntimeMode={(runtimeMode) => updateComposerDraftSettings(threadKey, { runtimeMode })}
+      role={{
+        current: selectedThread.source.role ?? null,
+        onSelect: (role) =>
+          void updateMetadata({
+            environmentId: selectedThread.environmentId,
+            input: { threadId: selectedThread.id, role: role?.name ?? null },
+          }),
+      }}
       onClose={() => navigation.goBack()}
     />
   );
@@ -1599,6 +1673,7 @@ export function NewTaskThreadSettingsRouteScreen() {
       onUpdateOptionSelections={flow.setSelectedModelOptions}
       runtimeMode={flow.runtimeMode}
       onUpdateRuntimeMode={flow.setRuntimeMode}
+      role={{ current: flow.role, onSelect: flow.setRole }}
       onClose={() => navigation.goBack()}
     />
   );

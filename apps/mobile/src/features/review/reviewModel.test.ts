@@ -424,3 +424,54 @@ describe("applyReviewDiffMetadata", () => {
     expect(applyReviewDiffMetadata(parsed, null)).toEqual(parsed);
   });
 });
+
+it("names a missing base with the project's ref noun", () => {
+  const [section] = buildReviewSectionItems({
+    checkpoints: [],
+    gitSections: [
+      {
+        id: "branch-range",
+        kind: "branch-range",
+        title: "Bookmark changes",
+        baseRef: null,
+        headRef: null,
+        diff: "",
+        diffHash: "h",
+        truncated: false,
+      },
+    ],
+    turnDiffById: {},
+    gitSectionStates: { "working-tree": null, "branch-range": null },
+    vcsKind: "jj",
+  });
+
+  expect(section?.subtitle).toBe("Base bookmark unavailable");
+});
+
+it("uses jj working copy language while loading and after preview arrives", () => {
+  const input = {
+    checkpoints: [],
+    turnDiffById: {},
+    gitSectionStates: { "working-tree": null, "branch-range": "loading" } as const,
+    vcsKind: "jj" as const,
+  };
+  expect(buildReviewSectionItems({ ...input, gitSections: [] })[0]?.title).toBe(
+    "Against base bookmark",
+  );
+  const items = buildReviewSectionItems({
+    ...input,
+    gitSections: [
+      {
+        id: "working-tree",
+        kind: "working-tree",
+        title: "Working copy",
+        baseRef: "@-",
+        headRef: "@",
+        diff: "",
+        diffHash: "h",
+        truncated: false,
+      },
+    ],
+  });
+  expect(items[0]?.subtitle).toBe("Working copy changes");
+});

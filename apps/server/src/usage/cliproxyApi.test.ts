@@ -55,6 +55,7 @@ function fixture(
       provider: string;
       email?: string;
       disabled?: boolean;
+      priority?: number;
       project_id?: string;
       id_token?: { chatgpt_account_id: string; plan_type?: string; chatgpt_plan_type?: string };
     }>;
@@ -64,10 +65,16 @@ function fixture(
   } = {},
 ) {
   const requests: Array<{ path: string; body?: RequestBody }> = [];
+  const fieldPatches: Array<unknown> = [];
   const http = HttpClient.make((request) =>
     Effect.sync(() => {
       expect(request.headers.authorization).toBe("Bearer management-secret");
       const path = new URL(request.url).pathname;
+      if (path.endsWith("/auth-files/fields") && request.body._tag === "Uint8Array") {
+        expect(request.method).toBe("PATCH");
+        fieldPatches.push(JSON.parse(new TextDecoder().decode(request.body.body)));
+        return HttpClientResponse.fromWeb(request, Response.json({ status: "ok" }));
+      }
       const body =
         request.body._tag === "Uint8Array"
           ? decodeRequest(new TextDecoder().decode(request.body.body))
@@ -123,6 +130,7 @@ function fixture(
   );
   return {
     requests,
+    fieldPatches,
     api: makeCliproxyApi.pipe(
       Effect.provideService(HttpClient.HttpClient, http),
       Effect.provide(NodeCrypto.layer),
@@ -666,6 +674,35 @@ describe("CLIProxyAPI built-in management API", () => {
       const result = yield* (yield* test.api).readAccounts(config);
       expect(result.map((account) => account.driver)).toEqual(["claudeAgent"]);
       expect(test.requests.map((request) => request.body?.auth_index)).not.toContain("k");
+    }),
+  );
+
+  it.effect("writes only changed priorities and writes the default priority as a removal", () =>
+    Effect.gen(function* () {
+      const test = fixture({
+        accounts: [
+          { ...accounts[0]!, priority: 3 },
+          { ...accounts[1]!, priority: 2 },
+          { id: "unprioritized.json", auth_index: "u", provider: "claude" },
+          { id: "untouched.json", auth_index: "t", provider: "claude", priority: 5 },
+        ],
+      });
+      yield* (yield* test.api).setPriorities(
+        config,
+        new Map([
+          ["first.json", 3],
+          ["second.json", 0],
+          ["unprioritized.json", 4],
+          ["missing.json", 1],
+        ]),
+      );
+      expect(test.fieldPatches).toHaveLength(2);
+      expect(test.fieldPatches).toEqual(
+        expect.arrayContaining([
+          { name: "second.json", priority: null },
+          { name: "unprioritized.json", priority: 4 },
+        ]),
+      );
     }),
   );
 

@@ -16,6 +16,7 @@ import {
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
   isDeliveredProviderTurn,
+  ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE,
   parseGoalCommand,
   RunId,
   RunAttemptId,
@@ -35,12 +36,14 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
 import * as ServerConfig from "../config.ts";
+import { agentNoticeText } from "./AgentNotices.ts";
 import {
   CLAUDE_PROVIDER,
   CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL,
 } from "./Adapters/ClaudeAdapterV2.ts";
 import { withTurnStartReservation, withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as AgentRoles from "../project/AgentRoles.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -67,6 +70,12 @@ import {
   withInlineContext,
 } from "./ContextHandoffDelivery.ts";
 import { isProviderCommand, outputInstructions } from "./runOutput.ts";
+import {
+  compactionRunOrdinals,
+  latestRoleNote,
+  ROLE_NOTE_OFF,
+  roleNoteToSend,
+} from "./agentRoleNote.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -281,6 +290,7 @@ export const layer: Layer.Layer<
   | ServerSettings.ServerSettingsService
   | GitWorkflowService.GitWorkflowService
   | ProjectService.ProjectService
+  | AgentRoles.AgentRoles
   | ProviderAuthService.ProviderAuthService
   | ProjectionStore.ProjectionStoreV2
   | ProviderSessionManager.ProviderSessionManagerV2
@@ -298,6 +308,7 @@ export const layer: Layer.Layer<
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const projects = yield* ProjectService.ProjectService;
+    const agentRoles = yield* AgentRoles.AgentRoles;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -683,6 +694,7 @@ export const layer: Layer.Layer<
           readonly title: string;
           readonly error: Error;
           readonly message?: string;
+          readonly code?: string;
         }) {
           yield* settleRunBeforeStart({
             run,
@@ -700,6 +712,7 @@ export const layer: Layer.Layer<
               failure: makeProviderFailure({
                 cause: failed.error,
                 message: failed.message ?? startFailureMessage(failed.error),
+                code: failed.code,
                 class: "provider_error",
               }),
             },
@@ -895,7 +908,16 @@ export const layer: Layer.Layer<
         });
         return;
       }
-      const resolvedRuntimePolicy = resolvedPolicy.success;
+      const roleName = projection.thread.role ?? undefined;
+      const role =
+        roleName === undefined || resolvedPolicy.success.cwd === null
+          ? undefined
+          : yield* agentRoles.get(resolvedPolicy.success.cwd, roleName);
+      const resolvedRuntimePolicy = {
+        ...resolvedPolicy.success,
+        ...(role?.skills === undefined ? {} : { roleSkills: role.skills }),
+        ...(role?.tools === undefined ? {} : { roleTools: role.tools }),
+      };
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,
@@ -991,11 +1013,20 @@ export const layer: Layer.Layer<
           isProviderAdapterOpenSessionError(failure.cause) &&
           failure.cause.requiresSignIn === true;
         if (input.willRetry === true && !requiresSignIn) return yield* failure;
-        yield* settleStartFailure({
-          signal: "provider-session-open-failure",
-          title: "Provider session failed to open",
-          error: sessionResult.failure,
-        });
+        yield* settleStartFailure(
+          failure._tag === "ProviderWorkspaceMissingError"
+            ? {
+                signal: "provider-session-open-failure",
+                title: "Workspace folder is missing",
+                error: failure,
+                code: ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE,
+              }
+            : {
+                signal: "provider-session-open-failure",
+                title: "Provider session failed to open",
+                error: failure,
+              },
+        );
         return;
       }
       const session = sessionResult.success;
@@ -1086,6 +1117,21 @@ export const layer: Layer.Layer<
       ]
         .filter((part) => part !== "")
         .join("\n\n");
+      const agentNotes = yield* projectionStore
+        .getThreadRecords(projection.thread.id, ["turnItems"], {
+          turnItemTypes: ["system_notice"],
+          turnItemRunIds: [null],
+        })
+        .pipe(
+          Effect.map(({ turnItems }) => agentNoticeText(turnItems, projection.runs, run)),
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Failed to read notices for the agent", {
+              runId: run.id,
+              cause,
+            }).pipe(Effect.as("")),
+          ),
+        );
+      const turnNote = [restartNote, agentNotes].filter((part) => part !== "").join("\n\n");
       const tokenCap = yield* handoffTokenCapConfig.pipe(
         Effect.orElseSucceed(() => DEFAULT_HANDOFF_TOKEN_CAP),
       );
@@ -1235,7 +1281,7 @@ export const layer: Layer.Layer<
             return handoffBudget({
               tokenCap,
               modelContextWindow,
-              userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
+              userText: turnNote === "" ? userText : `${turnNote}\n\n${userText}`,
               attachments: providerMessage.attachments,
               providerThread: budgetProviderThread,
               nativeContextEstimate:
@@ -1908,7 +1954,7 @@ export const layer: Layer.Layer<
         retryHandoff.handoffs.length > 0 ||
         retryHandoff.attachments.length > 0 ||
         sideChatHandoff !== undefined ||
-        restartNote !== "" ||
+        turnNote !== "" ||
         noteContinuation;
       // Pending context turns the resume into a prompted turn, which needs no native resume.
       if (
@@ -1952,11 +1998,52 @@ export const layer: Layer.Layer<
         status: "running",
         startedAt: run.startedAt ?? now,
       };
+      const roleBrief =
+        roleName === undefined ? undefined : AgentRoles.agentRoleBrief({ name: roleName, role });
+      const latestRole = latestRoleNote({
+        nativeThreadId: runningProviderThread.nativeThreadRef?.nativeId ?? undefined,
+        runs: projection.runs,
+        attempts: projection.attempts,
+        providerTurns: projection.providerTurns,
+      });
+      const roleCompactionRunIds =
+        latestRole !== undefined && latestRole.note !== ROLE_NOTE_OFF
+          ? yield* projectionStore
+              .getThreadRecords(projection.thread.id, ["turnItems"], {
+                turnItemTypes: ["compaction"],
+              })
+              .pipe(
+                Effect.map(({ turnItems }) => turnItems.map((item) => item.runId)),
+                // Resending the brief is the safe side of an unreadable history.
+                Effect.orElseSucceed(() => [run.id]),
+              )
+          : [];
+      // A goal command reaches the provider without inline context.
+      const roleNote = goalCommand
+        ? undefined
+        : roleNoteToSend({
+            desired:
+              roleName === undefined || roleBrief === undefined
+                ? undefined
+                : `${roleName}:${AgentRoles.agentRoleBriefDigest(roleBrief)}`,
+            latest: latestRole,
+            compactionRunOrdinals: compactionRunOrdinals(
+              [...projection.runs, run],
+              roleCompactionRunIds,
+            ),
+          });
+      const roleNoteText =
+        roleNote === undefined
+          ? ""
+          : roleNote === ROLE_NOTE_OFF
+            ? AgentRoles.AGENT_ROLE_ENDED_NOTE
+            : (roleBrief ?? "");
       const runningAttempt: OrchestrationV2RunAttempt = {
         ...attempt,
         ...(runningProviderThread.nativeThreadRef?.nativeId == null
           ? {}
           : { nativeThreadId: runningProviderThread.nativeThreadRef.nativeId }),
+        ...(roleNote === undefined ? {} : { roleNote }),
         status: "running",
         startedAt: now,
       };
@@ -2135,7 +2222,7 @@ export const layer: Layer.Layer<
             ),
             ...(sideChatContext === "" || sideChatHandoff === undefined ? [] : [sideChatHandoff]),
           ];
-          const context = [delivery.context, sideChatContext, restartNote]
+          const context = [delivery.context, sideChatContext, roleNoteText, turnNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
@@ -2238,9 +2325,10 @@ export const layer: Layer.Layer<
               }),
         ),
       );
-      const deliverySession = carriesPendingContext
-        ? makeDeliverySession(session, startWithHandoffs)
-        : session;
+      const deliverySession =
+        carriesPendingContext || roleNote !== undefined
+          ? makeDeliverySession(session, startWithHandoffs)
+          : session;
       return runExecution.startRootRun({
         commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
         appThread: projection.thread,

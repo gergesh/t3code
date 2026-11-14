@@ -57,7 +57,7 @@ import { findThemeBackground } from "../environmentTheme.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
-import { isWithinRoot } from "../workspace/KnownWorkspaces.ts";
+import { isWithinRoot } from "../workspace/pathContainment.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { toHostDrivePath } from "../workspace/hostDrivePath.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";

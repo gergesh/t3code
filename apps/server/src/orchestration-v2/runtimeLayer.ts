@@ -3,7 +3,6 @@ import * as GuestShareService from "../guest/GuestShareService.ts";
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
-import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as OrchestrationCommandReceipts from "../persistence/OrchestrationCommandReceipts.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
@@ -49,6 +48,7 @@ import * as ProviderRuntimeRecoveryService from "./ProviderRuntimeRecoveryServic
 import * as ProviderSwitchService from "./ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
 import * as ProviderTurnStartService from "./ProviderTurnStartService.ts";
+import * as AgentRoles from "../project/AgentRoles.ts";
 import { layerThreadWorktreeRestore } from "../workspace/restoreMissingWorktree.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
@@ -126,7 +126,6 @@ const layerProviderEventIngestorProvided = ProviderEventIngestor.layer.pipe(
       IdAllocator.layer,
       ProjectionStore.layer,
       ThreadCommandExecutor.layer,
-      GitVcsDriver.layer,
     ),
   ),
 );
@@ -182,6 +181,7 @@ const layerRunExecutionServiceProvided = RunExecutionService.layer.pipe(
 const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
+      AgentRoles.layer,
       layerContextHandoffServiceProvided,
       layerEventSink,
       IdAllocator.layer,

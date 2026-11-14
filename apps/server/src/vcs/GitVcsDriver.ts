@@ -50,6 +50,7 @@ import {
 import * as CheckoutCloner from "./CheckoutCloner.ts";
 import * as CheckpointUntrackedBlobs from "./checkpointUntrackedBlobs.ts";
 import * as VcsDriver from "./VcsDriver.ts";
+import { chunkPathsForCheckIgnore } from "./VcsPathCodecs.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 
 export interface ExecuteGitInput {
@@ -162,11 +163,34 @@ export interface CreateWorktreeProgress {
   }) => Effect.Effect<void, never>;
 }
 
+/** What a custom checkout command must produce; exposed to it as `T3CODE_*` env vars. */
+export interface CustomWorktreeCheckoutInput {
+  /** Directory T3 Code picked for the checkout. */
+  readonly worktreePath: string;
+  /** Branch (or jj bookmark) the checkout must have checked out. */
+  readonly branch: string;
+  /** Ref the new branch starts from; equals `branch` when the branch already exists. */
+  readonly startRef: string;
+  /** True when the command itself must create `branch` from `startRef`. */
+  readonly createBranch: boolean;
+  /** jj only: the workspace name T3 Code uses to find and prune the workspace later. */
+  readonly jjWorkspaceName?: string;
+}
+
 export interface CreateWorktreeOptions {
   readonly progress?: CreateWorktreeProgress;
   /** Null or omitted defers to the checkout's t3.json. */
   readonly submodules?: WorktreeSubmodules | null;
   readonly worktreesDirectory?: string;
+  /**
+   * Replaces the built-in `git worktree add` / `jj workspace add` step with a
+   * user-configured command. The steps around the checkout (bookmarks,
+   * submodules, base-ref config) still run. Resolves to the checkout's path
+   * when the command placed it somewhere other than `worktreePath`.
+   */
+  readonly customCheckout?: (
+    input: CustomWorktreeCheckoutInput,
+  ) => Effect.Effect<string | null, GitCommandError>;
   /** Clone the checkout from the macOS worktree checkout cache. */
   readonly fastCheckout?: boolean;
 }
@@ -514,7 +538,6 @@ const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const FLAGGED_INDEX_ENTRIES_MAX_BYTES = 1024 * 1024;
 const CHECKPOINT_RECOVERY_MAX_CANDIDATES = 64;
 const CHECKPOINT_RECOVERY_TIMEOUT = "5 seconds";
-const GIT_CHECK_IGNORE_MAX_STDIN_BYTES = 256 * 1024;
 // Reflog subjects that only point a ref at an existing commit. Anything else counts as creating
 // one, so an unknown subject keeps its commit attributed.
 const REF_MOVE_REFLOG_SUBJECT =
@@ -548,36 +571,6 @@ const nowFreshness = Effect.fn("GitVcsDriver.nowFreshness")(function* () {
     expiresAt: Option.none(),
   };
 });
-
-function chunkPathsForGitCheckIgnore(relativePaths: ReadonlyArray<string>): string[][] {
-  const chunks: string[][] = [];
-  let chunk: string[] = [];
-  let chunkBytes = 0;
-
-  for (const relativePath of relativePaths) {
-    const relativePathBytes = Buffer.byteLength(relativePath) + 1;
-    if (chunk.length > 0 && chunkBytes + relativePathBytes > GIT_CHECK_IGNORE_MAX_STDIN_BYTES) {
-      chunks.push(chunk);
-      chunk = [];
-      chunkBytes = 0;
-    }
-
-    chunk.push(relativePath);
-    chunkBytes += relativePathBytes;
-
-    if (chunkBytes >= GIT_CHECK_IGNORE_MAX_STDIN_BYTES) {
-      chunks.push(chunk);
-      chunk = [];
-      chunkBytes = 0;
-    }
-  }
-
-  if (chunk.length > 0) {
-    chunks.push(chunk);
-  }
-
-  return chunks;
-}
 
 function parseGitRemoteVerboseOutput(
   output: string,
@@ -882,7 +875,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     }
 
     const ignoredPaths = new Set<string>();
-    const chunks = chunkPathsForGitCheckIgnore(relativePaths);
+    const chunks = chunkPathsForCheckIgnore(relativePaths);
 
     for (const chunk of chunks) {
       const result = yield* gitCommand(

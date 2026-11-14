@@ -45,7 +45,7 @@ import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import { makeIsWorktreeContainer } from "./worktreeContainer.ts";
-import { isWithinRoot } from "../workspace/KnownWorkspaces.ts";
+import { isWithinRoot } from "../workspace/pathContainment.ts";
 import {
   discoverFolders,
   mergeProjectFolders,

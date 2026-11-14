@@ -30,6 +30,7 @@ const RIGHT_PANEL_KINDS = [
   "pull-request",
   "pull-requests",
   "issue",
+  "media-links",
   "thread",
   "linked-thread",
 ] as const;
@@ -103,6 +104,7 @@ export type RightPanelSurface =
       key: string;
       url?: string;
     }
+  | { id: "media-links"; kind: "media-links" }
   /**
    * A thread of the panel's environment shown beside it: a side chat or a subagent. Which one is
    * the thread's own lineage, so the surface only names it.
@@ -297,6 +299,8 @@ const singletonSurface = (
       return { id: "files", kind };
     case "pull-requests":
       return { id: "pull-requests", kind };
+    case "media-links":
+      return { id: "media-links", kind };
     case "device":
       return { id: "device", kind };
   }

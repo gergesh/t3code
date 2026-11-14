@@ -8,6 +8,8 @@ import * as Dialog from "../../components/ui/Dialog";
 import React, { useRef, useState } from "react";
 
 import type {
+  AgentRole,
+  AgentRoleName,
   EnvironmentId,
   ModelSelection,
   ProviderOptionSelection,
@@ -24,6 +26,8 @@ import {
 import { threadContextsOutsideEnvironment } from "@t3tools/shared/composerContextReferences";
 import { isTriagePrompt, replaceTriagePlaybookLink } from "@t3tools/shared/triagePrompt";
 import * as Arr from "effect/Array";
+import * as Option from "effect/Option";
+import { AsyncResult } from "effect/reactivity";
 import { pipe } from "effect/Function";
 
 import { useProjects, useServerConfigs, useThreadShells } from "../../state/entities";
@@ -68,6 +72,13 @@ import {
 } from "../../state/use-model-option-memory";
 import { useBranches, usePaginatedBranches } from "../../state/queries";
 import { vcsEnvironment } from "../../state/vcs";
+import {
+  GIT_VCS_TERMINOLOGY,
+  resolveVcsTerminology,
+  resolveVcsUnsupportedReason,
+  supportsVcsActions,
+  type VcsTerminology,
+} from "@t3tools/shared/vcs";
 import { type QueuedThreadMessage } from "../../state/thread-outbox";
 import {
   setPendingConnectionError,
@@ -95,6 +106,7 @@ import {
 import { isSameRepository, resolveEnvironmentProjectMatch } from "./new-task-project-selection";
 import { useNewTaskProjectDefaults } from "./use-new-task-project-defaults";
 import { resolveNewThreadRuntimeMode } from "./thread-settings-options";
+import { agentRoleModelOption } from "./thread-settings-sheet-state";
 import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
 import {
   INACTIVE_FLOW_KEY,
@@ -122,6 +134,7 @@ export function branchBadgeLabel(
   input: {
     readonly branch: VcsRef;
     readonly project: EnvironmentProject | null;
+    readonly terminology?: VcsTerminology;
   },
   resolve: MessageResolver = m,
 ): string | null {
@@ -129,7 +142,7 @@ export function branchBadgeLabel(
     return resolve(msg("current", { $context: "branch badge, the checked-out branch" }));
   }
   if (input.branch.worktreePath && input.branch.worktreePath !== input.project?.workspaceRoot) {
-    return resolve(msg("worktree", { $context: "branch badge, checked out in another worktree" }));
+    return (input.terminology ?? GIT_VCS_TERMINOLOGY).workspaceNoun;
   }
   if (input.branch.isRemote) {
     return resolve(msg("remote", { $context: "branch badge, a remote-tracking branch" }));
@@ -172,7 +185,12 @@ type NewTaskFlowContextValue = {
   readonly branchesLoading: boolean;
   readonly availableBranches: ReadonlyArray<VcsRef>;
   readonly currentCheckoutBranchName: string | null;
+  readonly vcsTerminology: VcsTerminology;
+  readonly vcsActionsSupported: boolean;
+  readonly vcsUnsupportedReason: string | null;
+  readonly canUseVcsActions: (worktreePath?: string | null) => boolean;
   readonly runtimeMode: RuntimeMode;
+  readonly role: AgentRoleName | null;
   readonly expandedProvider: string | null;
   readonly environments: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
@@ -227,6 +245,8 @@ type NewTaskFlowContextValue = {
   readonly setSubmitting: (value: boolean) => void;
   readonly loadBranches: () => void;
   readonly setRuntimeMode: (value: RuntimeMode) => void;
+  /** Also picks the role's model when the picker offers it. */
+  readonly setRole: (role: AgentRole | null) => void;
   readonly setSelectedModelOptions: (
     value: ReadonlyArray<ProviderOptionSelection> | undefined,
   ) => void;
@@ -388,7 +408,19 @@ export function NewTaskFlowProvider(
         })
       : null,
   );
+  // Keyed on the draft's own choice so the query sits with the other hooks; React Compiler
+  // drops the memoization of values computed across a later hook call.
+  const draftWorktreePath = selectedProjectDraft.workspaceSelection?.worktreePath ?? null;
+  const selectedWorkspaceStatus = useEnvironmentQuery(
+    selectedProject !== null && draftWorktreePath !== null
+      ? vcsEnvironment.status({
+          environmentId: selectedProject.environmentId,
+          input: { cwd: draftWorktreePath, includeRemote: false },
+        })
+      : null,
+  );
   const currentCheckoutBranchName = projectGitStatus.data?.refName ?? null;
+  const vcsTerminology = resolveVcsTerminology(projectGitStatus.data);
   // The unfiltered ref list also provides repository capability while offline.
   const projectBranches = useBranches({
     environmentId: selectedProject?.environmentId ?? null,
@@ -436,6 +468,28 @@ export function NewTaskFlowProvider(
     projectDefaults.serverConfig,
     workspaceCwd,
   );
+  const vcsActionsSupported =
+    supportsVcsActions(projectGitStatus.data) && supportsVcsActions(selectedWorkspaceStatus.data);
+  const vcsUnsupportedReason =
+    resolveVcsUnsupportedReason(projectGitStatus.data) ??
+    resolveVcsUnsupportedReason(selectedWorkspaceStatus.data);
+  const canUseVcsActions = (worktreePath?: string | null) => {
+    if (selectedProject === null) return true;
+    return [selectedProject.workspaceRoot, selectedWorktreePath, worktreePath].every((cwd) => {
+      if (!cwd) return true;
+      const status = appAtomRegistry.get(
+        vcsEnvironment.status({
+          environmentId: selectedProject.environmentId,
+          input: {
+            cwd,
+            ...(cwd !== selectedProject.workspaceRoot ? { includeRemote: false } : {}),
+          },
+        }),
+      );
+      return supportsVcsActions(Option.getOrNull(AsyncResult.value(status)));
+    });
+  };
+
   // Keep the user's explicit choice separate from the resolved display value:
   // only the explicit flag is ever written back to the draft, so the resolved
   // value keeps tracking the server setting when the config loads late.
@@ -679,7 +733,7 @@ export function NewTaskFlowProvider(
   };
 
   const setWorkspaceMode = (mode: WorkspaceMode) => {
-    if (!selectedProjectDraftKey) {
+    if (!selectedProjectDraftKey || (mode === "worktree" && !canUseVcsActions())) {
       return;
     }
     if (!selectedProject) {
@@ -705,7 +759,11 @@ export function NewTaskFlowProvider(
   };
 
   const selectBranch = (branch: VcsRef) => {
-    if (!selectedProject || !selectedProjectDraftKey) {
+    if (
+      !selectedProject ||
+      !selectedProjectDraftKey ||
+      !canUseVcsActions(workspaceMode === "local" ? branch.worktreePath : null)
+    ) {
       return;
     }
     updateComposerDraftSettings(selectedProjectDraftKey, {
@@ -724,7 +782,7 @@ export function NewTaskFlowProvider(
   };
 
   const setStartFromOrigin = (value: boolean) => {
-    if (!selectedProjectDraftKey) {
+    if (!selectedProjectDraftKey || !canUseVcsActions()) {
       return;
     }
     updateComposerDraftSettings(selectedProjectDraftKey, {
@@ -783,6 +841,15 @@ export function NewTaskFlowProvider(
     };
   };
 
+  const setRole = (role: AgentRole | null) => {
+    if (!selectedProjectDraftKey) return;
+    const modelOption = role ? agentRoleModelOption(role, modelOptions) : null;
+    updateComposerDraftSettings(selectedProjectDraftKey, {
+      role: role?.name,
+      ...(modelOption ? { modelSelection: withRememberedModelOptions(modelOption.selection) } : {}),
+    });
+  };
+
   const buildPendingTaskMessage = (
     metadata: TurnCommandMetadata,
     options?: { readonly currentCheckoutBranch?: string | null },
@@ -813,6 +880,12 @@ export function NewTaskFlowProvider(
     }
     const workspaceSelection = resolveWorkspaceSelection(draft.workspaceSelection);
     const mode = workspaceSelection.mode;
+    if (
+      (mode === "worktree" || workspaceSelection?.pullRequestReference) &&
+      !canUseVcsActions(mode === "local" ? workspaceSelection?.worktreePath : null)
+    ) {
+      return null;
+    }
     return {
       environmentId: selectedProject.environmentId,
       threadId: ThreadId.make(metadata.threadId),
@@ -833,6 +906,7 @@ export function NewTaskFlowProvider(
         projectTitle: selectedProject.title,
         projectCwd: selectedProject.workspaceRoot,
         workspaceMode: mode,
+        ...(draft.role ? { role: draft.role } : {}),
         ...(mode === "worktree" && workspaceSelection?.pullRequestReference
           ? { pullRequestReference: workspaceSelection.pullRequestReference }
           : {}),
@@ -941,6 +1015,7 @@ export function NewTaskFlowProvider(
     availableBranches,
     currentCheckoutBranchName,
     runtimeMode,
+    role: selectedProjectDraft.role ?? null,
     expandedProvider,
     environments,
     selectedProject,
@@ -951,6 +1026,10 @@ export function NewTaskFlowProvider(
     selectedModelOption,
     selectedProviderStatus,
     providerGroups,
+    vcsTerminology,
+    vcsActionsSupported,
+    vcsUnsupportedReason,
+    canUseVcsActions,
     setProject,
     getSelectedProjectKey: () => readFlow().projectKey,
     unopenableRouteDraft:
@@ -981,6 +1060,7 @@ export function NewTaskFlowProvider(
     },
     loadBranches,
     setRuntimeMode,
+    setRole,
     setSelectedModelOptions,
     setExpandedProvider: (value: string | null) => updateFlow({ expandedProvider: value }),
   } satisfies NewTaskFlowContextValue;

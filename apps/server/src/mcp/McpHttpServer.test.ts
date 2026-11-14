@@ -38,6 +38,8 @@ import * as AssetSigner from "../assets/AssetSigner.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as McpOAuth from "../auth/McpOAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -60,6 +62,7 @@ import * as McpToolAccessTestkit from "./McpToolAccess.testkit.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
+import * as AgentRolesTestkit from "../project/AgentRoles.testkit.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import { FEEDBACK_CLI_CLIENT_LABEL } from "../feedback/FeedbackReport.ts";
 import * as Feedback from "../feedback/FeedbackService.ts";
@@ -336,6 +339,7 @@ const layerRecordingTools = (calls: Array<unknown>) => {
     Layer.provide(
       Layer.mergeAll(
         McpToolAccessTestkit.liveThreadsLayer,
+        AgentRolesTestkit.layerNone,
         Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({}),
         Layer.mock(ProjectService.ProjectService)({}),
         Layer.mock(PreviewManager.PreviewManager)({}),
@@ -345,6 +349,8 @@ const layerRecordingTools = (calls: Array<unknown>) => {
           namedProjectsRoot: process.cwd(),
         }),
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+        Layer.mock(GitWorkflowService.GitWorkflowService)({}),
+        Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
         Layer.mock(ServerSettings.ServerSettingsService)({}),
         Layer.mock(DocumentText.DocumentText)({}),
         Layer.mock(ProviderRegistry.ProviderRegistry)({}),
@@ -2122,13 +2128,17 @@ it.effect(
 it.effect("lists optional tools to a deferring client only after tool_search loads them", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const scopeFor = (token: string): McpInvocationContext.McpThreadInvocationScope => ({
+      const scopeFor = (
+        token: string,
+        roleTools?: ReadonlyArray<string>,
+      ): McpInvocationContext.McpThreadInvocationScope => ({
         environmentId,
         requestNamespace: token,
         thread: {
           threadId: ThreadId.make(`thread-${token}`),
           providerSessionId: token,
           providerInstanceId: ProviderInstanceId.make("copilot"),
+          ...(roleTools === undefined ? {} : { roleTools }),
         },
         client: undefined,
         capabilities: new Set(["orchestration"]),
@@ -2137,6 +2147,8 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
       const scopes = new Map([
         ["deferringToken", scopeFor("deferringToken")],
         ["otherToken", scopeFor("otherToken")],
+        ["roleToken", scopeFor("roleToken", ["delegate_task", "preview_*"])],
+        ["deferringRoleToken", scopeFor("deferringRoleToken", ["delegate_task", "preview_*"])],
       ]);
       const tool = (name: string, description: string) =>
         Tool.make(name, {
@@ -2241,6 +2253,15 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
       ).toEqual({ tools: [{ name: "preview_open", description: "Opens a browser preview." }] });
       expect(yield* deferring.listed).toEqual(["delegate_task", "preview_open", "tool_search"]);
       expect(yield* other.listed).toEqual(["delegate_task", "preview_open", "schedule_task"]);
+
+      // A thread role's tools hide the rest from its session: listed, searched, and called.
+      const role = yield* session("roleToken", false);
+      expect(yield* role.listed).toEqual(["delegate_task", "preview_open"]);
+      expect(yield* role.call("schedule_task", {})).toBeUndefined();
+      const deferringRole = yield* session("deferringRoleToken", true);
+      expect(
+        (yield* deferringRole.call("tool_search", { query: "task" })).structuredContent,
+      ).toEqual({ tools: [{ name: "delegate_task", description: "Delegates a task." }] });
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

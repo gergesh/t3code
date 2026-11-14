@@ -78,6 +78,7 @@ import {
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
+  ThreadListV2SectionDivider,
   ThreadListV2WorkingShelfHeader,
 } from "../threads/thread-list-v2-items";
 import { useThreadRowProviderInstanceResolver } from "../threads/thread-provider-instance";
@@ -356,7 +357,6 @@ export function HomeScreen(props: HomeScreenProps) {
       ? {}
       : { projectIds: v2ScopedProjectGroup.projectRefs.map((ref) => ref.projectId) },
   );
-  const threadSearchMatchByKey = useThreadListSearchMatches(props.threads, threadSearch);
   const v2ProjectTitleByProjectKey = new Map(
     projectScopes.flatMap((scope) =>
       scope.projectRefs.map(
@@ -364,6 +364,11 @@ export function HomeScreen(props: HomeScreenProps) {
           [scopedProjectKey(projectRef.environmentId, projectRef.projectId), scope.title] as const,
       ),
     ),
+  );
+  const threadSearchMatchByKey = useThreadListSearchMatches(
+    props.threads,
+    threadSearch,
+    v2ProjectTitleByProjectKey,
   );
   const handleSettleThread = props.onSettleThread;
   const handleSnoozeThread = props.onSnoozeThread;
@@ -408,7 +413,6 @@ export function HomeScreen(props: HomeScreenProps) {
     pinningEnvironmentIds,
     autoSettleOptOutEnvironmentIds,
     pinReorderEnvironmentIds,
-    activeReorderEnvironmentIds,
     titleRegenerationEnvironmentIds,
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
@@ -424,11 +428,11 @@ export function HomeScreen(props: HomeScreenProps) {
     environmentId: props.selectedEnvironmentId,
     projectRefs: v2ScopedProjectGroup === null ? null : v2ScopedProjectGroup.projectRefs,
     searchQuery: props.searchQuery,
+    projectTitleByKey: v2ProjectTitleByProjectKey,
     searchMatches: threadSearchMatchByKey,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
     pinReorderEnvironmentIds,
-    activeReorderEnvironmentIds,
     queuedThreadKeys,
     settledLimit: settledVisibleCount,
     now,
@@ -507,6 +511,9 @@ export function HomeScreen(props: HomeScreenProps) {
         />
       );
     }
+    if (item.type === "v2-active-divider") {
+      return <ThreadListV2SectionDivider label="Active" />;
+    }
     if (item.type === "v2-snoozed-shelf") {
       return (
         <ThreadListV2SnoozedShelfHeader
@@ -577,11 +584,7 @@ export function HomeScreen(props: HomeScreenProps) {
         snoozePresets={snoozePresetsByEnvironmentId.get(thread.environmentId)}
         pinningSupported={pinningEnvironmentIds.has(thread.environmentId)}
         autoSettleOptOutSupported={autoSettleOptOutEnvironmentIds.has(thread.environmentId)}
-        reorderSupported={
-          item.item.pinned
-            ? pinReorderEnvironmentIds.has(thread.environmentId)
-            : !workingShelfEnabled && activeReorderEnvironmentIds.has(thread.environmentId)
-        }
+        reorderSupported={item.item.pinned && pinReorderEnvironmentIds.has(thread.environmentId)}
         canMoveUp={item.canMoveUp}
         canMoveDown={item.canMoveDown}
         onSnoozeThread={handleSnoozeThread}

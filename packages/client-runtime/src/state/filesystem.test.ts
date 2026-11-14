@@ -4,6 +4,7 @@ import { AuthFilesystemReadScope, AuthOrchestrationReadScope } from "@t3tools/co
 import {
   createBrowseNavigationCoordinator,
   filterFilesystemBrowseEntries,
+  filterFrecentDirectories,
   getFilesystemBrowsePath,
   getFilesystemBrowseTabCompletion,
   resolveFilesystemReadAccess,
@@ -148,6 +149,49 @@ describe("filesystem browse model", () => {
       { name: "A\u030A", fullPath: "/home/me/A\u030A" },
     ];
     expect(filterFilesystemBrowseEntries(angstroms, "\u00C5").exactEntry).toBeNull();
+  });
+});
+
+describe("frecent directories", () => {
+  // Best first, as the host's frecency tool ranks them.
+  const directories = [
+    "~/code/web/apps",
+    "~/code/t3code",
+    "~/Documents",
+    "~/code/t3code/apps/web",
+    "/srv/t3-data",
+  ];
+
+  it("keeps directories below a typed path whose rest contains the leaf", () => {
+    expect(filterFrecentDirectories(directories, "~/")).toEqual(directories.slice(0, 4));
+    expect(filterFrecentDirectories(directories, "~/code/")).toEqual([
+      "~/code/web/apps",
+      "~/code/t3code",
+      "~/code/t3code/apps/web",
+    ]);
+    // The browsed directory itself is not a suggestion.
+    expect(filterFrecentDirectories(directories, "~/code/t3code/")).toEqual([
+      "~/code/t3code/apps/web",
+    ]);
+    expect(filterFrecentDirectories(directories, "~/T3")).toEqual([
+      "~/code/t3code",
+      "~/code/t3code/apps/web",
+    ]);
+    expect(filterFrecentDirectories(directories, "/")).toEqual(["/srv/t3-data"]);
+  });
+
+  it("matches words in order like z and ranks basename matches first", () => {
+    expect(filterFrecentDirectories(directories, "web")).toEqual([
+      "~/code/t3code/apps/web",
+      "~/code/web/apps",
+    ]);
+    expect(filterFrecentDirectories(directories, "t3 web")).toEqual(["~/code/t3code/apps/web"]);
+    expect(filterFrecentDirectories(directories, "web t3")).toEqual([]);
+    expect(filterFrecentDirectories(directories, "t3")).toEqual([
+      "~/code/t3code",
+      "/srv/t3-data",
+      "~/code/t3code/apps/web",
+    ]);
   });
 });
 

@@ -1,5 +1,6 @@
 import {
   CommandId,
+  type AgentRoleName,
   MessageId,
   ThreadId,
   type ChatAttachment,
@@ -32,6 +33,7 @@ export interface ProjectThreadStartTurnSpec {
   readonly modelSelection: ModelSelection;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
+  readonly role?: AgentRoleName;
   readonly workspaceMode: "local" | "worktree";
   readonly branch: string | null;
   readonly worktreePath: string | null;
@@ -62,6 +64,7 @@ export function buildProjectThreadStartTurnInput(spec: ProjectThreadStartTurnSpe
     titleSeed: title,
     runtimeMode: spec.runtimeMode,
     interactionMode: spec.interactionMode,
+    ...(spec.role ? { role: spec.role } : {}),
     bootstrap: {
       createThread: {
         projectId: spec.projectId,

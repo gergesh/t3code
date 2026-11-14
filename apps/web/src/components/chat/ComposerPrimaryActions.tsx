@@ -15,6 +15,7 @@ import {
   CornerUpRightIcon,
   ListPlusIcon,
 } from "lucide-react";
+import { GIT_VCS_TERMINOLOGY } from "@t3tools/shared/vcs";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import type { MessageResolver } from "~/i18n/messages";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
@@ -57,6 +58,8 @@ interface ComposerPrimaryActionsProps {
   sendDisabledReason: string | null;
   isEnvironmentUnavailable: boolean;
   isPreparingWorktree: boolean;
+  /** The project's VCS noun for a worktree; Git's is the fallback while status is unknown. */
+  workspaceNoun?: string;
   hasSendableContent: boolean;
   canResume?: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
@@ -67,8 +70,10 @@ interface ComposerPrimaryActionsProps {
   onInterrupt: () => void;
   compactBeforeSendTokens?: number | null;
   hideCompactToggle?: boolean;
-  keepFullHistory?: boolean;
-  onToggleKeepFullHistory?: () => void;
+  promptCacheLabel?: string | null;
+  compactSkipReason?: string | null;
+  compactRequested?: boolean;
+  onToggleCompactRequested?: () => void;
 }
 
 const formatPendingPrimaryActionLabel = (
@@ -250,6 +255,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   sendDisabledReason,
   isEnvironmentUnavailable,
   isPreparingWorktree,
+  workspaceNoun = GIT_VCS_TERMINOLOGY.workspaceNoun,
   hasSendableContent,
   canResume = false,
   preserveComposerFocusOnPointerDown = false,
@@ -260,8 +266,10 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onInterrupt,
   compactBeforeSendTokens = null,
   hideCompactToggle = false,
-  keepFullHistory = false,
-  onToggleKeepFullHistory,
+  promptCacheLabel = null,
+  compactSkipReason = null,
+  compactRequested = false,
+  onToggleCompactRequested,
 }: ComposerPrimaryActionsProps) {
   const gt = useGT();
   const m = useMessages();
@@ -388,7 +396,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     compactBeforeSendTokens !== null && !showResume && !isEditingQueuedMessage
       ? formatContextWindowTokens(compactBeforeSendTokens)
       : null;
-  const compactsBeforeSend = compactTokens !== null && !keepFullHistory;
+  const compactsBeforeSend =
+    compactTokens !== null && compactRequested && compactSkipReason === null;
 
   const submitLabel = showResume
     ? gt("Resume thread")
@@ -407,7 +416,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       ? gt("Sending when ready")
       : (sendDisabledReason ??
         (isPreparingWorktree
-          ? gt("Preparing worktree")
+          ? gt("Preparing {workspaceNoun}", { workspaceNoun })
           : isSendBusy
             ? isEditingQueuedMessage
               ? gt("Updating queued message")
@@ -515,34 +524,41 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           render={
             <button
               type="button"
-              className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
+              className={cn(
+                "flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground",
+                compactSkipReason !== null && "cursor-default opacity-64",
+              )}
               {...pointerFocusProps}
-              aria-pressed={!keepFullHistory}
+              aria-pressed={compactsBeforeSend}
+              // Not `disabled`, so the tooltip still explains why.
+              aria-disabled={compactSkipReason !== null}
               aria-label={gt("Compact {tokens} tokens of history before sending", {
                 tokens: compactTokens,
               })}
               disabled={!canOperateThread}
-              onClick={onToggleKeepFullHistory}
+              onClick={compactSkipReason === null ? onToggleCompactRequested : undefined}
             />
           }
         >
           <Minimize2Icon aria-hidden="true" />
           <span className="@max-[480px]/composer-surface:hidden">
-            {keepFullHistory
-              ? gt("Keep", { $context: "keep full history instead of compacting" })
-              : gt("Compact", { $context: "verb, compact history before sending" })}
+            {gt("Compact", { $context: "verb, compact history before sending" })}
           </span>
           <span className="text-muted-foreground">{compactTokens}</span>
         </TooltipTrigger>
         <TooltipPopup>
           <div>
-            {keepFullHistory
-              ? gt("Next send keeps all {tokens} tokens.", { tokens: compactTokens })
-              : gt("Next send compacts {tokens} tokens first.", { tokens: compactTokens })}
+            {compactSkipReason ??
+              (compactRequested
+                ? gt("Next send compacts {tokens} tokens first.", { tokens: compactTokens })
+                : gt("Next send keeps all {tokens} tokens.", { tokens: compactTokens }))}
           </div>
-          <div>
-            {keepFullHistory ? gt("Click to compact first") : gt("Click to keep full history")}
-          </div>
+          {promptCacheLabel ? <div>{promptCacheLabel}</div> : null}
+          {compactSkipReason === null ? (
+            <div>
+              {compactRequested ? gt("Click to keep full history") : gt("Click to compact first")}
+            </div>
+          ) : null}
         </TooltipPopup>
       </Tooltip>
       {children}

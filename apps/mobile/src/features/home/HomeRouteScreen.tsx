@@ -40,7 +40,7 @@ import { useSelectWorkspaceTab } from "../layout/workspace/useSelectWorkspaceTab
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { WorkspaceListEmptyDetail } from "../layout/workspace/WorkspaceListEmptyDetail";
 import { WorkspaceListHeader } from "../layout/workspace/WorkspaceListHeader";
-import { buildHomeListFilterMenuItems, homeListFilterEnvironments } from "./home-list-filter-menu";
+import { buildHomeListFilterMenus, homeListFilterEnvironments } from "./home-list-filter-menu";
 
 export function HomeRouteScreen() {
   const gt = useGT();
@@ -172,20 +172,17 @@ export function HomeRouteScreen() {
             placeholder: gt("Search", { $context: "search field placeholder" }),
             accessibilityLabel: gt("Search threads"),
           }}
-          filter={{
-            customized: selectedEnvironmentId !== null || selectedProjectKey !== null,
-            items: buildHomeListFilterMenuItems(
-              {
-                environments,
-                projects: projectFilterOptions,
-                selectedEnvironmentId,
-                selectedProjectKey,
-                onEnvironmentChange: setSelectedEnvironmentId,
-                onProjectChange: setSelectedProjectKey,
-              },
-              m,
-            ),
-          }}
+          filters={buildHomeListFilterMenus(
+            {
+              environments,
+              projects: projectFilterOptions,
+              selectedEnvironmentId,
+              selectedProjectKey,
+              onEnvironmentChange: setSelectedEnvironmentId,
+              onProjectChange: setSelectedProjectKey,
+            },
+            m,
+          )}
         />
 
         <HomeScreen

@@ -41,7 +41,7 @@ import {
   type RemoveEmptyDirectoryError,
 } from "../vcs/removeEmptyDirectory.ts";
 import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
-import { isWithinRoot } from "./KnownWorkspaces.ts";
+import { isWithinRoot } from "./pathContainment.ts";
 import * as TaskFolderStore from "./TaskFolderStore.ts";
 import { projectFolders, parseGitmodulesPaths } from "./WorkspaceFolders.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";

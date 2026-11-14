@@ -1,15 +1,13 @@
-import { useGT, useMessages } from "gt-react-native";
+import { useMessages } from "gt-react-native";
 import { useRef } from "react";
 import type { SearchBarCommands } from "react-native-screens";
 
+import { useControlTheme } from "../../../components/ui/useControlTheme";
 import { NativeStackScreenOptions } from "../../../native/StackHeader";
 import { useHardwareKeyboardCommand } from "../../keyboard/hardwareKeyboardCommands";
 import { getConnectionAwareBrandHeaderOptions } from "./brand-header-options";
 import { createWorkspaceListHeaderItems } from "./workspace-list-header-items";
-import {
-  workspaceListFilterIcon,
-  type WorkspaceListHeaderProps,
-} from "./WorkspaceListHeader.types";
+import type { WorkspaceListHeaderProps } from "./WorkspaceListHeader.types";
 
 export function WorkspaceListHeader(props: WorkspaceListHeaderProps) {
   return props.sidebar ? <SidebarColumnHeader {...props} sidebar={props.sidebar} /> : null;
@@ -20,10 +18,10 @@ function SidebarColumnHeader(
     readonly sidebar: NonNullable<WorkspaceListHeaderProps["sidebar"]>;
   },
 ) {
-  const gt = useGT();
   const m = useMessages();
   const { search, sidebar } = props;
   const searchBarRef = useRef<SearchBarCommands>(null);
+  const { colors } = useControlTheme();
   useHardwareKeyboardCommand("focusSearch", () => {
     const focus = () => searchBarRef.current?.focus();
     if (!sidebar.visible) {
@@ -36,12 +34,8 @@ function SidebarColumnHeader(
     return true;
   });
   const items = createWorkspaceListHeaderItems({
-    filter: {
-      accessibilityLabel: gt("Filter threads"),
-      icon: workspaceListFilterIcon(props.filter.customized),
-      title: gt("Thread list options"),
-      items: props.filter.items,
-    },
+    filters: props.filters,
+    selectedTintColor: colors["--color-primary"],
     onOpenSettings: props.onOpenSettings,
     resolve: m,
   });

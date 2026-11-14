@@ -690,42 +690,56 @@ export function remarkAssistantInsights(this: Processor) {
   };
 }
 
-const imageSourceProcessor = unified()
+const referenceProcessor = unified()
   .use(remarkParse)
   .use(CHAT_MARKDOWN_REMARK_PLUGINS)
   .use(remarkRehype, { allowDangerousHtml: true })
   .use(CHAT_MARKDOWN_REHYPE_PLUGINS);
 
-interface ImageSourceNode {
+interface ReferenceNode {
   readonly type: string;
   readonly tagName?: string;
-  readonly properties?: ChatMarkdownImageProperties;
-  readonly children?: ReadonlyArray<ImageSourceNode>;
+  readonly properties?: ChatMarkdownImageProperties & { readonly href?: unknown };
+  readonly children?: ReadonlyArray<ReferenceNode>;
 }
 
 /**
- * Collect the fallback and every theme variant so images are available to all viewers.
+ * The image sources and link targets chat markdown shows, read as ChatMarkdown's `img` and `a`
+ * renderers read them. Code and comments show neither, so they add none.
  */
-export function chatMarkdownImageSources(markdown: string): Array<string> {
-  const sources: Array<string> = [];
-  const visit = (node: ImageSourceNode) => {
+export function chatMarkdownReferences(markdown: string): {
+  images: Array<string>;
+  links: Array<string>;
+} {
+  const images: Array<string> = [];
+  const links: Array<string> = [];
+  const visit = (node: ReferenceNode) => {
     if (node.type === "element" && node.tagName === "img") {
       const properties = node.properties;
       const fallback = chatMarkdownImageSource(properties);
-      if (fallback) sources.push(fallback.classifiedSrc);
+      if (fallback) images.push(fallback.classifiedSrc);
       for (const [theme, variant] of [
         ["dark", properties?.dataDarkSrc],
         ["light", properties?.dataLightSrc],
       ] as const) {
         if (typeof variant !== "string") continue;
         const source = chatMarkdownImageSource(properties, theme);
-        if (source) sources.push(source.classifiedSrc);
+        if (source) images.push(source.classifiedSrc);
       }
+    }
+    if (node.type === "element" && node.tagName === "a") {
+      const { href } = node.properties ?? {};
+      if (typeof href === "string" && href) links.push(href);
     }
     node.children?.forEach(visit);
   };
-  visit(imageSourceProcessor.runSync(imageSourceProcessor.parse(markdown)) as ImageSourceNode);
-  return sources;
+  visit(referenceProcessor.runSync(referenceProcessor.parse(markdown)) as ReferenceNode);
+  return { images, links };
+}
+
+/** The sources of the images chat markdown shows; see chatMarkdownReferences. */
+export function chatMarkdownImageSources(markdown: string): Array<string> {
+  return chatMarkdownReferences(markdown).images;
 }
 
 const linkDestinationProcessor = unified().use(remarkParse).use(remarkKeepWindowsPaths);

@@ -3,6 +3,7 @@ import { type MessageResolver } from "~/i18n/messages";
 import { type WorktreeSetupSnapshot, type WorktreeSetupStage } from "@t3tools/contracts";
 import { worktreeSetupStageLabel } from "@t3tools/client-runtime/contract-labels";
 import { formatDuration } from "@t3tools/shared/orchestrationTimingCopy";
+import type { VcsTerminology } from "@t3tools/shared/vcs";
 import {
   CheckIcon,
   CircleAlertIcon,
@@ -26,6 +27,7 @@ import { WorkLogRow } from "./WorkLog";
 
 interface WorktreeSetupCardProps {
   snapshot: WorktreeSetupSnapshot;
+  terminology: VcsTerminology;
   onCancel: (() => void) | null;
   onWorkLocally: (() => void) | null;
   onOpenTerminal: (() => void) | null;
@@ -110,28 +112,56 @@ function ShimmerOverlay({ children }: { children: ReactNode }) {
   );
 }
 
-function headerLabel(snapshot: WorktreeSetupSnapshot, resolve: MessageResolver): string {
+function headerLabel(
+  snapshot: WorktreeSetupSnapshot,
+  terminology: VcsTerminology,
+  resolve: MessageResolver,
+): string {
   switch (snapshot.phase) {
     case "running":
-      return resolve(msg("Setting up worktree…"));
+      return resolve(
+        msg("Setting up {workspaceNoun}…", { workspaceNoun: terminology.workspaceNoun }),
+      );
     case "done":
       return snapshot.stages.some((stage) => stage.status === "failed")
-        ? resolve(msg("Worktree ready, setup script failed"))
-        : resolve(msg("Worktree ready"));
+        ? resolve(
+            msg("{workspaceNounTitle} ready, setup script failed", {
+              workspaceNounTitle: terminology.workspaceNounTitle,
+            }),
+          )
+        : resolve(
+            msg("{workspaceNounTitle} ready", {
+              workspaceNounTitle: terminology.workspaceNounTitle,
+            }),
+          );
     case "failed":
-      return resolve(msg("Worktree setup failed"));
+      return resolve(
+        msg("{workspaceNounTitle} setup failed", {
+          workspaceNounTitle: terminology.workspaceNounTitle,
+        }),
+      );
     case "cancelled":
-      return resolve(msg("Worktree setup cancelled"));
+      return resolve(
+        msg("{workspaceNounTitle} setup cancelled", {
+          workspaceNounTitle: terminology.workspaceNounTitle,
+        }),
+      );
   }
 }
 
-function SetupHeaderRow({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
+function SetupHeaderRow({
+  snapshot,
+  terminology,
+}: {
+  snapshot: WorktreeSetupSnapshot;
+  terminology: VcsTerminology;
+}) {
   const m = useMessages();
   const running = snapshot.phase === "running";
   const failed = snapshot.phase === "failed";
   const finishedWithFailedStage =
     snapshot.phase === "done" && snapshot.stages.some((stage) => stage.status === "failed");
-  const text = headerLabel(snapshot, m);
+  const text = headerLabel(snapshot, terminology, m);
   const tone = failed
     ? "text-destructive-foreground"
     : finishedWithFailedStage
@@ -165,16 +195,22 @@ function StageRow({
   setupRunning,
   setupEndedAt,
   scriptName,
+  terminology,
 }: {
   stage: WorktreeSetupStage;
   setupRunning: boolean;
   setupEndedAt: string | null;
   scriptName: string | null;
+  terminology: VcsTerminology;
 }) {
   const gt = useGT();
   const m = useMessages();
   const label =
-    stage.id === "setup-script" && scriptName ? scriptName : worktreeSetupStageLabel(stage.id, m);
+    stage.id === "setup-script" && scriptName
+      ? scriptName
+      : stage.id === "fetch"
+        ? gt("Fetch base {refNoun}", { refNoun: terminology.refNoun })
+        : worktreeSetupStageLabel(stage.id, m);
   const running = stage.status === "running";
   const trailing =
     stage.status === "pending"
@@ -251,14 +287,18 @@ function OutputTail({ lines, failed }: { lines: ReadonlyArray<string>; failed: b
   );
 }
 
-function SetupDetails({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
+function SetupDetails({
+  snapshot,
+  terminology,
+}: {
+  snapshot: WorktreeSetupSnapshot;
+  terminology: VcsTerminology;
+}) {
   return (
     <dl className="mt-1 mb-1.5 ml-8 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
       {snapshot.branch ? (
         <>
-          <dt className="text-foreground/80">
-            <T>Branch</T>
-          </dt>
+          <dt className="text-foreground/80">{terminology.refNounTitle}</dt>
           <dd className="min-w-0 font-mono">
             <MiddleTruncate value={snapshot.branch} className="flex" />
           </dd>
@@ -296,7 +336,13 @@ function SetupDetails({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
   );
 }
 
-function CollapsedSummaryRow({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
+function CollapsedSummaryRow({
+  snapshot,
+  terminology,
+}: {
+  snapshot: WorktreeSetupSnapshot;
+  terminology: VcsTerminology;
+}) {
   const m = useMessages();
   const status: WorktreeSetupStage["status"] =
     snapshot.phase === "failed" || snapshot.phase === "cancelled"
@@ -304,7 +350,7 @@ function CollapsedSummaryRow({ snapshot }: { snapshot: WorktreeSetupSnapshot }) 
       : snapshot.stages.some((stage) => stage.id === "setup-script" && stage.status === "failed")
         ? "failed"
         : "done";
-  const label = headerLabel(snapshot, m);
+  const label = headerLabel(snapshot, terminology, m);
   return (
     <WorkLogRow
       data-worktree-setup-stage="summary"
@@ -326,6 +372,7 @@ function CollapsedSummaryRow({ snapshot }: { snapshot: WorktreeSetupSnapshot }) 
 
 export function WorktreeSetupCard({
   snapshot,
+  terminology,
   onCancel,
   onWorkLocally,
   onOpenTerminal,
@@ -346,10 +393,15 @@ export function WorktreeSetupCard({
       (setupStage.status === "running" && setupStage.tail.length > 0));
 
   return (
-    <section aria-label={gt("Worktree setup")} data-worktree-setup-phase={snapshot.phase}>
-      {showHeader ? <SetupHeaderRow snapshot={snapshot} /> : null}
+    <section
+      aria-label={gt("{workspaceNounTitle} setup", {
+        workspaceNounTitle: terminology.workspaceNounTitle,
+      })}
+      data-worktree-setup-phase={snapshot.phase}
+    >
+      {showHeader ? <SetupHeaderRow snapshot={snapshot} terminology={terminology} /> : null}
       {collapsed ? (
-        <CollapsedSummaryRow snapshot={snapshot} />
+        <CollapsedSummaryRow snapshot={snapshot} terminology={terminology} />
       ) : (
         <div className={showHeader ? "pt-1.5" : undefined}>
           {snapshot.stages.map((stage) => (
@@ -359,6 +411,7 @@ export function WorktreeSetupCard({
                 setupRunning={running}
                 setupEndedAt={snapshot.endedAt}
                 scriptName={snapshot.setupScript?.name ?? null}
+                terminology={terminology}
               />
               {stage.id === "setup-script" && showTail ? (
                 <OutputTail lines={stage.tail} failed={stage.status === "failed"} />
@@ -402,7 +455,7 @@ export function WorktreeSetupCard({
           </Button>
         ) : null}
       </div>
-      {detailsOpen ? <SetupDetails snapshot={snapshot} /> : null}
+      {detailsOpen ? <SetupDetails snapshot={snapshot} terminology={terminology} /> : null}
     </section>
   );
 }

@@ -50,6 +50,7 @@ import { AuthMcpClientAccess } from "./auth.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
+import { AgentRoleName } from "./agentRoles.ts";
 import { ThreadTitleRegenerationOutcome } from "./threadTitle.ts";
 import {
   OrchestrationSearchThreadsInput,
@@ -530,6 +531,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   /** Absent on threads written before tags existed; read as empty. */
   tags: Schema.optional(StoredThreadTags),
+  /** The `.agents/roles` role this thread acts as; absent or null for none. */
+  role: Schema.optional(Schema.NullOr(Schema.String)),
   lastVisitedAt: Schema.NullOr(Schema.DateTimeUtc).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -786,6 +789,8 @@ export type OrchestrationV2ThreadLaunchWorkspaceStrategy =
   typeof OrchestrationV2ThreadLaunchWorkspaceStrategy.Type;
 
 export const ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE = "workspace_preparation_failed";
+/** A turn could not start because the thread's worktree folder is gone. */
+export const ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE = "workspace_missing";
 
 /** What a run returned as data: a value the server accepted against the run's `outputSchema`. */
 export const OrchestrationV2RunOutput = Schema.Struct({
@@ -858,6 +863,8 @@ export const OrchestrationV2RunAttempt = Schema.Struct({
   id: RunAttemptId,
   // Provider-thread rows can be reused after recovery; retain the native input destination.
   nativeThreadId: Schema.optional(Schema.String),
+  /** The role brief sent with this attempt's prompt (`<role>:<digest>`), or "off" when it ended. */
+  roleNote: Schema.optional(Schema.String),
   runId: RunId,
   attemptOrdinal: PositiveInt,
   rootNodeId: NodeId,
@@ -2003,6 +2010,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     message: Schema.String,
     level: Schema.optional(OrchestrationV2SystemNoticeLevel),
     mcpSignIn: Schema.optional(OrchestrationV2McpSignIn),
+    /** Also told to the agent, ahead of the next message it receives. */
+    forAgent: Schema.optional(Schema.Literal(true)),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2437,6 +2446,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   /** Absent on threads written before tags existed; read as empty. */
   tags: Schema.optional(StoredThreadTags),
+  /** The `.agents/roles` role this thread acts as; absent or null for none. */
+  role: Schema.optional(Schema.NullOr(Schema.String)),
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   opens: Schema.optional(LenientThreadOpens),
   titleRegeneration: Schema.optional(
@@ -2897,6 +2908,8 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     message: Schema.String,
     level: Schema.optional(OrchestrationV2SystemNoticeLevel),
     mcpSignIn: Schema.optional(OrchestrationV2McpSignIn),
+    /** Also told to the agent, ahead of the next message it receives. */
+    forAgent: Schema.optional(Schema.Literal(true)),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -3288,6 +3301,8 @@ export const OrchestrationV2Command = Schema.Union([
     linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
     /** Only the server sets this, with `linkOrigin`, for a linked environment's delegated task. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
+    tags: Schema.optional(Schema.Array(ThreadTag)),
+    role: Schema.optional(AgentRoleName),
     importedNativeThread: Schema.optional(
       Schema.Struct({
         ref: Schema.Struct({
@@ -3444,9 +3459,13 @@ export const OrchestrationV2Command = Schema.Union([
     continuation: Schema.optional(Schema.Struct({ messageId: MessageId, text: Schema.String })),
     /** Reject unless no message or run has landed on this thread. */
     expectedEmpty: Schema.optional(Schema.Boolean),
+    /** Recorded in the thread and told to the agent with its next message, without starting a turn. */
+    notice: Schema.optional(TrimmedNonEmptyString),
     limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecoveryUpdate)),
     /** Link (object) or unlink (null) a pull request; absent leaves it unchanged. */
     linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+    /** Give the thread a role (name) or take it away (null); absent leaves it unchanged. */
+    role: Schema.optional(Schema.NullOr(AgentRoleName)),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.link"),
@@ -3744,6 +3763,7 @@ export const OrchestrationV2Command = Schema.Union([
     parentNodeId: NodeId,
     task: TrimmedNonEmptyString,
     title: Schema.optional(TrimmedNonEmptyString),
+    role: Schema.optional(AgentRoleName),
     modelSelection: ModelSelection,
     runtimeMode: RuntimeMode,
     interactionMode: ProviderInteractionMode,
@@ -4131,6 +4151,7 @@ export const OrchestrationV2ThreadLaunchInput = Schema.Struct({
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
+  role: Schema.optional(AgentRoleName),
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
   initialMessage: Schema.optional(
     Schema.Struct({

@@ -13,12 +13,14 @@ import { T, useGT } from "gt-react";
 import { useState } from "react";
 import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
 import { useEnvironments } from "../../state/environments";
+import { useVcsTerminology } from "../../state/vcs";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
+  importableT3FileScripts,
+  newScriptInputFromT3File,
   ProjectScriptEditorDialog,
   ScriptIcon,
-  type NewProjectScriptInput,
   type ProjectScriptEditorRequest,
 } from "../projectScriptEditor";
 import { Button } from "../ui/button";
@@ -75,31 +77,18 @@ export function ProjectActionsSettings() {
   );
 
   const representativeMember = target?.projectId ? memberById.get(target.projectId) : undefined;
+  const checkout = scope.kind === "checkout" ? scope.checkout : representativeMember;
+  const vcsTerminology = useVcsTerminology(
+    checkout?.environmentId ?? null,
+    checkout?.workspaceRoot ?? null,
+  );
   const t3File = useT3ProjectFileState(
     representativeMember?.environmentId ?? EnvironmentId.make("none"),
     representativeMember?.workspaceRoot ?? null,
   );
-  const importableScripts = t3File.scripts.filter(
-    (fileScript) =>
-      !scripts.some(
-        (script) =>
-          script.command === fileScript.command ||
-          script.name.toLowerCase() === fileScript.name.toLowerCase(),
-      ),
-  );
+  const importableScripts = importableT3FileScripts(scripts, t3File.scripts);
   const importFileScript = async (fileScript: T3ProjectFileScript) => {
-    const payload: NewProjectScriptInput = {
-      name: fileScript.name,
-      command: fileScript.command,
-      icon: fileScript.icon ?? "play",
-      runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
-      waitForSetup: fileScript.runOnWorktreeCreate === true && fileScript.async === false,
-      runOnSettle: fileScript.runOnSettle ?? false,
-      stopOnSettle: fileScript.stopOnSettle ?? false,
-      keybinding: null,
-      previewUrl: fileScript.previewUrl ?? null,
-      autoOpenPreview: fileScript.previewUrl ? (fileScript.autoOpenPreview ?? false) : false,
-    };
+    const payload = newScriptInputFromT3File(fileScript);
     const result = await submit(null, payload);
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
@@ -122,7 +111,11 @@ export function ProjectActionsSettings() {
         mixed={mixed}
         title={gt("Actions")}
         description={gt(
-          "Commands that run in this project's checkout or its worktree, with optional shortcuts.",
+          "Commands that run in this project's {currentRefFallback} or its {workspaceNoun}, with optional shortcuts.",
+          {
+            currentRefFallback: vcsTerminology.currentRefFallback,
+            workspaceNoun: vcsTerminology.workspaceNoun,
+          },
         )}
         onResetOverride={() => void persist(() => null)}
         control={
@@ -209,6 +202,7 @@ export function ProjectActionsSettings() {
       {target && (
         <ProjectScriptEditorDialog
           environmentId={target.environmentId}
+          workspaceNoun={vcsTerminology.workspaceNoun}
           editScope={AuthSettingsWriteScope}
           request={request}
           scripts={scripts}

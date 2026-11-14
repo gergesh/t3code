@@ -192,6 +192,7 @@ export function ComposerPermissionsSection(props: {
 }
 
 export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
+  workspaceNoun: string;
   children?: React.ReactNode;
   compact: boolean;
   canOperateThread: boolean;
@@ -224,12 +225,15 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   onInterrupt: () => void;
   compactBeforeSendTokens: number | null;
   hideCompactToggle: boolean;
-  keepFullHistory: boolean;
-  onToggleKeepFullHistory: () => void;
+  promptCacheLabel: string | null;
+  compactSkipReason: string | null;
+  compactRequested: boolean;
+  onToggleCompactRequested: () => void;
 }) {
   return (
     <>
       <ComposerPrimaryActions
+        workspaceNoun={props.workspaceNoun}
         compact={props.compact}
         canOperateThread={props.canOperateThread}
         pendingAction={props.pendingAction}
@@ -255,8 +259,10 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         onInterrupt={props.onInterrupt}
         compactBeforeSendTokens={props.compactBeforeSendTokens}
         hideCompactToggle={props.hideCompactToggle}
-        keepFullHistory={props.keepFullHistory}
-        onToggleKeepFullHistory={props.onToggleKeepFullHistory}
+        promptCacheLabel={props.promptCacheLabel}
+        compactSkipReason={props.compactSkipReason}
+        compactRequested={props.compactRequested}
+        onToggleCompactRequested={props.onToggleCompactRequested}
       >
         {props.children}
       </ComposerPrimaryActions>

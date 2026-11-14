@@ -4077,6 +4077,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(command.linkOrigin === undefined || command.delegatedFrom === undefined
         ? {}
         : { delegatedFrom: command.delegatedFrom }),
+      // Tagged in the create itself, so a client hiding the tag never shows the thread.
+      ...(command.tags?.length ? { tags: [...new Set(command.tags)] } : {}),
+      ...(command.role === undefined ? {} : { role: command.role }),
       lineage: {
         parentThreadId: null,
         relationshipToParent: null,
@@ -4719,6 +4722,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
     }
 
+    // A role sets the skills and tools a session starts with, so a new role needs a new session.
+    const roleChanged =
+      command.type === "thread.metadata.update" &&
+      command.role !== undefined &&
+      command.role !== (thread.role ?? null);
     const needsProviderState =
       command.type === "thread.runtime-mode.set" ||
       command.type === "thread.model-selection.set" ||
@@ -4727,7 +4735,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.type === "thread.settle" ||
       (command.type === "thread.metadata.update" &&
         command.worktreePath !== undefined &&
-        command.worktreePath !== thread.worktreePath);
+        command.worktreePath !== thread.worktreePath) ||
+      roleChanged;
     const providerContext = needsProviderState
       ? yield* projectionStore
           .getThreadProviderContext(
@@ -4777,9 +4786,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const detachSessionIds = new Set(
       command.type === "thread.archive" || command.type === "thread.settle"
         ? (providerContext?.providerSessions ?? []).map((session) => session.id)
-        : command.type === "thread.metadata.update" &&
-            command.worktreePath !== undefined &&
-            command.worktreePath !== thread.worktreePath
+        : (command.type === "thread.metadata.update" &&
+              command.worktreePath !== undefined &&
+              command.worktreePath !== thread.worktreePath) ||
+            roleChanged
           ? (providerContext?.providerSessions ?? []).map((session) => session.id)
           : command.type === "thread.runtime-mode.set"
             ? (providerContext?.providerSessions ?? [])
@@ -5145,6 +5155,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 : {}),
             ...(command.branch === undefined ? {} : { branch: command.branch }),
             ...(command.worktreePath === undefined ? {} : { worktreePath: command.worktreePath }),
+            ...(command.role === undefined ? {} : { role: command.role }),
             ...(command.linkedPullRequest === undefined
               ? {}
               : {
@@ -5654,6 +5665,37 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           request: { type: "provider-session.apply-thread-title", title: updatedThread.title },
         } satisfies PendingOrchestrationEffectV2,
       ]);
+    }
+
+    if (command.type === "thread.metadata.update" && command.notice !== undefined) {
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "turn-item.updated",
+        threadId: command.threadId,
+        providerInstanceId: updatedThread.providerInstanceId,
+        occurredAt: now,
+        payload: {
+          id: idAllocator.derive.noticeTurnItem({ commandId: command.commandId }),
+          threadId: command.threadId,
+          runId: null,
+          nodeId: null,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: yield* nextTurnItemOrdinal({ thread }),
+          status: "completed",
+          title: null,
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now,
+          type: "system_notice",
+          message: command.notice,
+          forAgent: true,
+        },
+      });
     }
 
     if (command.type === "thread.metadata.update" && command.regenerateTitle === true) {
@@ -9994,6 +10036,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }),
         runtimeMode: command.runtimeMode,
         interactionMode: command.interactionMode,
+        ...(command.role === undefined ? {} : { role: command.role }),
         ...(command.workspaceStrategy === undefined ? {} : { branch: null, worktreePath: null }),
       };
       const task: OrchestrationV2Subagent = {

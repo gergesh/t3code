@@ -93,6 +93,7 @@ function Picker(props: {
     multipleModelSelections: null,
     runtimeMode: "full-access",
     isLocalDraftThread: false,
+    vcsActionsSupported: true,
     canOverrideServerThreadEnvMode: false,
     setPendingServerThreadEnvModeEntry: () => {},
     setPendingServerThreadStartFromOriginByThreadId: () => {},

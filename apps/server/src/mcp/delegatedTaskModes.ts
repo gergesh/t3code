@@ -1,5 +1,6 @@
 import {
   type ModelSelection,
+  ORCHESTRATOR_MCP_TASK_KINDS,
   OrchestratorMcpFailure,
   type OrchestratorMcpDelegateTaskInput,
   type OrchestratorMcpInteractionMode,
@@ -87,9 +88,15 @@ export function resolveInteractionMode(
     : Effect.succeed(resolved);
 }
 
-/** The task as its child receives it, with the role the caller asked for. */
-export function taskPrompt(input: OrchestratorMcpDelegateTaskInput): string {
-  return input.role === undefined || input.role === "general"
+/**
+ * The task as its child receives it. A generic kind of work becomes a hint; a project role
+ * arrives as its own brief instead, so it passes `asProjectRole`.
+ */
+export function taskPrompt(input: OrchestratorMcpDelegateTaskInput, asProjectRole = false): string {
+  return asProjectRole ||
+    input.role === undefined ||
+    input.role === "general" ||
+    !(ORCHESTRATOR_MCP_TASK_KINDS as ReadonlyArray<string>).includes(input.role)
     ? input.task
     : `Act as the ${input.role} sub-agent for this task.\n\n${input.task}`;
 }

@@ -89,7 +89,11 @@ import {
   replaceTextRange,
 } from "../../composer-logic";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
-import { deriveComposerSendState, getAntigravitySendBlockReason } from "../ChatView.logic";
+import {
+  compactBeforeSendSkipReason,
+  deriveComposerSendState,
+  getAntigravitySendBlockReason,
+} from "../ChatView.logic";
 import { threadHasStarted } from "../../lib/chatThreadActions";
 import {
   dataTransferHasComposerMention,
@@ -377,6 +381,7 @@ export interface ChatComposerProps {
   supportsQuestionAttachments: boolean;
   maxFileAttachmentBytes: number | null;
   routeKind: "server" | "draft";
+  workspaceNoun: string;
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
   multipleModelSelections: ReadonlyArray<ModelSelection> | null;
@@ -402,8 +407,9 @@ export interface ChatComposerProps {
   canSteer: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
   resumeCompactionTokens: number | null;
-  keepFullHistory: boolean;
-  onToggleKeepFullHistory: () => void;
+  promptCacheLabel: string | null;
+  compactRequested: boolean;
+  onToggleCompactRequested: () => void;
   onUsageLimitsCommand?: (() => void) | undefined;
   sideChatAvailable?: boolean;
   sideChatDisabledReason?: string | null;
@@ -526,6 +532,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerDraftTarget,
     environmentId,
     canOperateThread,
+    workspaceNoun,
     attachmentUploadsCapabilityKnown,
     supportsAttachmentUploads,
     supportsQuestionAttachments,
@@ -1337,11 +1344,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     projectSelectionRequired ||
     environmentUnavailable !== null ||
     (!hasMessageToSend && !showResumeAction);
+  const compactSkipReason = compactBeforeSendSkipReason(prompt);
+  const compactsBeforeSend =
+    props.resumeCompactionTokens !== null && props.compactRequested && compactSkipReason === null;
   const collapsedComposerPrimaryActionLabel = composerSendHeld
     ? gt("Sending when ready")
     : showResumeAction
       ? gt("Resume thread")
-      : props.resumeCompactionTokens !== null && !props.keepFullHistory
+      : compactsBeforeSend
         ? gt("Open composer to compact and send")
         : gt("Send message");
   const showMobilePendingAnswerActions =
@@ -2727,6 +2737,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onModelPickerOpenChange={setIsComposerModelPickerOpen}
       modelPickerIconClassName={composerProviderState.modelPickerIconClassName}
       getModelDisabledReason={getModelDisabledReason}
+      serverThreadRole={activeThread?.source.role ?? null}
+      canChangeRole={canOperateThread}
     />
   );
   // An open question owns the space above the composer. Only a machine problem,
@@ -3789,8 +3801,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onClick={(event) => {
                       event.stopPropagation();
                       if (showResumeAction) onResume();
-                      else if (props.resumeCompactionTokens !== null && !props.keepFullHistory)
-                        expandMobileComposer();
+                      else if (compactsBeforeSend) expandMobileComposer();
                       else submitComposer();
                     }}
                   >
@@ -4008,6 +4019,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       sendDisabledReason={primaryActionSendDisabledReason}
                       isEnvironmentUnavailable={primaryActionEnvironmentUnavailable}
                       isPreparingWorktree={false}
+                      workspaceNoun={workspaceNoun}
                       hasSendableContent={false}
                       preserveComposerFocusOnPointerDown
                       onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
@@ -4100,6 +4112,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     sendDisabledReason={primaryActionSendDisabledReason}
                     isEnvironmentUnavailable={primaryActionEnvironmentUnavailable}
                     isPreparingWorktree={isPreparingWorktree}
+                    workspaceNoun={workspaceNoun}
                     hasSendableContent={hasMessageToSend || voiceInputActive}
                     canResume={showResumeAction}
                     preserveComposerFocusOnPointerDown={isMobileViewport}
@@ -4110,8 +4123,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onInterrupt={handleInterruptPrimaryActionStable}
                     compactBeforeSendTokens={props.resumeCompactionTokens}
                     hideCompactToggle={dictationTakesFooter}
-                    keepFullHistory={props.keepFullHistory}
-                    onToggleKeepFullHistory={props.onToggleKeepFullHistory}
+                    promptCacheLabel={props.promptCacheLabel}
+                    compactSkipReason={compactSkipReason}
+                    compactRequested={props.compactRequested}
+                    onToggleCompactRequested={props.onToggleCompactRequested}
                   >
                     {speechInput.available ? (
                       <>

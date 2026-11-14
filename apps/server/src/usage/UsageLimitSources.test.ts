@@ -489,3 +489,76 @@ it.effect("the reset fallback refreshes its hub, and a stalled hub cannot hold t
     expect(yield* Fiber.join(stalled)).toBeNull();
   }),
 );
+
+it.effect("steers a hub's priorities while enabled and hands them back when turned off", () => {
+  const priorities = new Map<string, number>([["later.json", 7]]);
+  const resets: Record<string, string> = { "soon.json": at(10), "later.json": at(100) };
+  const hubId = UsageLimitSourceId.make("steered-hub");
+  const steeredHub = {
+    kind: "cliproxy" as const,
+    url: "https://steered.test",
+    managementKey: "key",
+    enabled: true,
+    routeBySoonestReset: true,
+  };
+  return Effect.gen(function* () {
+    yield* TestClock.setTime(NOW);
+    const settings = yield* ServerSettings.ServerSettingsService;
+    const sources = yield* UsageLimitSources.make;
+    yield* sources.refresh;
+    expect(Object.fromEntries(priorities)).toEqual({ "soon.json": 2, "later.json": 1 });
+
+    yield* settings.updateSettings({
+      usageLimitSources: { [hubId]: { ...steeredHub, routeBySoonestReset: false } },
+    });
+    yield* sources.refresh;
+    expect(Object.fromEntries(priorities)).toEqual({});
+  }).pipe(
+    Effect.provide([
+      ServerSettings.layerTest({ usageLimitSources: { [hubId]: steeredHub } }),
+      Layer.mock(BackgroundPolicy.BackgroundPolicy)({
+        shouldRunScopeWork: () => Effect.succeed(false),
+      }),
+      Layer.succeed(SecretResolver.SecretResolver, {
+        label: (provider) => Effect.succeed(provider),
+        read: (references) => Effect.succeed(references.map(() => undefined)),
+        invalidate: () => Effect.void,
+      }),
+      Layer.succeed(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          Effect.sync(() => {
+            const path = new URL(request.url).pathname;
+            const body =
+              request.body._tag === "Uint8Array"
+                ? JSON.parse(new TextDecoder().decode(request.body.body))
+                : undefined;
+            if (path.endsWith("/auth-files")) {
+              const files = Object.keys(resets).map((id) => ({
+                id,
+                auth_index: id,
+                provider: "claude",
+                ...(priorities.has(id) ? { priority: priorities.get(id) } : {}),
+              }));
+              return HttpClientResponse.fromWeb(request, Response.json({ files }));
+            }
+            if (path.endsWith("/auth-files/fields")) {
+              if (body.priority === null) priorities.delete(body.name);
+              else priorities.set(body.name, body.priority);
+              return HttpClientResponse.fromWeb(request, Response.json({ status: "ok" }));
+            }
+            const usage = {
+              five_hour: null,
+              seven_day: { utilization: 40, resets_at: resets[body.auth_index] },
+            };
+            return HttpClientResponse.fromWeb(
+              request,
+              Response.json({ status_code: 200, body: JSON.stringify(usage) }),
+            );
+          }),
+        ),
+      ),
+      NodeCrypto.layer,
+    ]),
+  );
+});

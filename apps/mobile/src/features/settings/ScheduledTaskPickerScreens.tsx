@@ -1,6 +1,7 @@
 import { msg, T, useGT, useMessages } from "gt-react-native";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { LegendList } from "@legendapp/list/react-native";
+import { useVcsTerminology } from "../../state/vcs";
 import { useNavigation } from "@react-navigation/native";
 import { scheduledTaskWorktreeBaseRef } from "@t3tools/client-runtime/scheduled-task-worktree";
 import { isListedThreadLineage } from "@t3tools/contracts";
@@ -143,6 +144,10 @@ export function ScheduledTaskBranchPickerRouteScreen() {
     cwd: project?.workspaceRoot ?? null,
     query: debouncedQuery,
   });
+  const vcsTerminology = useVcsTerminology(
+    project?.environmentId ?? null,
+    project?.workspaceRoot ?? null,
+  );
   const visibleBranches = branches.refs.filter(
     (branch) => !branch.isRemote && branch.name.toLowerCase().includes(query.trim().toLowerCase()),
   );
@@ -151,7 +156,7 @@ export function ScheduledTaskBranchPickerRouteScreen() {
 
   return (
     <BranchPickerScreen
-      title={gt("Base branch")}
+      title={gt("Base {refNoun}", { refNoun: vcsTerminology.refNoun })}
       project={project}
       branches={visibleBranches}
       selectedBranchName={

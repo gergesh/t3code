@@ -1,5 +1,6 @@
 import { ThreadId, type WorktreeSetupSnapshot } from "@t3tools/contracts";
-import { expect, it, vi } from "vite-plus/test";
+import { getVcsTerminology } from "@t3tools/shared/vcs";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { act, fakeTimers, render } from "../../../test/render";
 import { WorktreeSetupCard } from "./WorktreeSetupCard";
@@ -42,8 +43,15 @@ function snapshot(overrides: Partial<WorktreeSetupSnapshot>): WorktreeSetupSnaps
   };
 }
 
-const card = (value: WorktreeSetupSnapshot) => (
-  <WorktreeSetupCard snapshot={value} onCancel={null} onWorkLocally={null} onOpenTerminal={null} />
+const card = (value: WorktreeSetupSnapshot, kind: "git" | "jj" = "git", embedded = false) => (
+  <WorktreeSetupCard
+    snapshot={value}
+    terminology={getVcsTerminology(kind)}
+    embedded={embedded}
+    onCancel={null}
+    onWorkLocally={null}
+    onOpenTerminal={null}
+  />
 );
 
 it("ticks the running stage while finished stages keep their duration", async () => {
@@ -75,4 +83,48 @@ it("stops a stage interrupted by the setup ending at the setup's end", async () 
     await vi.advanceTimersByTimeAsync(5_000);
   });
   expect(section.element().textContent).toContain("Check out files2s");
+});
+
+describe("WorktreeSetupCard terminology", () => {
+  const finished = (phase: WorktreeSetupSnapshot["phase"]) =>
+    snapshot({ phase, endedAt: "2026-10-26T12:00:01.000Z", stages: [] });
+
+  it.each([
+    ["git", "Worktree"],
+    ["jj", "Workspace"],
+  ] as const)("uses %s labels for completed and interrupted setup", async (kind, title) => {
+    for (const phase of ["done", "failed", "cancelled"] as const) {
+      await using screen = await render(card(finished(phase), kind, true));
+      const { container } = screen;
+      expect(container.querySelector(`[aria-label="${title} setup"]`)).not.toBeNull();
+      expect(container.textContent).toContain(
+        phase === "done" ? `${title} ready` : `${title} setup ${phase}`,
+      );
+    }
+  });
+
+  it("keeps setup script failure visible in Jujutsu summaries", async () => {
+    const failedSetup = finished("done");
+    await using screen = await render(
+      card(
+        {
+          ...failedSetup,
+          stages: [
+            {
+              id: "setup-script",
+              status: "failed",
+              startedAt: failedSetup.startedAt,
+              endedAt: failedSetup.endedAt,
+              percent: null,
+              detail: null,
+              tail: [],
+            },
+          ],
+        },
+        "jj",
+        true,
+      ),
+    );
+    expect(screen.container.textContent).toContain("Workspace ready, setup script failed");
+  });
 });

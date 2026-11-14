@@ -53,6 +53,14 @@ and other phone-only settings ignore the filter.
 A project covers every repository inside its folder, and any folder you add under **Settings →
 Projects → Repositories**; see [Projects with several repositories](multi-repo-projects.md).
 
+## Group checkouts
+
+Checkouts of the same repository share one project in the sidebar, with one name and icon, and
+**Settings → General → Project grouping** turns this off for every project. A Git worktree or jj
+workspace added as its own project, such as one folder per long-lived branch, stays its own
+project. To change that for one checkout, pick its **Grouping rule** under **Checkouts** in the
+project's settings.
+
 ## Pin and archive projects
 
 Pinned projects come first in the project pickers: the project picker on a new thread, the
@@ -217,6 +225,55 @@ New worktrees go in the `worktrees` folder of the T3 home directory. To put them
 such as another drive, set **Settings → Worktrees → Worktree location** to an absolute path like
 `D:\worktrees` or `~/worktrees`. The setting is per machine. Existing worktrees stay where they
 are, and cleanup covers both the default folder and the custom one.
+
+## Custom worktree commands
+
+In **Settings → Worktrees**, **Worktree create command** and **Worktree remove command**
+replace the built-in `git worktree add` or `jj workspace add` and its removal. Use them for tools
+such as copy-on-write clones or your own worktree manager. Leave a command empty to keep the
+built-in step. Set them for an environment or override them per project. On mobile, they are under
+**Settings → Source control → Worktrees**.
+
+Commands run in your shell at the project root with:
+
+- `T3CODE_PROJECT_ROOT` and `T3CODE_WORKTREE_PATH`: the project and the worktree's path.
+- `T3CODE_BRANCH`, `T3CODE_START_REF` and `T3CODE_CREATE_BRANCH`: the branch to check out, where it
+  starts, and `1` when the command must create that branch itself.
+- `T3CODE_JJ_WORKSPACE_NAME` (Jujutsu only): pass it to `--name` so T3 Code can find the workspace
+  again. Under Jujutsu, `T3CODE_START_REF` is a revset for `-r` and the command must not create the
+  bookmark; T3 Code creates it on the first commit or push. Add `--colocate` so Git tooling and
+  submodules work in the workspace, as the built-in step does.
+- `T3CODE_FORCE` (remove only): `1` when uncommitted work may be discarded.
+
+The create command must leave a git worktree or Jujutsu workspace with that branch checked out at
+`T3CODE_WORKTREE_PATH`. A tool that picks its own location can instead print the checkout's
+absolute path as the last line of its output. The remove command must delete the directory. T3
+Code checks both and reports the command's output when it fails. It still refuses to remove a
+Git worktree with uncommitted changes unless the removal is forced.
+
+**Worktree merge command** has no built-in step. When you set it, worktree threads get a **Merge**
+action next to **Settle** in the sidebar (click it twice to confirm), in the thread menu, and in the
+mobile thread menu. The command must merge `T3CODE_BRANCH` into the default branch and delete
+`T3CODE_WORKTREE_PATH`. T3 Code refuses to run it while the worktree has uncommitted changes, checks
+that the worktree is gone afterwards, and then settles the thread. The thread keeps working: it moves
+to the project checkout, and a notice in the chat says what happened. Nothing is sent to the agent
+until your next message, which carries that notice along. If you merge or delete a worktree outside
+T3 Code, the thread's next message fails with "Workspace folder is missing"; **Continue in project
+checkout** on that error moves the thread the same way.
+
+A repository can suggest commands in `t3.json`:
+
+```json
+{
+  "worktreeCommands": {
+    "create": "git worktree add -b \"$T3CODE_BRANCH\" \"$T3CODE_WORKTREE_PATH\" \"$T3CODE_START_REF\"",
+    "remove": "git worktree remove --force \"$T3CODE_WORKTREE_PATH\""
+  }
+}
+```
+
+T3 Code never runs them from the file. With the project selected, choose **Use t3.json setup** to
+copy them into the project's settings, along with the file's first `runOnWorktreeCreate` action.
 
 ## Fast worktree checkout on macOS
 

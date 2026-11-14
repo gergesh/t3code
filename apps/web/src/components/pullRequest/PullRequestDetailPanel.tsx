@@ -79,7 +79,7 @@ import { pullRequestCompletionScope } from "./PullRequestMarkdownTextarea";
 import { PullRequestChangeBreakdownStat } from "./PullRequestChangeBreakdownStat";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { PullRequestThreadLinks } from "./PullRequestThreadLinks";
-import { vcsEnvironment } from "~/state/vcs";
+import { useVcsTerminology, vcsEnvironment } from "~/state/vcs";
 import { RelativeTime } from "~/components/RelativeTime";
 import { useUiStateStore } from "~/uiStateStore";
 
@@ -667,6 +667,7 @@ export function PullRequestDetailPanel({
         sourceControlClients.parseChangeRequestUrl(handoffSummary.url)?.link.repositoryUrl ?? null,
       )
     : loadingCheckoutCommand;
+  const vcsTerminology = useVcsTerminology(environmentId, detail?.workspaceRoot ?? null);
   const branchRefsQuery = useEnvironmentQuery(
     detail === null
       ? null
@@ -1165,17 +1166,19 @@ export function PullRequestDetailPanel({
                 mode === "local"
                   ? m(
                       msg(
-                        "This repository is on the {term, select, mr {merge request} cr {change request} other {pull request}}'s branch, with a thread open on it.",
+                        "This repository is on the {term, select, mr {merge request} cr {change request} other {pull request}}'s {refNoun}, with a thread open on it.",
                         {
                           term: changeRequestTermKind(terminology),
+                          refNoun: vcsTerminology.refNoun,
                         },
                       ),
                     )
                   : m(
                       msg(
-                        "The {term, select, mr {merge request} cr {change request} other {pull request}} is in its own worktree, with a thread open on it.",
+                        "The {term, select, mr {merge request} cr {change request} other {pull request}} is in its own {workspaceNoun}, with a thread open on it.",
                         {
                           term: changeRequestTermKind(terminology),
+                          workspaceNoun: vcsTerminology.workspaceNoun,
                         },
                       ),
                     ),
@@ -1501,6 +1504,7 @@ export function PullRequestDetailPanel({
     context === "page" ? (
       <PullRequestCheckoutMenu
         term={changeRequestTermKind(terminology)}
+        workspaceNoun={vcsTerminology.workspaceNoun}
         handoff={handoff}
         checkoutRoot={checkoutRoot}
         canPrepareWorktree={canPrepareWorktree}

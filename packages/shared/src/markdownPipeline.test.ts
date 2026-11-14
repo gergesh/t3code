@@ -10,6 +10,7 @@ import {
   CHAT_MARKDOWN_REMARK_PLUGINS,
   CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS,
   CHAT_USER_MARKDOWN_REMARK_PLUGINS,
+  chatMarkdownReferences,
   remarkAssistantInsights,
   remarkEnableOrderedListNumbers,
 } from "./markdownPipeline.ts";
@@ -957,4 +958,20 @@ it("links complete absolute paths in prose and skips shortened ones", () => {
   ]);
   expect(links(`[notes](${path}) and \`${path}\``)).toEqual([path]);
   expect(links(`\`\`\`\n${path}\n\`\`\``)).toEqual([]);
+});
+
+it("reads the images and links chat markdown shows, but not those in code", () => {
+  expect(
+    chatMarkdownReferences(
+      [
+        "See https://example.com/a. and [docs](https://example.com/docs)",
+        '![shot](/tmp/shot.png) <img src="https://cdn.example.com/x.webp">',
+        "`https://example.com/inline`",
+        "```\nhttps://example.com/fenced\n```",
+      ].join("\n\n"),
+    ),
+  ).toEqual({
+    images: ["/tmp/shot.png", "https://cdn.example.com/x.webp"],
+    links: ["https://example.com/a", "https://example.com/docs"],
+  });
 });

@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { vi } from "vite-plus/test";
 import { ProviderInstanceId } from "@t3tools/contracts";
@@ -31,6 +32,8 @@ vi.mock("../lib/runtime", async () => {
 import { createMobilePreferencesState } from "./preferences";
 import { useAtomCommand } from "./use-atom-command";
 import * as MobilePreferences from "../persistence/mobile-preferences";
+import * as MobileDatabase from "../persistence/mobile-database";
+import * as MobileSecureStorage from "../persistence/mobile-secure-storage";
 
 function deferred<A>() {
   let resolve!: (value: A) => void;
@@ -64,6 +67,84 @@ function makePreferencesState(
 }
 
 describe("mobile preferences state", () => {
+  it.effect("persists repository fallback dismissals across preference-state remounts", () =>
+    Effect.gen(function* () {
+      const repository = JSON.stringify(["environment", "/repo"]);
+      const fingerprint = JSON.stringify(["Using Git.", null]);
+      let saved: MobileDatabase.StoredPreferencesJson = {
+        payload: JSON.stringify({ baseFontSize: 17 }),
+        updatedAt: 1,
+      };
+      const unexpectedCacheOperation = Effect.die("Unexpected cache operation");
+      const database = MobileDatabase.MobileDatabase.of({
+        loadCache: () => unexpectedCacheOperation,
+        listCache: () => unexpectedCacheOperation,
+        saveCache: () => unexpectedCacheOperation,
+        removeCache: () => unexpectedCacheOperation,
+        clearCacheKind: () => unexpectedCacheOperation,
+        clearEnvironmentCache: () => unexpectedCacheOperation,
+        clearAllCaches: unexpectedCacheOperation,
+        inspectCaches: unexpectedCacheOperation,
+        loadPreferencesJson: Effect.sync(() => Option.some(saved)),
+        savePreferencesJson: (payload, updatedAt) =>
+          Effect.sync(() => {
+            saved = { payload, updatedAt };
+          }),
+      });
+      const secureItems = new Map<string, string>();
+      const secureStorage = MobileSecureStorage.MobileSecureStorage.of({
+        getItem: (key) => Effect.sync(() => secureItems.get(key) ?? null),
+        setItem: (key, value) =>
+          Effect.sync(() => {
+            secureItems.set(key, value);
+          }),
+        removeItem: (key) =>
+          Effect.sync(() => {
+            secureItems.delete(key);
+          }),
+      });
+      const makeState = Effect.service(MobilePreferences.MobilePreferencesStore).pipe(
+        Effect.provide(MobilePreferences.layer),
+        Effect.provideService(MobileDatabase.MobileDatabase, database),
+        Effect.provideService(MobileSecureStorage.MobileSecureStorage, secureStorage),
+        Effect.map((store) => makePreferencesState(store)),
+      );
+      const state = yield* makeState;
+      const registry = AtomRegistry.make();
+      const unmountPreferences = registry.mount(state.preferencesAtom);
+      try {
+        yield* AtomRegistry.getResult(registry, state.preferencesAtom, { suspendOnWaiting: true });
+        yield* state.savePreferences.run(registry, {
+          transform: (current) => ({
+            dismissedVcsNotices: { ...current.dismissedVcsNotices, [repository]: fingerprint },
+          }),
+        });
+        expect(JSON.parse(saved.payload)).toEqual({
+          baseFontSize: 17,
+          dismissedVcsNotices: { [repository]: fingerprint },
+        });
+      } finally {
+        unmountPreferences();
+        registry.dispose();
+      }
+      const remounted = yield* makeState;
+      const freshRegistry = AtomRegistry.make();
+      const unmount = freshRegistry.mount(remounted.preferencesAtom);
+      try {
+        const reloaded = yield* AtomRegistry.getResult(freshRegistry, remounted.preferencesAtom, {
+          suspendOnWaiting: true,
+        });
+        expect(reloaded.dismissedVcsNotices?.[repository]).toBe(fingerprint);
+        expect(
+          reloaded.dismissedVcsNotices?.[JSON.stringify(["environment", "/other"])],
+        ).toBeUndefined();
+      } finally {
+        unmount();
+        freshRegistry.dispose();
+      }
+    }),
+  );
+
   it.effect("preserves an optimistic patch when the initial load finishes later", () =>
     Effect.gen(function* () {
       const pendingLoad = deferred<MobilePreferences.Preferences>();

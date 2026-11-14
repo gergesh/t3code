@@ -71,10 +71,20 @@ vi.mock("../state/use-atom-command", () => ({
   // The add-project destination step starts a clone and follows its project id.
   useAtomCommand: () => async () => ({ _tag: "Success", value: { projectId: "project-cloned" } }),
 }));
-vi.mock("../state/use-atom-query-runner", () => ({
-  // Doubles as the add-project folder scan, which finds nothing to track.
-  useAtomQueryRunner: () => async () => ({ _tag: "Success", value: { folders: [] } }),
-}));
+vi.mock("../state/use-atom-query-runner", async () => {
+  const { filesystemEnvironment } = await import("../state/filesystem");
+  return {
+    // No recent directories, so the folder step starts at its base directory; doubles as
+    // the add-project folder scan, which finds nothing to track.
+    useAtomQueryRunner: (atom: unknown) => async () => ({
+      _tag: "Success",
+      value:
+        atom === filesystemEnvironment.listFrecentDirectories
+          ? { source: null, directories: [] }
+          : { folders: [] },
+    }),
+  };
+});
 vi.mock("../state/environments", async (original) => ({
   ...(await original<typeof import("../state/environments")>()),
   useEnvironments: () => ({

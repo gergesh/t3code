@@ -363,6 +363,7 @@ const layerTest = Layer.mergeAll(
   Layer.provide(McpProviderSessions.layer),
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStoreTest),
+  Layer.provide(layerVcsDriverRegistryTest),
   Layer.provide(layerServerConfig),
   Layer.provide(ServerSettings.layerTest()),
   Layer.provide(layerTestProviderInstanceRegistry),
@@ -376,6 +377,7 @@ const layerLegacyImportTest = Layer.merge(RuntimeLayer.layer, layerProjectionRep
   Layer.provide(McpProviderSessions.layer),
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStoreTest),
+  Layer.provide(layerVcsDriverRegistryTest),
   Layer.provide(layerServerConfig),
   Layer.provide(ServerSettings.layerTest()),
   Layer.provide(layerTestProviderInstanceRegistry),
@@ -503,6 +505,7 @@ const layerProjectDeletionTest = Layer.mergeAll(
   Layer.provide(McpProviderSessions.layer),
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStoreTest),
+  Layer.provide(layerVcsDriverRegistryTest),
   // Exposed so tests can reach the attachments directory that resource cleanup removes from.
   Layer.provideMerge(layerServerConfig),
   Layer.provide(ServerSettings.layerTest()),
@@ -1384,6 +1387,7 @@ const layerSharedApplicationDataPlaneTest = Layer.mergeAll(
   Layer.provide(McpProviderSessions.layer),
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStoreTest),
+  Layer.provide(layerVcsDriverRegistryTest),
   Layer.provide(layerServerConfig),
   Layer.provide(ServerSettings.layerTest()),
   Layer.provide(layerTestProviderInstanceRegistry),
@@ -3604,6 +3608,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         interactionMode: "default" as const,
         branch: null,
         worktreePath: null,
+        tags: ["demo", "demo"],
       };
 
       const firstCreate = yield* orchestrator.dispatch(create);
@@ -3751,10 +3756,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
 
       const shellOf = (shell: Pick<OrchestrationV2ShellSnapshot, "threads">) =>
         shell.threads.find((thread) => thread.id === threadId)!;
-      const untaggedShell = shellOf(yield* orchestrator.getShellSnapshot());
+      const createdShell = shellOf(yield* orchestrator.getShellSnapshot());
+      assert.deepEqual(createdShell.tags, ["demo"]);
       yield* TestClock.adjust("1 minute");
       for (const [step, tag, tagged, expected] of [
-        ["add", "demo", true, ["demo"]],
         ["retry", "demo", true, ["demo"]],
         ["add-other", "private", true, ["demo", "private"]],
         ["remove", "demo", false, ["private"]],
@@ -3777,7 +3782,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       // Tags are not activity, so the thread keeps its place in thread lists.
       assert.equal(
         DateTime.toEpochMillis(taggedShell.updatedAt),
-        DateTime.toEpochMillis(untaggedShell.updatedAt),
+        DateTime.toEpochMillis(createdShell.updatedAt),
       );
 
       const preAutoProjection = yield* orchestrator.getThreadProjection(threadId);
@@ -3931,6 +3936,63 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       assert.equal(projection.thread.modelSelection.model, "gpt-5.5");
       assert.isNotNull(projection.thread.archivedAt);
       assert.isNotNull(projection.thread.deletedAt);
+    }),
+  );
+
+  it.effect("moves a merged worktree thread to its project checkout with a notice", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make("runtime-layer-merged-thread");
+      const projectId = ProjectId.make("runtime-layer-merged-project");
+      yield* seedProject({
+        projectId,
+        title: "Merged project",
+        workspaceRoot: "/workspace/merged",
+        defaultModelSelection: null,
+        createdAt: "2026-09-07T00:00:00.000Z",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("runtime-layer-merged-create"),
+        threadId,
+        projectId,
+        title: "Merged thread",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: "feature/merged",
+        worktreePath: "/tmp/merged-worktree",
+      });
+
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("runtime-layer-merged-move"),
+        threadId,
+        branch: "main",
+        worktreePath: null,
+        expectedWorktreePath: "/tmp/merged-worktree",
+        notice: "Merged feature/merged and removed its worktree.",
+      });
+
+      const projection = yield* orchestrator.getThreadProjection(threadId);
+      assert.equal(projection.thread.worktreePath, null);
+      assert.equal(projection.thread.branch, "main");
+      assert.deepEqual(
+        projection.turnItems.flatMap((item) =>
+          item.type === "system_notice"
+            ? [{ runId: item.runId, message: item.message, forAgent: item.forAgent }]
+            : [],
+        ),
+        [
+          {
+            runId: null,
+            message: "Merged feature/merged and removed its worktree.",
+            forAgent: true,
+          },
+        ],
+      );
     }),
   );
 
@@ -14175,6 +14237,7 @@ const layerQueueResumeDisabledInstanceTest = Layer.mergeAll(
   Layer.provide(McpProviderSessions.layer),
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStoreTest),
+  Layer.provide(layerVcsDriverRegistryTest),
   Layer.provide(layerServerConfig),
   Layer.provide(
     ServerSettings.layerTest({

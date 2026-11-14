@@ -23,6 +23,8 @@ export function ThreadHeader(props: {
   readonly hasThreadCwd: boolean;
   readonly inspectorMode: ThreadInspectorMode | null;
   readonly onOpenFilesInspector: () => void;
+  /** Absent for drafts, which have no messages yet. */
+  readonly onOpenMediaLinks?: () => void;
 }) {
   const gt = useGT();
   const m = useMessages();
@@ -32,18 +34,30 @@ export function ThreadHeader(props: {
   const gitMenu = useThreadGitMenuDefinition(props.gitControls);
   const terminalMenu = threadTerminalMenu(props.gitControls, m);
   const filesVisible = props.inspectorMode === "files" && panes.auxiliaryPaneVisible;
-  const actions: AppBarAction[] = props.hasThreadCwd
-    ? [
-        {
-          accessibilityLabel: filesVisible ? gt("Close files") : gt("Open files"),
-          icon: "folder",
-          selected: filesVisible,
-          disabled: !props.gitControls.canOpenFiles,
-          separateBackground: false,
-          onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
-        },
-      ]
-    : [];
+  const actions: AppBarAction[] = [
+    ...(props.onOpenMediaLinks
+      ? [
+          {
+            accessibilityLabel: gt("Media & links"),
+            icon: "photo",
+            separateBackground: false,
+            onPress: props.onOpenMediaLinks,
+          } satisfies AppBarAction,
+        ]
+      : []),
+    ...(props.hasThreadCwd
+      ? [
+          {
+            accessibilityLabel: filesVisible ? gt("Close files") : gt("Open files"),
+            icon: "folder",
+            selected: filesVisible,
+            disabled: !props.gitControls.canOpenFiles,
+            separateBackground: false,
+            onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
+          } satisfies AppBarAction,
+        ]
+      : []),
+  ];
   const menus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
 
   return (

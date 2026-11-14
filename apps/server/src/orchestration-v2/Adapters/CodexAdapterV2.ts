@@ -1633,6 +1633,8 @@ function codexThreadRuntimeParams(input: {
   readonly stdioMcpServers?: ReadonlyArray<string>;
   readonly modelSelection?: { readonly model: string };
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  /** Skills the thread's role leaves out; see `codexRoleDisabledSkills`. */
+  readonly disabledSkills?: ReadonlyArray<string> | undefined;
 }): {
   readonly cwd?: string;
   readonly model?: string;
@@ -1652,6 +1654,11 @@ function codexThreadRuntimeParams(input: {
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
+      ...(input.disabledSkills === undefined || input.disabledSkills.length === 0
+        ? {}
+        : {
+            "skills.config": input.disabledSkills.map((name) => ({ name, enabled: false })),
+          }),
       // One app-server serves many threads, so the id goes in per-thread shell config, not its env.
       ...(input.threadId === null
         ? {}
@@ -1681,6 +1688,12 @@ function codexThreadRuntimeParams(input: {
     },
   };
 }
+
+/** Codex hides skills only by name, so a role's allowlist becomes the names it leaves out. */
+export const codexRoleDisabledSkills = (
+  available: ReadonlyArray<string>,
+  allowed: ReadonlyArray<string>,
+): ReadonlyArray<string> => [...new Set(available.filter((name) => !allowed.includes(name)))];
 
 const decodeCodexResumeMetadata = Schema.decodeUnknownEffect(
   Schema.Struct({ thread: Schema.Struct({ id: Schema.String, updatedAt: Schema.Number }) }),
@@ -7708,6 +7721,31 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           );
         });
 
+        const roleDisabledSkills = Effect.fn("CodexAdapterV2.roleDisabledSkills")(function* (
+          runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy | undefined,
+        ) {
+          const allowed = runtimePolicy?.roleSkills;
+          const cwd = runtimePolicy?.cwd;
+          if (allowed === undefined || cwd == null) return undefined;
+          const listed = yield* client.request("skills/list", { cwds: [cwd] }).pipe(Effect.option);
+          if (Option.isNone(listed)) {
+            yield* Effect.logWarning(
+              "Codex skills/list failed; the role's skill list is not applied",
+              {
+                cwd,
+              },
+            );
+            return undefined;
+          }
+          const entry = listed.value.data.find((candidate) => candidate.cwd === cwd);
+          const skills =
+            entry === undefined ? listed.value.data.flatMap((e) => e.skills) : entry.skills;
+          return codexRoleDisabledSkills(
+            skills.map((skill) => skill.name),
+            allowed,
+          );
+        });
+
         // Codex refuses to resume a session archived elsewhere until it is unarchived, and
         // one it is still unloading after thread/unsubscribe until it emits thread/closed.
         const resumeNativeThread = Effect.fn("CodexAdapterV2.resumeNativeThread")(function* (
@@ -7983,14 +8021,16 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               Effect.all([
                 readMcpSession(providerThread.appThreadId),
                 readStdioMcpServers(undefined),
+                roleDisabledSkills(input.runtimePolicy),
               ]).pipe(
-                Effect.flatMap(([mcpSession, stdioMcpServers]) =>
+                Effect.flatMap(([mcpSession, stdioMcpServers, disabledSkills]) =>
                   resumeNativeThread(threadId, {
                     excludeTurns: true,
                     ...codexThreadRuntimeParams({
                       threadId: providerThread.appThreadId,
                       mcpSession,
                       stdioMcpServers,
+                      disabledSkills,
                     }),
                   }),
                 ),
@@ -8161,9 +8201,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 Effect.all([
                   mcpSessions.read(threadInput.threadId),
                   readStdioMcpServers(threadInput.runtimePolicy.cwd),
+                  roleDisabledSkills(threadInput.runtimePolicy),
                 ]),
               ),
-              Effect.flatMap(([mcpSession, stdioMcpServers]) =>
+              Effect.flatMap(([mcpSession, stdioMcpServers, disabledSkills]) =>
                 client.request("thread/start", {
                   ...codexThreadRuntimeParams({
                     threadId: threadInput.threadId,
@@ -8171,6 +8212,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     stdioMcpServers,
                     modelSelection: threadInput.modelSelection,
                     runtimePolicy: threadInput.runtimePolicy,
+                    disabledSkills,
                   }),
                   // Codex tags the child's MCP calls with thread_source "subagent".
                   ...(IdAllocator.isDelegatedTaskThread(threadInput.threadId)
@@ -8209,6 +8251,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   threadId: appThreadId,
                   mcpSession: yield* readMcpSession(appThreadId),
                   stdioMcpServers: yield* readStdioMcpServers(threadInput.runtimePolicy?.cwd),
+                  disabledSkills: yield* roleDisabledSkills(threadInput.runtimePolicy),
                   ...(threadInput.modelSelection === undefined
                     ? {}
                     : { modelSelection: threadInput.modelSelection }),
@@ -9223,6 +9266,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     threadId: threadInput.providerThread.appThreadId,
                     mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
                     stdioMcpServers: yield* readStdioMcpServers(undefined),
+                    disabledSkills: yield* roleDisabledSkills(input.runtimePolicy),
                   }),
                 });
               }
@@ -9272,6 +9316,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   threadId: threadInput.targetThreadId,
                   mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
                   stdioMcpServers: yield* readStdioMcpServers(threadInput.runtimePolicy?.cwd),
+                  disabledSkills: yield* roleDisabledSkills(threadInput.runtimePolicy),
                   ...(threadInput.modelSelection === undefined
                     ? {}
                     : { modelSelection: threadInput.modelSelection }),

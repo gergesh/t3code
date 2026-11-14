@@ -204,20 +204,42 @@ export function resolveDraftProjectSelection(
   return onlyScope ? { kind: "select", project: onlyScope.representative } : { kind: "pick" };
 }
 
-/** The live copy of the thread list's filtered project a new thread starts in: the remembered one if it is a copy. */
-export function newTaskFilteredProject(
-  scope: HomeProjectScope,
-  preferredEnvironmentId: EnvironmentId | null,
-  connectedEnvironmentIds: ReadonlySet<EnvironmentId>,
-  lastProject: ProjectRef | undefined,
-): ProjectRef | undefined {
+/**
+ * Where the thread list's filters start a new thread: a live project inside them, the remembered
+ * one if it qualifies. With only an environment filter, that is the remembered project's copy on
+ * that environment. `undefined` when nothing is filtered, `null` when nothing inside the filters
+ * qualifies.
+ */
+export function newTaskFilteredProject(input: {
+  /** The project filter's scope, already narrowed to the environment filter. */
+  readonly projectScope: HomeProjectScope | null;
+  readonly environmentId: EnvironmentId | null;
+  /** Every environment's scopes, to find the remembered project's on the filtered environment. */
+  readonly scopes: ReadonlyArray<HomeProjectScope>;
+  readonly connectedEnvironmentIds: ReadonlySet<EnvironmentId>;
+  readonly lastProject: ProjectRef | undefined;
+}): ProjectRef | null | undefined {
+  const isLast = (project: EnvironmentProject) =>
+    project.environmentId === input.lastProject?.environmentId &&
+    project.id === input.lastProject.projectId;
+  const scope =
+    input.projectScope ??
+    (input.environmentId === null
+      ? undefined
+      : input.scopes.find((candidate) => candidate.projects.some(isLast)));
+  if (scope === undefined) return input.environmentId === null ? undefined : null;
   const project = selectOpenProjectScopeMember(
-    scope,
-    preferredEnvironmentId,
-    connectedEnvironmentIds,
-    lastProject,
+    {
+      ...scope,
+      projects: scope.projects.filter(
+        (project) => input.environmentId === null || project.environmentId === input.environmentId,
+      ),
+    },
+    input.environmentId,
+    input.connectedEnvironmentIds,
+    input.lastProject,
   );
-  return project && { environmentId: project.environmentId, projectId: project.id };
+  return project ? { environmentId: project.environmentId, projectId: project.id } : null;
 }
 
 export function newTaskDestination(options: {
@@ -225,22 +247,25 @@ export function newTaskDestination(options: {
   readonly requestId: string;
   readonly useLastProject: boolean | undefined;
   readonly currentProject: ProjectRef | undefined;
-  readonly filteredProject: ProjectRef | undefined;
+  /** See `newTaskFilteredProject`: `null` keeps a remembered project outside the filters out. */
+  readonly filteredProject: ProjectRef | null | undefined;
   readonly lastProject: ProjectRef | undefined;
 }) {
-  const find = (ref: ProjectRef | undefined) =>
+  const find = (ref: ProjectRef | null | undefined) =>
     ref &&
     options.projects.find(
       (project) => project.environmentId === ref.environmentId && project.id === ref.projectId,
     );
   // A remembered project that was archived since opens the picker; the current one still wins.
   const last = find(options.lastProject);
+  const remembered =
+    options.filteredProject === undefined
+      ? last?.archivedAt == null
+        ? last
+        : undefined
+      : find(options.filteredProject);
   const project =
-    options.useLastProject === false
-      ? undefined
-      : (find(options.currentProject) ??
-        find(options.filteredProject) ??
-        (last?.archivedAt == null ? last : undefined));
+    options.useLastProject === false ? undefined : (find(options.currentProject) ?? remembered);
   return project
     ? {
         draft: {

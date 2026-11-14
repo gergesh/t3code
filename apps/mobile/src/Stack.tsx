@@ -68,6 +68,7 @@ import { GitCommitSheet } from "./features/threads/git/GitCommitSheet";
 import { GitConfirmSheet } from "./features/threads/git/GitConfirmSheet";
 import { GitOverviewSheet } from "./features/threads/git/GitOverviewSheet";
 import { ThreadPullRequestsSheet } from "./features/threads/ThreadPullRequestsSheet";
+import { ThreadMediaLinksSheet } from "./features/threads/ThreadMediaLinksSheet";
 import { ThreadAgentsSheet } from "./features/threads/ThreadAgentsSheet";
 import { LinkedThreadSheet } from "./features/threads/LinkedThreadSheet";
 import { ThreadGuestShareSheet } from "./features/threads/ThreadGuestShareSheet";
@@ -814,6 +815,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ThreadPullRequestsSheet,
       linking: `${THREAD_LINKING_PREFIX}/pull-requests`,
       options: sheetRoute({ detent: 0.55 }),
+    }),
+    ThreadMediaLinks: createNativeStackScreen({
+      screen: ThreadMediaLinksSheet,
+      linking: `${THREAD_LINKING_PREFIX}/media`,
+      options: sheetRoute({ detent: 0.65, androidMaxDetent: 0.95 }),
     }),
     GitCommit: createNativeStackScreen({
       screen: GitCommitSheet,

@@ -67,6 +67,7 @@ import IconFilter from "@tabler/icons-react-native/IconFilter";
 import IconFilterFilled from "@tabler/icons-react-native/IconFilterFilled";
 import IconFlask from "@tabler/icons-react-native/IconFlask";
 import IconFolder from "@tabler/icons-react-native/IconFolder";
+import IconFolderFilled from "@tabler/icons-react-native/IconFolderFilled";
 import IconFolderOpen from "@tabler/icons-react-native/IconFolderOpen";
 import IconHeadphones from "@tabler/icons-react-native/IconHeadphones";
 import IconFolderPlus from "@tabler/icons-react-native/IconFolderPlus";
@@ -220,7 +221,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   flask: IconFlask,
   folder: IconFolder,
   "folder.badge.plus": IconFolderPlus,
-  "folder.fill": IconFolder,
+  "folder.fill": IconFolderFilled,
   gearshape: IconSettings,
   globe: IconWorld,
   hammer: IconHammer,

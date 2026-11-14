@@ -141,6 +141,31 @@ export const T3ProjectFile = Schema.Struct({
       T3_PROJECT_FILE_PATH_MAX_LENGTH,
     ),
   ),
+  worktreeCommands: Schema.optionalKey(
+    Schema.Struct({
+      create: Schema.optionalKey(
+        trimmedNonEmpty({
+          description:
+            "Shell command that creates the worktree (or jj workspace) in place of T3 Code's built-in step. It runs at the project root and must create a checkout of $T3CODE_BRANCH at $T3CODE_WORKTREE_PATH, or print the absolute path of the checkout it created as its last line of output.",
+        }),
+      ),
+      remove: Schema.optionalKey(
+        trimmedNonEmpty({
+          description:
+            "Shell command that removes the worktree at $T3CODE_WORKTREE_PATH in place of T3 Code's built-in step. It runs at the project root and must delete that directory.",
+        }),
+      ),
+      merge: Schema.optionalKey(
+        trimmedNonEmpty({
+          description:
+            "Shell command behind the Merge action on worktree threads. It runs at the project root, must merge $T3CODE_BRANCH into the default branch and delete the worktree at $T3CODE_WORKTREE_PATH. T3 Code refuses to run it while the worktree has uncommitted changes.",
+        }),
+      ),
+    }).annotate({
+      description:
+        "Custom worktree commands suggested to everyone who opens this repository. T3 Code only runs them after a user imports them in project settings.",
+    }),
+  ),
   scripts: Schema.optionalKey(
     Schema.Array(T3ProjectFileScript)
       .annotate({

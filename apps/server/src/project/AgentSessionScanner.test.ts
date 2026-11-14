@@ -35,6 +35,8 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProviderSessionRuntime from "../persistence/ProviderSessionRuntime.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import type * as VcsDriver from "../vcs/VcsDriver.ts";
 import * as AgentSessionScanner from "./AgentSessionScanner.ts";
 
 const makeProjectShell = (workspaceRoot: string): OrchestrationProjectShell => ({
@@ -67,6 +69,7 @@ interface ScannerTestInput {
     readonly sources: ReadonlyArray<AgentSessionImportSource>;
   };
   readonly processRunner?: Layer.Layer<ProcessRunner.ProcessRunner>;
+  readonly jjRoot?: string;
 }
 
 const layerRuntimeRepository = (imported: ScannerTestInput["importedTranscripts"]) =>
@@ -90,12 +93,8 @@ const layerRuntimeRepository = (imported: ScannerTestInput["importedTranscripts"
   });
 
 const layerScannerTest = (input: ScannerTestInput) =>
-  (input.processRunner === undefined
-    ? AgentSessionScanner.layer
-    : Layer.effect(AgentSessionScanner.AgentSessionScanner, AgentSessionScanner.make).pipe(
-        Layer.provide(input.processRunner),
-      )
-  ).pipe(
+  Layer.effect(AgentSessionScanner.AgentSessionScanner, AgentSessionScanner.make).pipe(
+    Layer.provide(input.processRunner ?? ProcessRunner.layer),
     Layer.provide(
       Layer.mergeAll(
         ServerSettings.layerTest({
@@ -131,6 +130,27 @@ const layerScannerTest = (input: ScannerTestInput) =>
         ),
         layerProjectStore(input.importedWorkspaceRoots ?? []),
         layerRuntimeRepository(input.importedTranscripts),
+        Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+          detect: () =>
+            Effect.succeed(
+              input.jjRoot === undefined
+                ? null
+                : {
+                    kind: "jj" as const,
+                    repository: {
+                      kind: "jj" as const,
+                      rootPath: input.jjRoot,
+                      metadataPath: ".jj",
+                      freshness: {
+                        source: "live-local" as const,
+                        observedAt: DateTime.makeUnsafe(0),
+                        expiresAt: Option.none(),
+                      },
+                    },
+                    driver: {} as VcsDriver.VcsDriver["Service"],
+                  },
+            ),
+        }),
       ),
     ),
   );
@@ -1036,6 +1056,48 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const result = yield* runScan({ claudeHomePath, codexHomePath });
 
         expect(result.candidates).toEqual([]);
+      }),
+    );
+
+    it.effect("reads main repository identity for a jj workspace without a local git marker", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+        const repo = yield* makeTempDir("t3code-jj-main-");
+        const workspace = yield* makeTempDir("t3code-jj-workspace-");
+        yield* fileSystem.makeDirectory(path.join(repo, ".jj", "repo"), { recursive: true });
+        yield* fileSystem.makeDirectory(path.join(repo, ".git"));
+        yield* fileSystem.writeFileString(
+          path.join(repo, ".git", "config"),
+          '[remote "origin"]\nurl = git@github.com:pingdotgg/t3code.git\n',
+        );
+        yield* fileSystem.makeDirectory(path.join(workspace, ".jj"));
+        yield* fileSystem.writeFileString(
+          path.join(workspace, ".jj", "repo"),
+          path.relative(path.join(workspace, ".jj"), path.join(repo, ".jj", "repo")),
+        );
+        yield* writeTranscript({
+          filePath: path.join(claudeHomePath, "projects", "-jj-workspace", "a.jsonl"),
+          contents: claudeSessionLine(workspace),
+          mtimeMs: Date.parse("2026-01-01T00:00:00.000Z"),
+        });
+
+        const result = yield* runScan({
+          claudeHomePath,
+          codexHomePath,
+          importedWorkspaceRoots: [workspace],
+          jjRoot: workspace,
+        });
+        expect(
+          result.candidates.map((candidate) => ({ path: candidate.path, git: candidate.git })),
+        ).toEqual([
+          {
+            path: workspace,
+            git: { remoteKey: "github.com/pingdotgg/t3code", repository: "pingdotgg/t3code" },
+          },
+        ]);
       }),
     );
 

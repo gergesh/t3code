@@ -10,6 +10,7 @@ import {
   type ServerProvider,
   T3_PROJECT_FILE_NAME,
 } from "@t3tools/contracts";
+import { getVcsTerminology } from "@t3tools/shared/vcs";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -21,11 +22,13 @@ import { outputRequestProblem } from "../../../orchestration-v2/runOutput.ts";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
+import * as AgentRoles from "../../../project/AgentRoles.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import { mutateProjectWithClone } from "../../../project/ProjectMutation.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
+import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
@@ -39,6 +42,7 @@ import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as VcsDriverRegistry from "../../../vcs/VcsDriverRegistry.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestrationMcp from "../../OrchestratorMcpService.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
@@ -92,19 +96,24 @@ const assertProjectWorktree = Effect.fn("mcp.assertProjectWorktree")(function* (
   workspaceRoot: string,
   worktreePath: string,
 ) {
-  const git = yield* GitVcsDriver.GitVcsDriver;
+  const workflow = yield* GitWorkflowService.GitWorkflowService;
   const fileSystem = yield* FileSystem.FileSystem;
   const real = (path: string) => fileSystem.realPath(path).pipe(Effect.orElseSucceed(() => path));
-  const worktrees = yield* git.listWorktreePaths(workspaceRoot).pipe(
-    Effect.flatMap((paths) => Effect.forEach(paths, real)),
+  const worktrees = yield* workflow.listWorkspacePaths(workspaceRoot).pipe(
     Effect.orElseSucceed((): ReadonlyArray<string> => []),
+    Effect.flatMap((paths) => Effect.forEach(paths, real)),
   );
-  if (!worktrees.includes(yield* real(worktreePath)))
+  if (!worktrees.includes(yield* real(worktreePath))) {
+    const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+    const handle = yield* registry
+      .detect({ cwd: workspaceRoot, jjOnly: true })
+      .pipe(Effect.orElseSucceed(() => null));
+    const terminology = getVcsTerminology(handle?.kind);
     return yield* new OrchestratorMcpFailure({
       code: "invalid_request",
-      message:
-        "worktreePath must be one of the project's git worktrees. t3_worktree_list shows them.",
+      message: `worktreePath must be one of the project's ${terminology.repositoryAdjective} ${terminology.workspaceNounPlural}. t3_worktree_list shows them.`,
     });
+  }
 });
 
 /** The composer falls back to the project's t3.json when no setting picks the mode. */
@@ -309,6 +318,40 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
               );
         if (project !== undefined && input.workspaceStrategy?.type === "existing_worktree")
           yield* assertProjectWorktree(project.workspaceRoot, input.workspaceStrategy.worktreePath);
+        const launchRole =
+          input.role === undefined || project === undefined
+            ? undefined
+            : yield* Effect.gen(function* () {
+                const { roles } = yield* (yield* AgentRoles.AgentRoles).list(project.workspaceRoot);
+                const resolved = AgentRoles.resolveRequestedRole({
+                  roles,
+                  callerRole: caller?.role,
+                  requested: input.role!,
+                });
+                return "role" in resolved
+                  ? resolved.role
+                  : yield* new OrchestratorMcpFailure({
+                      code: "invalid_request",
+                      message: resolved.problem,
+                    });
+              });
+        const roleModelSelection =
+          launchRole?.model === undefined || input.modelSelection !== undefined || replaying
+            ? undefined
+            : yield* Effect.gen(function* () {
+                const providers = yield* (yield* ProviderRegistry.ProviderRegistry).getProviders;
+                const instanceId =
+                  launchRole.provider === undefined
+                    ? caller?.modelSelection.instanceId
+                    : providers.find(
+                        (provider) =>
+                          provider.instanceId === launchRole.provider ||
+                          provider.driver === launchRole.provider,
+                      )?.instanceId;
+                return instanceId === undefined
+                  ? undefined
+                  : { instanceId, model: launchRole.model! };
+              });
         if (!replaying && input.modelSelection !== undefined) {
           const { instanceId, model } = input.modelSelection;
           const registry = yield* ProviderRegistry.ProviderRegistry;
@@ -397,6 +440,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         const modelSelection =
           input.modelSelection ??
           launchedModel ??
+          roleModelSelection ??
           caller?.modelSelection ??
           (projectDefaults
             ? resolveNewThreadModelSelection({
@@ -417,9 +461,11 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             message:
               "Pass modelSelection: the project has no default model. orchestrator_capabilities lists providers and models.",
           });
+        const defaultRuntimeMode =
+          launchRole?.runtimeMode ?? projectDefaults?.defaultRuntimeMode ?? undefined;
         let startedRuntimeMode =
-          projectDefaults !== undefined && input.runtimeMode === undefined
-            ? yield* resolveRuntimeMode(runtimeMode, projectDefaults.defaultRuntimeMode).pipe(
+          defaultRuntimeMode !== undefined && input.runtimeMode === undefined
+            ? yield* resolveRuntimeMode(runtimeMode, defaultRuntimeMode).pipe(
                 Effect.orElseSucceed(() => runtimeMode),
               )
             : runtimeMode;
@@ -442,6 +488,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           modelSelection,
           runtimeMode: startedRuntimeMode,
           interactionMode,
+          ...(launchRole === undefined ? {} : { role: launchRole.name }),
           workspaceStrategy: strategy ?? { type: "root" },
           ...(input.message === undefined && attachments.length === 0
             ? {}
@@ -459,6 +506,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           ...(linkOrigin === undefined ? {} : { linkOrigin }),
           // Kept only alongside linkOrigin: thread.create drops it otherwise.
           ...(input.delegatedFrom === undefined ? {} : { delegatedFrom: input.delegatedFrom }),
+          ...(input.tags === undefined ? {} : { tags: input.tags }),
         }).pipe(
           Effect.mapError((error) => {
             if (error._tag === "AttachmentClaimError") {

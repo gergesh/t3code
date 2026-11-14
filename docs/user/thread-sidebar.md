@@ -17,8 +17,10 @@ starts the thread in that project instead of asking which project to use.
 
 On mobile, **New thread** starts in the current thread's project, or else in the
 project the thread list is filtered to, or else in the last project you opened
-or chose on that device. If none is available, the project picker opens. Turn
-off **Settings → General → Use last project** to choose a project every time.
+or chose on that device. While the list is filtered to an environment, the last
+project counts only through its copy on that environment. If none is available,
+the project picker opens. Turn off **Settings → General → Use last project** to
+choose a project every time.
 When you pick a project that is on more than one machine, the thread starts on
 a connected one if any is connected.
 
