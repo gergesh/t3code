@@ -99,6 +99,7 @@ import {
   FilesystemBrowseInput,
   FilesystemBrowseResult,
   FilesystemBrowseError,
+  FilesystemListFrecentDirectoriesResult,
 } from "./filesystem.ts";
 import {
   WorkspaceFoldersError,
@@ -487,6 +488,7 @@ export const WS_METHODS = {
   workspaceTaskFolder: "workspace.taskFolder",
   workspaceAddTaskFolderRepository: "workspace.addTaskFolderRepository",
   filesystemGetMetadata: "filesystem.getMetadata",
+  filesystemListFrecentDirectories: "filesystem.listFrecentDirectories",
   agentSessionsScan: "agentSessions.scan",
   agentSessionsImport: "agentSessions.import",
   assetsCreateUrl: "assets.createUrl",
@@ -1701,6 +1703,15 @@ const WsWorkspaceAddTaskFolderRepositoryRpc = Rpc.make(
   },
 );
 
+const WsFilesystemListFrecentDirectoriesRpc = Rpc.make(
+  WS_METHODS.filesystemListFrecentDirectories,
+  {
+    payload: Schema.Struct({}),
+    success: FilesystemListFrecentDirectoriesResult,
+    error: EnvironmentAuthorizationError,
+  },
+);
+
 const WsAgentSessionsScanRpc = Rpc.make(WS_METHODS.agentSessionsScan, {
   payload: AgentSessionScanInput,
   success: AgentSessionScanResult,
@@ -2539,6 +2550,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkspaceTaskFolderRpc,
   WsWorkspaceAddTaskFolderRepositoryRpc,
   WsFilesystemGetMetadataRpc,
+  WsFilesystemListFrecentDirectoriesRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
   WsAssetsCreateUrlRpc,

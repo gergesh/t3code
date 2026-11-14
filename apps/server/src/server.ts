@@ -136,6 +136,7 @@ import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
+import * as FrecentDirectories from "./workspace/FrecentDirectories.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFolders from "./workspace/WorkspaceFolders.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
@@ -569,6 +570,7 @@ const layerWorkspace = Layer.mergeAll(
   WorkspaceFolders.layer.pipe(
     Layer.provide(Layer.merge(ProjectStore.layer, TaskFolderStore.layer)),
   ),
+  FrecentDirectories.layer.pipe(Layer.provide(ProcessRunner.layer)),
 );
 
 const layerProjectFaviconResolver = ProjectFaviconResolver.layer.pipe(

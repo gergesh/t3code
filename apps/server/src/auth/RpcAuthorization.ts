@@ -186,6 +186,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workspaceScanFolders]: AuthFilesystemReadScope,
   [WS_METHODS.workspaceTaskFolder]: AuthFilesystemReadScope,
   [WS_METHODS.filesystemGetMetadata]: AuthFilesystemReadScope,
+  [WS_METHODS.filesystemListFrecentDirectories]: AuthFilesystemReadScope,
   [WS_METHODS.agentSessionsScan]: AuthOrchestrationReadScope,
   [WS_METHODS.agentSessionsImport]: AuthOrchestrationOperateScope,
   [WS_METHODS.assetsCreateUrl]: AuthOrchestrationReadScope,

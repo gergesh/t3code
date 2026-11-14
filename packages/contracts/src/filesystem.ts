@@ -44,6 +44,18 @@ export const FilesystemBrowseResult = Schema.Struct({
 });
 export type FilesystemBrowseResult = typeof FilesystemBrowseResult.Type;
 
+export const FrecentDirectorySource = Schema.Literals(["zoxide", "fasd", "z"]);
+export type FrecentDirectorySource = typeof FrecentDirectorySource.Type;
+
+// Read from the server host's frecency tool, best first. Paths under home use `~/` like browse
+// queries. An empty list means no tool or no data; listing never fails.
+export const FilesystemListFrecentDirectoriesResult = Schema.Struct({
+  source: Schema.NullOr(FrecentDirectorySource),
+  directories: Schema.Array(TrimmedNonEmptyString),
+});
+export type FilesystemListFrecentDirectoriesResult =
+  typeof FilesystemListFrecentDirectoriesResult.Type;
+
 export const FilesystemBrowseFailure = Schema.Literals([
   "windows_path_unsupported",
   "current_project_required",
