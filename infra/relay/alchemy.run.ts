@@ -30,7 +30,7 @@ export default Alchemy.Stack(
   },
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
-    const db = yield* RelayDb.PlanetscaleDatabase;
+    const db = yield* RelayDb.RelayDatabase;
     const hyperdrive = yield* RelayDb.RelayHyperdrive;
     const managedEndpointZone = yield* ManagedEndpointZone.pipe(Effect.orDie);
     const relayApiZone = yield* RelayApiZone.pipe(Effect.orDie);
@@ -60,8 +60,8 @@ export default Alchemy.Stack(
     });
 
     return {
-      databaseName: db.database.name,
-      databaseBranchName: db.branch?.name ?? "main",
+      databaseName: db.databaseName,
+      databaseBranchName: db.databaseBranchName,
       hyperdriveName: hyperdrive.name,
       workerName: api.workerName,
       url: api.url,
