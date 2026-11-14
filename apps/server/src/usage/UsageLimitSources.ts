@@ -29,7 +29,8 @@ import * as SecretResolverLayer from "../secrets/SecretResolver.ts";
 import { resolveSettingsSecrets } from "../secrets/settingsSecretValue.ts";
 import * as Settings from "../serverSettings.ts";
 import { windowLimitsModel } from "../provider/claudeUsageLimits.ts";
-import { makeCliproxyApi } from "./cliproxyApi.ts";
+import { type CliproxyHub, makeCliproxyApi } from "./cliproxyApi.ts";
+import { soonestResetPriorities } from "./hubRoutingPriorities.ts";
 
 export class UsageLimitSources extends Context.Service<
   UsageLimitSources,
@@ -109,6 +110,13 @@ export const make = Effect.gen(function* () {
     return settingsSecretLiteral(resolved.managementKey);
   });
   const stateRef = yield* Ref.make<ReadonlyArray<UsageLimitSourceSnapshot>>([]);
+  // Hubs whose priorities this server wrote, kept so turning steering off can reset them.
+  const steeredRef = yield* Ref.make<
+    ReadonlyMap<
+      UsageLimitSourceId,
+      { readonly hub: CliproxyHub; readonly accountIds: ReadonlyArray<string> }
+    >
+  >(new Map());
   const changes = yield* Effect.acquireRelease(
     PubSub.unbounded<ReadonlyArray<UsageLimitSourceSnapshot>>(),
     PubSub.shutdown,
@@ -136,12 +144,25 @@ export const make = Effect.gen(function* () {
     if (managementKey.length === 0) {
       return { ...base, accounts: [], error: missingManagementKey(config) };
     }
-    const accounts = yield* api
-      .readAccounts({ url: config.url, managementKey })
-      .pipe(Effect.result);
+    const hub = { url: config.url, managementKey };
+    const accounts = yield* api.readAccounts(hub).pipe(Effect.result);
     if (accounts._tag === "Failure") {
       yield* Effect.logDebug("usage limit source read failed", { id, cause: accounts.failure });
       return { ...base, accounts: [], error: accounts.failure.detail };
+    }
+    if (config.routeBySoonestReset) {
+      const now = DateTime.toEpochMillis(yield* DateTime.now);
+      const accountIds = accounts.success.map((account) => account.id);
+      // Recorded before writing, so a partly applied write is still reset later.
+      yield* Ref.update(steeredRef, (steered) => new Map(steered).set(id, { hub, accountIds }));
+      yield* api.setPriorities(hub, soonestResetPriorities(accounts.success, now)).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("usage limit source priorities failed", {
+            id,
+            detail: error.detail,
+          }),
+        ),
+      );
     }
     return { ...base, accounts: accounts.success };
   });
@@ -153,6 +174,33 @@ export const make = Effect.gen(function* () {
       Equal.equals(previous, next) ? [false, previous] : [true, next],
     );
     if (changed) yield* PubSub.publish(changes, next);
+  });
+
+  // A hub that is off, removed or no longer steered gets default priorities back; a failed reset retries next refresh.
+  const releaseUnsteered = Effect.fn("UsageLimitSources.releaseUnsteered")(function* (
+    steering: ReadonlySet<string>,
+  ) {
+    const steered = yield* Ref.get(steeredRef);
+    yield* Effect.forEach(
+      [...steered].filter(([id]) => !steering.has(id)),
+      ([id, { hub, accountIds }]) =>
+        api.setPriorities(hub, new Map(accountIds.map((accountId) => [accountId, 0]))).pipe(
+          Effect.andThen(
+            Ref.update(steeredRef, (current) => {
+              const next = new Map(current);
+              next.delete(id);
+              return next;
+            }),
+          ),
+          Effect.catch((error) =>
+            Effect.logWarning("usage limit source priority reset failed", {
+              id,
+              detail: error.detail,
+            }),
+          ),
+        ),
+      { concurrency: 4, discard: true },
+    );
   });
 
   // Serialize refreshes so slow old-settings reads cannot resurrect removed sources after newer refreshes.
@@ -170,6 +218,9 @@ export const make = Effect.gen(function* () {
       { concurrency: 4 },
     );
     yield* publish(keepLastGoodReadings(yield* Ref.get(stateRef), snapshots));
+    yield* releaseUnsteered(
+      new Set(entries.flatMap(([id, config]) => (config.routeBySoonestReset ? [id] : []))),
+    );
   }).pipe(refreshLock.withPermits(1), Effect.ignoreCause({ log: true }));
 
   // Shares the refresh lock so a stale in-flight read cannot overwrite a redemption.
