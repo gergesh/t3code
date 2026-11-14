@@ -376,6 +376,34 @@ describeJj("JjVcsDriver reads", () => {
     ),
   );
 
+  it.effect("lists every bookmark when the list runs past a megabyte", () =>
+    withRepo(({ driver, fileSystem, path, root }) =>
+      Effect.gen(function* () {
+        yield* fileSystem.writeFileString(path.join(root, "a.txt"), "a\n");
+        yield* runJj(root, ["commit", "-m", "first"]);
+        // jj sorts the list by name, so `main` comes after every one of these rows.
+        const filler = Array.from(
+          { length: 3_300 },
+          (_, index) => `a-${String(index).padStart(4, "0")}-${"x".repeat(190)}`,
+        );
+        for (let start = 0; start < filler.length; start += 500) {
+          yield* runJj(root, [
+            "bookmark",
+            "create",
+            ...filler.slice(start, start + 500),
+            "-r",
+            "@-",
+          ]);
+        }
+        yield* runJj(root, ["bookmark", "create", "main", "-r", "@-"]);
+
+        const bookmarks = yield* driver.listBookmarks(root);
+        assert.equal(bookmarks.length, filler.length + 1);
+        assert.equal(bookmarks.at(-1)?.name, "main");
+      }),
+    ),
+  );
+
   it.effect("still decodes bookmarks after a rename leaves a deleted local bookmark", () =>
     withRepo(({ driver, fileSystem, path, base, root }) =>
       Effect.gen(function* () {

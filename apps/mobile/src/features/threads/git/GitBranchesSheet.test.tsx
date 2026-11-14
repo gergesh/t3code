@@ -82,10 +82,17 @@ vi.mock("../../../state/use-selected-thread-worktree", () => ({
   }),
 }));
 vi.mock("../../../state/use-selected-thread-git-state", () => ({
-  useSelectedThreadGitState: () => ({
-    selectedThreadBranches: state.branches,
-    selectedThreadBranchesLoading: false,
-    gitOperationLabel: null,
+  useSelectedThreadGitState: () => ({ gitOperationLabel: null }),
+}));
+vi.mock("../../../state/queries", () => ({
+  useDebouncedValue: <A,>(value: A) => value,
+  usePaginatedBranches: () => ({
+    data: null,
+    refs: state.branches,
+    error: null,
+    isPending: false,
+    isFetchingNextPage: false,
+    loadNext: () => {},
   }),
 }));
 vi.mock("../../../state/use-selected-thread-git-actions", () => ({

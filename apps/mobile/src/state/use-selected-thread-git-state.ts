@@ -61,6 +61,5 @@ export function useSelectedThreadGitState() {
     vcsTerminology,
     sourceControlDiscovery,
     selectedThreadBranches,
-    selectedThreadBranchesLoading: selectedThreadBranchState.isPending,
   };
 }
