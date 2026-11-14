@@ -3910,6 +3910,63 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("moves a merged worktree thread to its project checkout with a notice", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make("runtime-layer-merged-thread");
+      const projectId = ProjectId.make("runtime-layer-merged-project");
+      yield* seedProject({
+        projectId,
+        title: "Merged project",
+        workspaceRoot: "/workspace/merged",
+        defaultModelSelection: null,
+        createdAt: "2026-09-07T00:00:00.000Z",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("runtime-layer-merged-create"),
+        threadId,
+        projectId,
+        title: "Merged thread",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: "feature/merged",
+        worktreePath: "/tmp/merged-worktree",
+      });
+
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("runtime-layer-merged-move"),
+        threadId,
+        branch: "main",
+        worktreePath: null,
+        expectedWorktreePath: "/tmp/merged-worktree",
+        notice: "Merged feature/merged and removed its worktree.",
+      });
+
+      const projection = yield* orchestrator.getThreadProjection(threadId);
+      assert.equal(projection.thread.worktreePath, null);
+      assert.equal(projection.thread.branch, "main");
+      assert.deepEqual(
+        projection.turnItems.flatMap((item) =>
+          item.type === "system_notice"
+            ? [{ runId: item.runId, message: item.message, forAgent: item.forAgent }]
+            : [],
+        ),
+        [
+          {
+            runId: null,
+            message: "Merged feature/merged and removed its worktree.",
+            forAgent: true,
+          },
+        ],
+      );
+    }),
+  );
+
   it.effect("keeps the branch pull request when linking another pull request", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;

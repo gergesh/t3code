@@ -493,6 +493,8 @@ function makeLocalCommandHarness(input: {
    * the provider, or an earlier run that delivered it. `nativeForkFrom` plans a native fork of the
    * parent. `switchedProvider` puts the earlier run and its context on another provider thread.
    */
+  /** A notice for the agent, such as a merged worktree, recorded before this run. */
+  readonly agentNotice?: string;
   readonly sideChat?: {
     readonly contextRun: "current" | "failed" | "cancelled" | "delivered";
     readonly unsentResume?: boolean;
@@ -674,7 +676,30 @@ function makeLocalCommandHarness(input: {
     providerTurns: [],
     contextHandoffs: [],
     contextTransfers: [],
-    turnItems: [],
+    turnItems:
+      input.agentNotice === undefined
+        ? []
+        : [
+            {
+              id: TurnItemId.make("agent-notice"),
+              threadId,
+              runId: null,
+              nodeId: null,
+              providerThreadId: null,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: 0,
+              status: "completed",
+              title: null,
+              startedAt: now,
+              completedAt: now,
+              updatedAt: now,
+              type: "system_notice",
+              message: input.agentNotice,
+              forAgent: true,
+            },
+          ],
     visibleTurnItems: [],
     runtimeRequests: [],
     subagents: [],
@@ -1166,7 +1191,7 @@ function makeLocalCommandHarness(input: {
           startTurn(ProviderAdapter.resumeTurnInput(input)),
   };
   const open = vi.fn(() =>
-    input.sideChat !== undefined
+    input.sideChat !== undefined || input.agentNotice !== undefined
       ? Effect.succeed(sideChatSession as never)
       : input.interruptOpen === true
         ? Effect.interrupt
@@ -1202,7 +1227,7 @@ function makeLocalCommandHarness(input: {
       input: RunExecutionService.RunExecutionServiceV2StartRootRunInput,
     ) => Effect.Effect<void, RunExecutionService.RunExecutionServiceV2Error>
   >((runInput) =>
-    input.sideChat !== undefined
+    input.sideChat !== undefined || input.agentNotice !== undefined
       ? (runInput.resume
           ? runInput.session.resumeTurn!({
               ...runInput,
@@ -2278,6 +2303,24 @@ effectIt.effect("refuses unsupported resume instead of manufacturing a user prom
         }),
       ]),
     );
+  }),
+);
+
+effectIt.effect("tells the agent about notices recorded since its last turn", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Keep going",
+      agentNotice: "Merged feature and removed its worktree.",
+    });
+
+    yield* harness.start;
+
+    expect(harness.startTurn.mock.calls.map(([turn]) => turn.message.text)).toEqual([
+      withInlineContext(
+        "Note: this happened in T3 Code since your last turn:\n- Merged feature and removed its worktree.",
+        "Keep going",
+      ),
+    ]);
   }),
 );
 
