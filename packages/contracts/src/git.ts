@@ -194,6 +194,22 @@ export const VcsMergeWorktreeInput = Schema.Struct({
 });
 export type VcsMergeWorktreeInput = typeof VcsMergeWorktreeInput.Type;
 
+export const VcsContinueInProjectCheckoutInput = Schema.Struct({
+  threadId: ThreadId,
+  /** The missing worktree the thread was in; rejects once the thread has moved elsewhere. */
+  worktreePath: TrimmedNonEmptyStringSchema,
+});
+export type VcsContinueInProjectCheckoutInput = typeof VcsContinueInProjectCheckoutInput.Type;
+
+export class VcsContinueInProjectCheckoutError extends Schema.TaggedError<VcsContinueInProjectCheckoutError>()(
+  "VcsContinueInProjectCheckoutError",
+  { threadId: ThreadId, detail: Schema.String },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
 export const VcsCreateRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   refName: TrimmedNonEmptyStringSchema,

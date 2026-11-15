@@ -30,6 +30,7 @@ import {
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   type OrchestrationV2ThreadProjection,
   OrchestrationV2DomainEvent,
+  ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -61,6 +62,7 @@ import {
 } from "../workspace/restoreMissingWorktree.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { layerRealGit } from "./ProviderTurnStartService.testkit.ts";
+import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -87,6 +89,8 @@ import * as RunExecutionService from "./RunExecutionService.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
+
+const isWorkspaceMissing = Schema.is(ProviderWorkspaceMissingError);
 
 const isDomainEvent = Schema.is(OrchestrationV2DomainEvent);
 
@@ -1205,11 +1209,13 @@ function makeLocalCommandHarness(input: {
                 }).pipe(
                   Effect.andThen(
                     Effect.fail(
-                      new ProviderSessionManager.ProviderSessionOpenError({
-                        instanceId: newInstanceId,
-                        providerSessionId,
-                        cause: input.openFailure,
-                      }),
+                      isWorkspaceMissing(input.openFailure)
+                        ? input.openFailure
+                        : new ProviderSessionManager.ProviderSessionOpenError({
+                            instanceId: newInstanceId,
+                            providerSessionId,
+                            cause: input.openFailure,
+                          }),
                     ),
                   ),
                 )
@@ -3161,6 +3167,30 @@ effectIt.effect("terminalizes a starting run when its provider session cannot op
           class: "provider_error",
           message: "DESCRIPTION is not valid ACP JSON",
         },
+      },
+    ]);
+  }),
+);
+
+effectIt.effect("marks a start that found its worktree folder gone as workspace_missing", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      openFailure: new ProviderWorkspaceMissingError({
+        threadId: "thread",
+        cwd: "/tmp/merged-worktree",
+      }),
+    });
+
+    yield* harness.start;
+
+    expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+    expect(harness.projection().turnItems).toMatchObject([
+      {
+        type: "error",
+        status: "failed",
+        title: "Workspace folder is missing",
+        failure: { code: ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE },
       },
     ]);
   }),

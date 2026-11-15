@@ -1793,6 +1793,18 @@ export default function ChatView(props: ChatViewProps) {
   const onRetryWorkspacePreparationStable = useStableCallback((runId: RunId) => {
     if (vcsActionsSupported) retryWorkspacePreparation(runId);
   });
+  const continueInProjectCheckout = useAtomCommand(vcsEnvironment.continueInProjectCheckout);
+  const canContinueInProjectCheckout = useAtomValue(
+    vcsEnvironment.continueInProjectCheckout.permissionAtom(activeThreadRef?.environmentId ?? null),
+  );
+  const missingWorktreePath = activeThread?.worktreePath ?? null;
+  const onContinueInProjectCheckoutStable = useStableCallback(() => {
+    if (activeThreadRef === null || missingWorktreePath === null) return;
+    void continueInProjectCheckout({
+      environmentId: activeThreadRef.environmentId,
+      input: { threadId: activeThreadRef.threadId, worktreePath: missingWorktreePath },
+    });
+  });
   // Provider-native subagents cannot take messages; approvals and questions go to the top-level parent.
   const showProviderSubagentBar = isProviderSubagent;
   const composerMounted = !showProviderSubagentBar;
@@ -3570,6 +3582,9 @@ export default function ChatView(props: ChatViewProps) {
                         retryableWorkspacePreparationRunIds,
                         onRetryWorkspacePreparation: onRetryWorkspacePreparationStable,
                       }
+                    : {})}
+                  {...(canContinueInProjectCheckout && missingWorktreePath !== null
+                    ? { onContinueInProjectCheckout: onContinueInProjectCheckoutStable }
                     : {})}
                   {...(draftId
                     ? { onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocallyStable }

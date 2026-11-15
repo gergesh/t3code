@@ -14,6 +14,7 @@ import {
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
   isCompactionCommandMessage,
+  ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE,
   parseGoalCommand,
   RunId,
   RunAttemptId,
@@ -643,6 +644,7 @@ export const layer: Layer.Layer<
           readonly title: string;
           readonly error: Error;
           readonly message?: string;
+          readonly code?: string;
         }) {
           yield* settleRunBeforeStart({
             run,
@@ -660,6 +662,7 @@ export const layer: Layer.Layer<
               failure: makeProviderFailure({
                 cause: failed.error,
                 message: failed.message ?? startFailureMessage(failed.error),
+                code: failed.code,
                 class: "provider_error",
               }),
             },
@@ -947,11 +950,20 @@ export const layer: Layer.Layer<
           isProviderAdapterOpenSessionError(failure.cause) &&
           failure.cause.requiresSignIn === true;
         if (input.willRetry === true && !requiresSignIn) return yield* failure;
-        yield* settleStartFailure({
-          signal: "provider-session-open-failure",
-          title: "Provider session failed to open",
-          error: sessionResult.failure,
-        });
+        yield* settleStartFailure(
+          failure._tag === "ProviderWorkspaceMissingError"
+            ? {
+                signal: "provider-session-open-failure",
+                title: "Workspace folder is missing",
+                error: failure,
+                code: ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE,
+              }
+            : {
+                signal: "provider-session-open-failure",
+                title: "Provider session failed to open",
+                error: failure,
+              },
+        );
         return;
       }
       const session = sessionResult.success;

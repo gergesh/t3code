@@ -378,6 +378,10 @@ export function createVcsEnvironmentAtoms<R, E>(
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
     }),
+    continueInProjectCheckout: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:continue-in-project-checkout",
+      tag: WS_METHODS.vcsContinueInProjectCheckout,
+    }),
     createRef: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:create-ref",
       tag: WS_METHODS.vcsCreateRef,

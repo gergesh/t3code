@@ -252,7 +252,9 @@ mobile thread menu. The command must merge `T3CODE_BRANCH` into the default bran
 `T3CODE_WORKTREE_PATH`. T3 Code refuses to run it while the worktree has uncommitted changes, checks
 that the worktree is gone afterwards, and then settles the thread. The thread keeps working: it moves
 to the project checkout, and a notice in the chat says what happened. Nothing is sent to the agent
-until your next message, which carries that notice along.
+until your next message, which carries that notice along. If you merge or delete a worktree outside
+T3 Code, the thread's next message fails with "Workspace folder is missing"; **Continue in project
+checkout** on that error moves the thread the same way.
 
 A repository can suggest commands in `t3.json`:
 

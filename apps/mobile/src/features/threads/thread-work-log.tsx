@@ -44,6 +44,7 @@ import {
 } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import {
+  ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE,
   ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE,
   type EnvironmentId,
   type RunId,
@@ -55,7 +56,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useProject, useThreadShell } from "../../state/entities";
-import { useVcsActionSupport } from "../../state/vcs";
+import { useVcsActionSupport, vcsEnvironment } from "../../state/vcs";
 import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { isJavaScriptReplTool } from "@t3tools/shared/toolActivity";
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
@@ -818,6 +819,40 @@ function WorkspacePreparationRetryButton(props: {
   );
 }
 
+function ContinueInProjectCheckoutButton(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+}) {
+  const worktreePath =
+    useThreadShell(scopeThreadRef(props.environmentId, props.threadId))?.worktreePath ?? null;
+  const allowed = useAtomValue(
+    vcsEnvironment.continueInProjectCheckout.permissionAtom(props.environmentId),
+  );
+  const move = useAtomCommand(
+    vcsEnvironment.continueInProjectCheckout,
+    "continue in project checkout",
+  );
+  const [busy, setBusy] = useState(false);
+  if (worktreePath === null || !allowed) return null;
+  return (
+    <View className="ml-7 mt-2">
+      <Button
+        label="Continue in project checkout"
+        tone="secondary"
+        disabled={busy}
+        onPress={() => {
+          setBusy(true);
+          void Haptics.selectionAsync();
+          void move({
+            environmentId: props.environmentId,
+            input: { threadId: props.threadId, worktreePath },
+          }).finally(() => setBusy(false));
+        }}
+      />
+    </View>
+  );
+}
+
 function ToolCodeText({
   code,
   language,
@@ -984,6 +1019,12 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
               environmentId={props.environmentId}
               threadId={failureItem.threadId}
               runId={failureItem.runId}
+            />
+          ) : null}
+          {failureItem.failure.code === ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE ? (
+            <ContinueInProjectCheckoutButton
+              environmentId={props.environmentId}
+              threadId={failureItem.threadId}
             />
           ) : null}
         </View>
