@@ -77,6 +77,16 @@ function useThreadVisibleTurnItems(
   );
 }
 
+/** Holds through streamed assistant text, so readers recompute only on structure. */
+export function useSelectedThreadTimelineTurnItems(): OrchestrationV2ThreadProjection["visibleTurnItems"] {
+  const { selectedThreadDetailRef } = useThreadSelection();
+  return useAtomValue(
+    selectedThreadDetailRef === null
+      ? EMPTY_VISIBLE_TURN_ITEMS_ATOM
+      : environmentThreadDetails.timelineVisibleTurnItemsAtom(selectedThreadDetailRef),
+  );
+}
+
 export function useSelectedThreadVisibleTurnItems(): OrchestrationV2ThreadProjection["visibleTurnItems"] {
   const { selectedThreadDetailRef } = useThreadSelection();
   return useThreadVisibleTurnItems({

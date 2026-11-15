@@ -47,6 +47,7 @@ import {
   FileDiff,
   Files,
   Globe2,
+  Images,
   MessagesSquare,
   Plus,
   TerminalSquare,
@@ -151,6 +152,8 @@ export interface RightPanelTabsProps {
   onAddDevice: () => void;
   /** Absent where side chats are not offered. */
   onAddSideChat?: (() => void) | undefined;
+  /** Absent where the panel has no thread messages to collect from. */
+  onAddMediaLinks?: (() => void) | undefined;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -335,6 +338,8 @@ function RightPanelEmptyState(props: {
   onAddDevice: () => void;
   /** Absent where side chats are not offered. */
   onAddSideChat?: (() => void) | undefined;
+  /** Absent where the panel has no thread messages to collect from. */
+  onAddMediaLinks?: (() => void) | undefined;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -407,6 +412,19 @@ function RightPanelEmptyState(props: {
       disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.device),
       onClick: props.onAddDevice,
     },
+    ...(props.onAddMediaLinks
+      ? [
+          {
+            label: "Media & links",
+            description: "Every image, file, and link in this thread.",
+            icon: Images,
+            shortcut: "I",
+            available: true,
+            disabledReason: "",
+            onClick: props.onAddMediaLinks,
+          },
+        ]
+      : []),
     ...(props.onAddSideChat
       ? [
           {
@@ -610,6 +628,8 @@ function surfaceTitle(
     case "issue":
       // A git host numbers its issues; a tracker with keys of its own, such as Linear, names them.
       return /^\d+$/.test(surface.key) ? `#${surface.key}` : surface.key;
+    case "media-links":
+      return resolve(msg("Media & links"));
     case "device":
       return surface.title ?? surface.target?.name ?? resolve(msg("Device"));
     case "side-chat":
@@ -704,6 +724,8 @@ function SurfaceIcon({
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
     case "issue":
       return <IssueSurfaceIcon surface={surface} environmentId={environmentId} />;
+    case "media-links":
+      return <Images className="size-3 shrink-0" />;
     case "side-chat":
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
     case "device":
@@ -1225,6 +1247,18 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: messages(SURFACE_DISABLED_REASONS.device),
       onClick: props.onAddDevice,
     },
+    ...(props.onAddMediaLinks
+      ? [
+          {
+            label: "Media & links",
+            icon: Images,
+            shortcut: "I",
+            available: true,
+            disabledReason: "",
+            onClick: props.onAddMediaLinks,
+          },
+        ]
+      : []),
     ...(props.onAddSideChat
       ? [
           {
@@ -1643,6 +1677,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddPullRequests={props.onAddPullRequests}
             onAddDevice={props.onAddDevice}
             onAddSideChat={props.onAddSideChat}
+            onAddMediaLinks={props.onAddMediaLinks}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}

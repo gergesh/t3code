@@ -834,48 +834,62 @@ export function remarkAssistantInsights(this: Processor) {
   };
 }
 
-const imageSourceProcessor = unified()
+const referenceProcessor = unified()
   .use(remarkParse)
   .use(CHAT_MARKDOWN_REMARK_PLUGINS)
   .use(remarkRehype, { allowDangerousHtml: true })
   .use(CHAT_MARKDOWN_REHYPE_PLUGINS);
 
-interface ImageSourceNode {
+interface ReferenceNode {
   readonly type: string;
   readonly tagName?: string;
   readonly properties?: {
     readonly src?: unknown;
+    readonly href?: unknown;
     readonly dataLocalSrc?: unknown;
     readonly dataDarkSrc?: unknown;
     readonly dataLightSrc?: unknown;
   };
-  readonly children?: ReadonlyArray<ImageSourceNode>;
+  readonly children?: ReadonlyArray<ReferenceNode>;
 }
 
 /**
- * The sources of the images chat markdown shows, read as ChatMarkdown's `img` renderer reads
- * them. Code, comments, and plain links show no image, so they add none.
+ * The image sources and link targets chat markdown shows, read as ChatMarkdown's `img` and `a`
+ * renderers read them. Code and comments show neither, so they add none.
  */
-export function chatMarkdownImageSources(markdown: string): Array<string> {
-  const sources: Array<string> = [];
-  const visit = (node: ImageSourceNode) => {
+export function chatMarkdownReferences(markdown: string): {
+  images: Array<string>;
+  links: Array<string>;
+} {
+  const images: Array<string> = [];
+  const links: Array<string> = [];
+  const visit = (node: ReferenceNode) => {
     if (node.type === "element" && node.tagName === "img") {
       const { src, dataLocalSrc, dataDarkSrc, dataLightSrc } = node.properties ?? {};
       // The sanitizer drops a Windows drive path from `src`; the renderer reads it from here.
       if (typeof dataLocalSrc === "string") {
-        sources.push(normalizeMarkdownLinkDestination(dataLocalSrc).replaceAll("\\", "/"));
+        images.push(normalizeMarkdownLinkDestination(dataLocalSrc).replaceAll("\\", "/"));
       } else if (typeof src === "string") {
-        sources.push(normalizeMarkdownLinkDestination(src));
+        images.push(normalizeMarkdownLinkDestination(src));
       }
       // A `<picture>` shows one of these instead, by the viewer's theme.
       for (const variant of [dataDarkSrc, dataLightSrc]) {
-        if (typeof variant === "string") sources.push(normalizeMarkdownLinkDestination(variant));
+        if (typeof variant === "string") images.push(normalizeMarkdownLinkDestination(variant));
       }
+    }
+    if (node.type === "element" && node.tagName === "a") {
+      const { href } = node.properties ?? {};
+      if (typeof href === "string" && href) links.push(href);
     }
     node.children?.forEach(visit);
   };
-  visit(imageSourceProcessor.runSync(imageSourceProcessor.parse(markdown)) as ImageSourceNode);
-  return sources;
+  visit(referenceProcessor.runSync(referenceProcessor.parse(markdown)) as ReferenceNode);
+  return { images, links };
+}
+
+/** The sources of the images chat markdown shows; see chatMarkdownReferences. */
+export function chatMarkdownImageSources(markdown: string): Array<string> {
+  return chatMarkdownReferences(markdown).images;
 }
 
 const linkDestinationProcessor = unified().use(remarkParse).use(remarkKeepWindowsPaths);

@@ -27,6 +27,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { readLocalApi } from "~/localApi";
+import { useRightPanelStore } from "../../rightPanelStore";
 import { threadEnvironment } from "../../state/threads";
 import { canShareWithGuestAtom } from "./guestShareAvailability";
 import { useAtomValue } from "@effect/atom-react";
@@ -204,6 +205,7 @@ export const ChatHeader = memo(function ChatHeader({
     projectCwd: activeProjectCwd,
     onStartRename: startRename,
     onFind: onFindInThread,
+    onShowMediaLinks: (threadRef) => useRightPanelStore.getState().open(threadRef, "media-links"),
     canShareWithGuest,
   });
   const openMenuFromTitle = (event: ReactMouseEvent<HTMLButtonElement>) => {

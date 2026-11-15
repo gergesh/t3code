@@ -1041,6 +1041,12 @@ function ThreadRouteContent(
                 hasThreadCwd={selectedThreadCwd !== null}
                 inspectorMode={inspectorMode}
                 onOpenFilesInspector={handleOpenFilesInspector}
+                onOpenMediaLinks={() =>
+                  navigation.navigate("ThreadMediaLinks", {
+                    environmentId: String(selectedThread.environmentId),
+                    threadId: String(selectedThread.id),
+                  })
+                }
                 onReturnToThread={props.onReturnToThread}
               />
             )
