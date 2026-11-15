@@ -164,6 +164,8 @@ import {
   GitPullRequestRefInput,
   VcsPullResult,
   VcsMergeWorktreeInput,
+  VcsContinueInProjectCheckoutInput,
+  VcsContinueInProjectCheckoutError,
   VcsRemoveWorktreeInput,
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
@@ -525,6 +527,7 @@ export const WS_METHODS = {
   vcsCreateWorktree: "vcs.createWorktree",
   vcsRemoveWorktree: "vcs.removeWorktree",
   vcsMergeWorktree: "vcs.mergeWorktree",
+  vcsContinueInProjectCheckout: "vcs.continueInProjectCheckout",
   vcsCreateRef: "vcs.createRef",
   vcsSwitchRef: "vcs.switchRef",
   vcsInit: "vcs.init",
@@ -1874,6 +1877,11 @@ const WsVcsMergeWorktreeRpc = Rpc.make(WS_METHODS.vcsMergeWorktree, {
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
 });
 
+const WsVcsContinueInProjectCheckoutRpc = Rpc.make(WS_METHODS.vcsContinueInProjectCheckout, {
+  payload: VcsContinueInProjectCheckoutInput,
+  error: Schema.Union([VcsContinueInProjectCheckoutError, EnvironmentAuthorizationError]),
+});
+
 const WsVcsCreateRefRpc = Rpc.make(WS_METHODS.vcsCreateRef, {
   payload: VcsCreateRefInput,
   success: VcsCreateRefResult,
@@ -2573,6 +2581,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsCreateWorktreeRpc,
   WsVcsRemoveWorktreeRpc,
   WsVcsMergeWorktreeRpc,
+  WsVcsContinueInProjectCheckoutRpc,
   WsVcsCreateRefRpc,
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,

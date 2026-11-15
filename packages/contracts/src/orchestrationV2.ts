@@ -786,6 +786,8 @@ export type OrchestrationV2ThreadLaunchWorkspaceStrategy =
   typeof OrchestrationV2ThreadLaunchWorkspaceStrategy.Type;
 
 export const ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE = "workspace_preparation_failed";
+/** A turn could not start because the thread's worktree folder is gone. */
+export const ORCHESTRATION_V2_WORKSPACE_MISSING_FAILURE_CODE = "workspace_missing";
 
 /** What a run returned as data: a value the server accepted against the run's `outputSchema`. */
 export const OrchestrationV2RunOutput = Schema.Struct({

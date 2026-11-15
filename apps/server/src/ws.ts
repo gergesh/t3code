@@ -202,7 +202,7 @@ import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import { makePrepareTerminalLaunch } from "./workspace/restoreMissingWorktree.ts";
-import { makeMergeThreadWorktree } from "./workspace/mergeThreadWorktree.ts";
+import { makeThreadProjectCheckout } from "./workspace/threadProjectCheckout.ts";
 import { terminalOutputStream, withOutputWindow } from "./terminal/OutputProtocol.ts";
 import { withSocketHeartbeat } from "./socketHeartbeat.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
@@ -1561,7 +1561,7 @@ export const layerWsRpc = (
       const prepareTerminalLaunch = yield* makePrepareTerminalLaunch(
         threadManagement.getThreadShell,
       );
-      const mergeThreadWorktree = yield* makeMergeThreadWorktree;
+      const threadProjectCheckout = yield* makeThreadProjectCheckout;
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
@@ -3325,7 +3325,7 @@ export const layerWsRpc = (
             ),
           ),
         [WS_METHODS.vcsMergeWorktree]: (input) =>
-          mergeThreadWorktree(input).pipe(
+          threadProjectCheckout.mergeWorktree(input).pipe(
             Effect.tap(() => refreshGitStatus(input.cwd)),
             Effect.tap(() =>
               vcsStatusBroadcaster
@@ -3333,6 +3333,8 @@ export const layerWsRpc = (
                 .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid),
             ),
           ),
+        [WS_METHODS.vcsContinueInProjectCheckout]: (input) =>
+          threadProjectCheckout.continueInProjectCheckout(input),
         [WS_METHODS.vcsCreateRef]: (input) =>
           (input.switchRef
             ? assertCheckoutIdle("GitWorkflowService.createRef", input.cwd)
