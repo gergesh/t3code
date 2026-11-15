@@ -6,6 +6,7 @@ import { m, type MessageResolver } from "../i18n/messages";
 
 export type ThreadActionMenuId =
   | "find"
+  | "media-links"
   | "new-thread-on-branch"
   | "filter-by-project"
   | "turn-into-project"
@@ -98,6 +99,7 @@ export interface ThreadActionMenuState {
   readonly canFind?: boolean;
   /** False where no inline title editor is rendered, such as sidebar search results. */
   readonly canRename?: boolean;
+  readonly canShowMediaLinks?: boolean;
   readonly branch: string | null;
   readonly projectFilter: {
     readonly label: string;
@@ -129,6 +131,7 @@ export interface ThreadActionMenuState {
 export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
   return ![
     "find",
+    "media-links",
     "new-thread-on-branch",
     "project-settings",
     "mark-unread",
@@ -148,6 +151,9 @@ export function buildThreadActionMenuItems(
   const items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [
     ...(state.canFind
       ? [{ id: "find" as const, label: resolve(msg("Find in thread")), icon: "text-search" }]
+      : []),
+    ...(state.canShowMediaLinks
+      ? [{ id: "media-links" as const, label: "Media & links", icon: "images" }]
       : []),
     ...(state.branch
       ? [

@@ -155,6 +155,10 @@
       "types": "./src/mediaReference.ts",
       "default": "./src/mediaReference.ts"
     },
+    "./thread-media-links": {
+      "types": "./src/threadMediaLinks.ts",
+      "default": "./src/threadMediaLinks.ts"
+    },
     "./media-source": {
       "types": "./src/mediaSource.ts",
       "default": "./src/mediaSource.ts"
