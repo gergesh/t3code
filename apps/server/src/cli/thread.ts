@@ -7,6 +7,7 @@ import {
   ProjectId,
   RunId,
   ThreadId,
+  ThreadTag,
   TrimmedNonEmptyString,
   type OrchestratorMcpThreadListItem,
   type OrchestratorMcpThreadRun,
@@ -773,6 +774,7 @@ const threadArgument = Argument.String("thread").pipe(Argument.withDescription("
 
 const decodeThreadIdValue = Schema.decodeUnknownEffect(ThreadId);
 const decodeTitle = Schema.decodeUnknownEffect(TrimmedNonEmptyString);
+const decodeTag = Schema.decodeUnknownEffect(ThreadTag);
 const decodeThreadId = (value: string) =>
   decodeThreadIdValue(value.trim()).pipe(
     Effect.mapError(() => new ThreadUsageError({ detail: `'${value}' is not a thread id.` })),
@@ -848,6 +850,10 @@ const threadStartCommand = Command.make("start", {
     Flag.withDescription("Branch name for the new worktree."),
     Flag.optional,
   ),
+  tag: Flag.String("tag").pipe(
+    Flag.withDescription("Tag the thread. Repeat for more."),
+    Flag.atLeast(0),
+  ),
   wait: waitFlag,
   json: jsonFlag,
 }).pipe(
@@ -860,6 +866,14 @@ const threadStartCommand = Command.make("start", {
       const title = yield* decodeTitle(
         Option.getOrElse(flags.title, () => titleFromMessage(message)),
       ).pipe(Effect.mapError(() => new ThreadUsageError({ detail: "The title is empty." })));
+      const tags = yield* Effect.forEach(flags.tag, (tag) =>
+        decodeTag(tag).pipe(
+          Effect.mapError(
+            () =>
+              new ThreadUsageError({ detail: `'${tag}' is not a tag: one line, 1-64 characters.` }),
+          ),
+        ),
+      );
       yield* withThreadTools(
         flags,
         Effect.fn("cli.thread.start")(function* (tools) {
@@ -872,6 +886,7 @@ const threadStartCommand = Command.make("start", {
               message,
               ...(workspaceStrategy === undefined ? {} : { workspaceStrategy }),
               ...(modelSelection === undefined ? {} : { modelSelection }),
+              ...(tags.length === 0 ? {} : { tags }),
             },
             ThreadLaunchResult,
           );

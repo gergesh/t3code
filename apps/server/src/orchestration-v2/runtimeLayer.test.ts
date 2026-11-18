@@ -3576,6 +3576,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         interactionMode: "default" as const,
         branch: null,
         worktreePath: null,
+        tags: ["demo", "demo"],
       };
 
       const firstCreate = yield* orchestrator.dispatch(create);
@@ -3723,10 +3724,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
 
       const shellOf = (shell: Pick<OrchestrationV2ShellSnapshot, "threads">) =>
         shell.threads.find((thread) => thread.id === threadId)!;
-      const untaggedShell = shellOf(yield* orchestrator.getShellSnapshot());
+      const createdShell = shellOf(yield* orchestrator.getShellSnapshot());
+      assert.deepEqual(createdShell.tags, ["demo"]);
       yield* TestClock.adjust("1 minute");
       for (const [step, tag, tagged, expected] of [
-        ["add", "demo", true, ["demo"]],
         ["retry", "demo", true, ["demo"]],
         ["add-other", "private", true, ["demo", "private"]],
         ["remove", "demo", false, ["private"]],
@@ -3749,7 +3750,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       // Tags are not activity, so the thread keeps its place in thread lists.
       assert.equal(
         DateTime.toEpochMillis(taggedShell.updatedAt),
-        DateTime.toEpochMillis(untaggedShell.updatedAt),
+        DateTime.toEpochMillis(createdShell.updatedAt),
       );
 
       const preAutoProjection = yield* orchestrator.getThreadProjection(threadId);
