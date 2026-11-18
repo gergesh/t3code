@@ -20,6 +20,7 @@ import {
   OrchestratorMcpFailure,
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
+  ThreadTag,
 } from "@t3tools/contracts";
 import * as FileSystem from "effect/FileSystem";
 import * as DocumentText from "../../../provider/DocumentText.ts";
@@ -161,6 +162,11 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
       Schema.Record(Schema.String, Schema.Json).annotate({
         description: "As in `t3_thread_send`. Needs `message`.",
       }),
+    ),
+    tags: Schema.optional(
+      Schema.Array(ThreadTag)
+        .check(Schema.isMaxLength(8))
+        .annotate({ description: "Only tags the user asks for." }),
     ),
     clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
     /** Set by a linked environment launching its agent's delegated task here; ignored otherwise. */

@@ -4077,6 +4077,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(command.linkOrigin === undefined || command.delegatedFrom === undefined
         ? {}
         : { delegatedFrom: command.delegatedFrom }),
+      // Tagged in the create itself, so a client hiding the tag never shows the thread.
+      ...(command.tags?.length ? { tags: [...new Set(command.tags)] } : {}),
       lineage: {
         parentThreadId: null,
         relationshipToParent: null,
