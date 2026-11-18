@@ -600,6 +600,23 @@ describe("buildThreadListV2Items", () => {
       ["match", "card"],
       ["settled", "slim"],
     ]);
+
+    const inProject = makeThread({ id: ThreadId.make("in-project"), title: "Greeting" });
+    const byProject = buildThreadListV2Items({
+      threads: [
+        inProject,
+        makeThread({
+          id: ThreadId.make("elsewhere"),
+          projectId: ProjectId.make("other"),
+          title: "Greeting",
+        }),
+      ],
+      environmentId: null,
+      searchQuery: "payments",
+      projectTitleByKey: new Map([[`${environmentId}:${inProject.projectId}`, "Payments"]]),
+      now: NOW,
+    });
+    expect(byProject.items.map((item) => item.thread.id)).toEqual(["in-project"]);
   });
 
   it("forgives a typo even when a hidden thread matches the query exactly", () => {

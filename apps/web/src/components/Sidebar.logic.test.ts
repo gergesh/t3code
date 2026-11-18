@@ -357,13 +357,20 @@ describe("searchSidebarThreads", () => {
       ),
     );
 
+  const projectTitleOf = (thread: (typeof threads)[number]) =>
+    thread.id === "thread-2" ? "Payments" : "Workbench";
+
   it("ranks word matches by recent use, then lists message matches once", () => {
-    expect(searchSidebarThreads(threads, "work", contentKeys("thread-1", "thread-2"), now)).toEqual(
-      {
-        titleMatches: [threads[0], threads[2], threads[3]],
-        contentMatches: [threads[1]],
-      },
-    );
+    expect(
+      searchSidebarThreads(threads, "work", () => null, contentKeys("thread-1", "thread-2"), now),
+    ).toEqual({
+      titleMatches: [threads[0], threads[2], threads[3]],
+      contentMatches: [threads[1]],
+    });
+    expect(searchSidebarThreads(threads, "payments", projectTitleOf, new Set(), now)).toEqual({
+      titleMatches: [threads[1]],
+      contentMatches: [],
+    });
   });
 });
 

@@ -1365,6 +1365,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // Ranked across environments as the palette ranks them, so one
   // environment's list does not sit above another's better matches; rows
   // already shown keep their places while slower environments answer.
+  const sidebarProjectTitleOf = (thread: (typeof searchableThreads)[number]) =>
+    projectDisplayNameByKey.get(`${thread.environmentId}:${thread.projectId}`);
   const threadByMatchKey =
     threadSearch.matches.length === 0
       ? null
@@ -1381,7 +1383,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           threadSearch.matches,
           (match) => {
             const thread = threadByMatchKey.get(threadSearchMatchKey(match));
-            return thread ? threadSearchSubject(thread, null) : undefined;
+            return thread ? threadSearchSubject(thread, sidebarProjectTitleOf(thread)) : undefined;
           },
           foldSearchQuery(threadSearchQuery),
           // oxlint-disable-next-line react/purity -- Recency ranking samples the clock when the search matches change; the compiler recomputes it only then.
@@ -1401,7 +1403,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   );
   if (messageOrder !== shownMessageOrder) setShownMessageOrder(messageOrder);
   const { titleMatches: threadTitleResults, contentMatches: threadContentResults } =
-    searchSidebarThreads(searchableThreads, threadSearchQuery, new Set(messageOrder.keys));
+    searchSidebarThreads(
+      searchableThreads,
+      threadSearchQuery,
+      sidebarProjectTitleOf,
+      new Set(messageOrder.keys),
+    );
   const threadSearchResults = [...threadTitleResults, ...threadContentResults];
   // Only rows listed for their messages show one, and open find on it.
   const threadSearchMatchByKey = new Map(

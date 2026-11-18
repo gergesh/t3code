@@ -23,6 +23,7 @@ export function useThreadListSearchMatches(
     readonly matches: ReadonlyArray<EnvironmentThreadSearchMatch>;
     readonly query: string;
   },
+  projectTitleByKey: ReadonlyMap<string, string>,
 ): ReadonlyMap<string, EnvironmentThreadSearchMatch> {
   const [now] = useState(() => Date.now());
   const [shownOrder, setShownOrder] = useState<ShownOrder | null>(null);
@@ -31,7 +32,10 @@ export function useThreadListSearchMatches(
     const subjectByKey = new Map(
       threads.map((thread) => [
         threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id }),
-        threadSearchSubject(thread, null),
+        threadSearchSubject(
+          thread,
+          projectTitleByKey.get(`${thread.environmentId}:${thread.projectId}`),
+        ),
       ]),
     );
     return rankMessageMatches(
@@ -41,7 +45,7 @@ export function useThreadListSearchMatches(
       now,
       { picks: false },
     ).map(threadSearchMatchKey);
-  }, [now, search.matches, search.query, threads]);
+  }, [now, projectTitleByKey, search.matches, search.query, threads]);
   // A list shows every match, so nothing is cut; late ones go below.
   const order = nextShownOrder(shownOrder, search.query, rankedKeys, Number.POSITIVE_INFINITY);
   if (order !== shownOrder) setShownOrder(order);
