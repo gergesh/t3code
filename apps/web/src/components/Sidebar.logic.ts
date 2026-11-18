@@ -1135,9 +1135,9 @@ export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@t3t
 const EMPTY_CONTENT_MATCH_KEYS: ReadonlySet<string> = new Set<string>();
 
 /**
- * Sidebar search results: title, branch, and pull request matches ranked as
- * the command palette ranks them, then threads listed only because their
- * messages match, in `contentMatchKeys` order.
+ * Sidebar search results: title, branch, pull request, and project name matches
+ * ranked as the command palette ranks them, then threads listed only because
+ * their messages match, in `contentMatchKeys` order.
  */
 export function searchSidebarThreads<
   T extends ThreadSearchShell & {
@@ -1147,13 +1147,14 @@ export function searchSidebarThreads<
 >(
   threads: readonly T[],
   query: string,
+  projectTitleOf: (thread: T) => string | null | undefined,
   contentMatchKeys: ReadonlySet<string> = EMPTY_CONTENT_MATCH_KEYS,
   now = Date.now(),
 ): { readonly titleMatches: T[]; readonly contentMatches: T[] } {
   const normalizedQuery = foldSearchQuery(query);
   if (normalizedQuery.length === 0) return { titleMatches: [], contentMatches: [] };
   const titleMatches = rankSearchItems(threads, (thread, options) =>
-    scoreThreadSearch(normalizedQuery, threadSearchSubject(thread, null), now, {
+    scoreThreadSearch(normalizedQuery, threadSearchSubject(thread, projectTitleOf(thread)), now, {
       ...options,
       picks: false,
     }),

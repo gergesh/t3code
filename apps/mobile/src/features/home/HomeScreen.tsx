@@ -356,7 +356,6 @@ export function HomeScreen(props: HomeScreenProps) {
       ? {}
       : { projectIds: v2ScopedProjectGroup.projectRefs.map((ref) => ref.projectId) },
   );
-  const threadSearchMatchByKey = useThreadListSearchMatches(props.threads, threadSearch);
   const v2ProjectTitleByProjectKey = new Map(
     projectScopes.flatMap((scope) =>
       scope.projectRefs.map(
@@ -364,6 +363,11 @@ export function HomeScreen(props: HomeScreenProps) {
           [scopedProjectKey(projectRef.environmentId, projectRef.projectId), scope.title] as const,
       ),
     ),
+  );
+  const threadSearchMatchByKey = useThreadListSearchMatches(
+    props.threads,
+    threadSearch,
+    v2ProjectTitleByProjectKey,
   );
   const handleSettleThread = props.onSettleThread;
   const handleSnoozeThread = props.onSnoozeThread;
@@ -424,6 +428,7 @@ export function HomeScreen(props: HomeScreenProps) {
     environmentId: props.selectedEnvironmentId,
     projectRefs: v2ScopedProjectGroup === null ? null : v2ScopedProjectGroup.projectRefs,
     searchQuery: props.searchQuery,
+    projectTitleByKey: v2ProjectTitleByProjectKey,
     searchMatches: threadSearchMatchByKey,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,

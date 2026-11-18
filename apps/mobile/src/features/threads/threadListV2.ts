@@ -720,6 +720,8 @@ export function buildThreadListV2Items(input: {
     readonly projectId: ProjectId;
   }> | null;
   readonly searchQuery: string;
+  /** Project titles by `environmentId:projectId`, so a search also matches project names. */
+  readonly projectTitleByKey?: ReadonlyMap<string, string>;
   readonly matchedThreadKeys?: ReadonlySet<string>;
   readonly settlementEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
@@ -776,10 +778,18 @@ export function buildThreadListV2Items(input: {
   const rankedMatches =
     query.length > 0
       ? rankSearchItems(listedThreads, (thread, options) =>
-          scoreThreadSearch(query, threadSearchSubject(thread, null), nowMs, {
-            ...options,
-            picks: false,
-          }),
+          scoreThreadSearch(
+            query,
+            threadSearchSubject(
+              thread,
+              input.projectTitleByKey?.get(`${thread.environmentId}:${thread.projectId}`),
+            ),
+            nowMs,
+            {
+              ...options,
+              picks: false,
+            },
+          ),
         ).map(({ item }) => item)
       : null;
   const matchingThreads = rankedMatches === null ? null : new Set(rankedMatches);

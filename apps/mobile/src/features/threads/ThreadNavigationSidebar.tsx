@@ -224,7 +224,11 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   );
   // This map reaches LegendList's extraData, which re-renders every row whenever it changes
   // identity; the hook keeps it stable.
-  const threadSearchMatchByKey = useThreadListSearchMatches(threads, threadSearch);
+  const threadSearchMatchByKey = useThreadListSearchMatches(
+    threads,
+    threadSearch,
+    projectTitleByProjectKey,
+  );
   const selectedProjectKey = selectedProjectScope?.key ?? null;
   const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();
@@ -282,6 +286,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     environmentId: options.selectedEnvironmentId,
     projectRefs: selectedProjectScope === null ? null : selectedProjectScope.projectRefs,
     searchQuery: props.searchQuery,
+    projectTitleByKey: projectTitleByProjectKey,
     searchMatches: threadSearchMatchByKey,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
