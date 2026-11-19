@@ -19,6 +19,12 @@ const MINIMUM_NODE = [26, 4] as const;
  */
 const RELAUNCH_PACKAGES = ["@opentui/core", "diff", "undici"] as const;
 
+/**
+ * Scopes copied whole, for packages that load an undeclared sibling. The server bundle loads
+ * `@ff-labs/fff-node` at startup, and it finds its native library in a platform package beside it.
+ */
+const RELAUNCH_SCOPES = ["@ff-labs"] as const;
+
 const RELAUNCHED_ENV = "T3CODE_TUI_RELAUNCHED";
 
 export class TuiRuntimeError extends Schema.TaggedError<TuiRuntimeError>()("TuiRuntimeError", {
@@ -113,6 +119,13 @@ const extractFromArchive = Effect.fn("cli.tui.extractFromArchive")(function* (
     }
   }
   const pending: string[] = [...RELAUNCH_PACKAGES];
+  for (const scope of RELAUNCH_SCOPES) {
+    const scopeDir = path.join(appRoot, "node_modules", scope);
+    if (!(yield* present(scopeDir))) continue;
+    for (const entry of yield* fileSystem.readDirectory(scopeDir)) {
+      pending.push(`${scope}/${entry}`);
+    }
+  }
   const copied = new Set<string>();
   while (pending.length > 0) {
     const name = pending.pop()!;
