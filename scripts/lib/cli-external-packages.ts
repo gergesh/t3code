@@ -65,6 +65,15 @@ export function isExternalCliDependency(id: string): boolean {
   return isRuntimeExternalCliDependency(id);
 }
 
+// The standalone executable leaves `t3 tui` out, so OpenTUI's own dependencies bundle there.
+export function isExternalCliExecutableDependency(id: string): boolean {
+  return (
+    isRuntimeExternalCliDependency(id) &&
+    !id.startsWith("@opentui/") &&
+    !OPENTUI_RUNTIME_DEPENDENCIES.some((name) => id === name || id.startsWith(`${name}/`))
+  );
+}
+
 export function shouldBundleCliDependency(id: string): boolean {
   if (id.startsWith("node:")) return false;
   return !isExternalCliDependency(id);

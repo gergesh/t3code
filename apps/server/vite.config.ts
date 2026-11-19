@@ -13,6 +13,7 @@ import { WeightedShardSequencer } from "./src/testUtils/weightedShardSequencer.t
 // NSIS install time tracks file count, not bytes.
 import {
   isExternalCliDependency,
+  isExternalCliExecutableDependency,
   shouldBundleCliDependency,
 } from "../../scripts/lib/cli-external-packages.ts";
 
@@ -138,12 +139,20 @@ export default mergeConfig(
           }
         : {}),
       // jsonc-parser's UMD main requires its own files at runtime, which the bundle cannot follow.
-      alias: { "jsonc-parser": "jsonc-parser/lib/esm/main.js" },
+      alias: {
+        "jsonc-parser": "jsonc-parser/lib/esm/main.js",
+        ...(packExecutable
+          ? { "@t3tools/tui": NodePath.join(import.meta.dirname, "src/cli/tuiStandalone.ts") }
+          : {}),
+      },
       deps: {
         // alwaysBundle=false has no opinion; neverBundle must retain transitive native acceleration.
-        alwaysBundle: shouldBundleCliDependency,
+        alwaysBundle: packExecutable
+          ? (id: string) => !id.startsWith("node:") && !isExternalCliExecutableDependency(id)
+          : shouldBundleCliDependency,
         neverBundle: (id: string) =>
-          (packBootstrap && id === "./binMain.ts") || isExternalCliDependency(id),
+          (packBootstrap && id === "./binMain.ts") ||
+          (packExecutable ? isExternalCliExecutableDependency(id) : isExternalCliDependency(id)),
         onlyBundle: false,
       },
       banner: {
