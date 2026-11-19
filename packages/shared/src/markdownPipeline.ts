@@ -106,6 +106,7 @@ export const CHAT_MARKDOWN_REMARK_PLUGINS: PluggableList = [
   remarkNormalizeListItemIndentation,
   remarkCodexDirectives,
   remarkBreakAroundImageLines,
+  remarkBreakLinesInQuotes,
   remarkPreserveCodeMeta,
   remarkNormalizeLinksAndTagInlineCode,
 ];
@@ -264,6 +265,18 @@ function remarkBreakAroundImageLines() {
   return (tree: Root) => {
     const visit = (node: Root | RootContent) => {
       if (node.type === "paragraph") breakLinesAroundImages(node);
+      else if ("children" in node) node.children.forEach(visit);
+    };
+    visit(tree);
+  };
+}
+
+// Agents quote messages to send line by line, so a quote keeps its lines as prose does not.
+function remarkBreakLinesInQuotes() {
+  const breakLines = remarkBreaks();
+  return (tree: Root) => {
+    const visit = (node: Root | RootContent) => {
+      if (node.type === "blockquote") breakLines(node as unknown as Root);
       else if ("children" in node) node.children.forEach(visit);
     };
     visit(tree);

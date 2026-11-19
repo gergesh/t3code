@@ -288,7 +288,9 @@ it("ends bare URLs at CJK and Arabic punctuation with source positions", () => {
         children: [
           {
             children: [
-              { type: "text", value: "第一行\n**" },
+              { type: "text", value: "第一行" },
+              { type: "break" },
+              { type: "text", value: "**" },
               { type: "link", url, position: { end: at(2, 27, 32) } },
               { type: "text", value: "**（已重启）", position: { start: at(2, 27, 32) } },
             ],
@@ -576,7 +578,7 @@ it("keeps backslashes that CommonMark would read as escapes in prose Windows pat
   );
 });
 
-it("keeps an image on its own line under a label but leaves inline images inline", () => {
+it("keeps an image or a quoted line on its own line but lets prose wrap", () => {
   const processor = unified()
     .use(remarkParse)
     .use(CHAT_MARKDOWN_REMARK_PLUGINS)
@@ -596,6 +598,10 @@ it("keeps an image on its own line under a label but leaves inline images inline
   ).toBe("Palette<br>\n<img><br>\nHero (dark)<br>\n<img>");
   expect(render("Built [![CI](/ci.svg)](/ci)\nand wrapped")).toBe("Built <img>\nand wrapped");
   expect(render("Hard-wrapped\nprose")).toBe("Hard-wrapped\nprose");
+  expect(render("> Hi {name}, it's Yoav\n> Saw you started signing up?")).toBe(
+    "\nHi {name}, it's Yoav<br>\nSaw you started signing up?\n",
+  );
+  expect(render("> - one\n>   wrapped\n>\n> `a\nb`")).toBe("\n\none<br>\nwrapped\n\na b\n");
 });
 
 it("keeps the number written on each ordered list item only when enabled", () => {
