@@ -10,6 +10,7 @@ import * as Schema from "effect/Schema";
 import { findEsmImportsOfExternalPackages } from "./cli-executable-imports.ts";
 
 import {
+  isExternalCliExecutableDependency,
   isRuntimeExternalCliDependency,
   findInlinedExternalPackages,
   selectCliRuntimeExternalDependencies,
@@ -52,6 +53,14 @@ describe("shouldBundleCliDependency", () => {
 
   it("treats prefix-matched siblings as external", () => {
     assert.strictEqual(shouldBundleCliDependency("node-gyp-build-optional-packages"), false);
+  });
+
+  it("bundles OpenTUI's dependencies into the standalone executable, which leaves out t3 tui", () => {
+    for (const id of ["diff", "get-east-asian-width", "@opentui/core"]) {
+      assert.strictEqual(shouldBundleCliDependency(id), false, id);
+      assert.strictEqual(isExternalCliExecutableDependency(id), false, id);
+    }
+    assert.strictEqual(isExternalCliExecutableDependency("node-pty"), true);
   });
 });
 
