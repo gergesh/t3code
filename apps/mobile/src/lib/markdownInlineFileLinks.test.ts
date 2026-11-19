@@ -8,6 +8,7 @@ import {
   markdownForNativeRendering,
   markdownWithInlineFileLinks,
   markdownWithHtml,
+  markdownWithQuoteLineBreaks,
 } from "./markdownDocument";
 
 const rewrite = (markdown: string) =>
@@ -77,7 +78,10 @@ describe("inline code that names a file", () => {
       for (let length = 0; length <= document.length; length++) {
         const prefix = document.slice(0, length);
         const expected = previousTableBreaks(
-          previousFileLinks(markdownWithHtml(prefix), ENRICHED_INLINE_FILE_LINK_REGEX),
+          previousFileLinks(
+            markdownWithQuoteLineBreaks(markdownWithHtml(prefix)),
+            ENRICHED_INLINE_FILE_LINK_REGEX,
+          ),
         );
         expect(
           markdownForNativeRendering(prefix, ENRICHED_INLINE_FILE_LINK_REGEX),

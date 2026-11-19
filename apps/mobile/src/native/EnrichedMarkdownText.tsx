@@ -8,6 +8,7 @@ import {
   markdownForNativeRendering,
   markdownWithFileEmbeds,
   markdownForNativeParsing,
+  markdownWithQuoteLineBreaks,
   markdownWithInlineFileLinks,
   markdownWithTableBreaks,
   markdownWithTextDirection,
@@ -257,7 +258,7 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
       };
     }
     const content = markdownWithInlineFileLinks(
-      markdownForNativeParsing(props.markdown),
+      markdownWithQuoteLineBreaks(markdownForNativeParsing(props.markdown)),
       ENRICHED_INLINE_FILE_LINK_REGEX,
     );
     const files = markdownWithFileEmbeds(content, fileEmbedLabel);

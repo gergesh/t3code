@@ -507,8 +507,35 @@ export function parseMarkdownDocument(markdown: string): Root {
   return parser.parse(markdownForNativeParsing(markdown));
 }
 
+/** Keeps each line of a quote on its own line, as web's `remarkBreakLinesInQuotes` does. */
+export function markdownWithQuoteLineBreaks(markdown: string): string {
+  if (!/^ {0,3}>/m.test(markdown)) return markdown;
+  const lineEnds = [...markdown.matchAll(/\r\n|\r|\n/g)].map((match) => match.index);
+  const edits: MarkdownEdit[] = [];
+  // Only newlines in text break, as with remark-breaks; others sit inside link or code syntax.
+  const visit = (node: MarkdownNode, quoted: boolean) => {
+    if (quoted && node.type === "text") {
+      const start = node.position?.start.offset ?? 0;
+      const end = node.position?.end.offset ?? 0;
+      for (const lineEnd of lineEnds) {
+        if (lineEnd < start || lineEnd >= end) continue;
+        if (/(?: {2}|\\)$/.test(markdown.slice(lineEnd - 2, lineEnd))) continue;
+        edits.push({ start: lineEnd, end: lineEnd, content: "  " });
+      }
+    } else if ("children" in node) {
+      for (const child of node.children) visit(child, quoted || node.type === "blockquote");
+    }
+  };
+  visit(parser.parse(markdown), false);
+  return applyMarkdownEdits(markdown, edits);
+}
+
 export function markdownForNativeRendering(markdown: string, fileLink: RegExp): string {
-  return transformNativeMarkdown(markdownForNativeParsing(markdown), fileLink, true);
+  return transformNativeMarkdown(
+    markdownWithQuoteLineBreaks(markdownForNativeParsing(markdown)),
+    fileLink,
+    true,
+  );
 }
 
 /** Native media slots only cover standalone images; nested file embeds must become links. */
