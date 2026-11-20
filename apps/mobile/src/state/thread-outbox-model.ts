@@ -8,6 +8,7 @@ import {
 import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
 import type { ThreadFamilyRead } from "@t3tools/client-runtime/state/threads";
 import {
+  AgentRoleName,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EnvironmentId,
@@ -19,6 +20,7 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
   ThreadId,
+  type AgentRoleName as AgentRoleNameType,
   type ModelSelection as ModelSelectionType,
   type ProjectId as ProjectIdType,
   type ProviderInteractionMode as ProviderInteractionModeType,
@@ -47,6 +49,7 @@ const QueuedThreadCreationSchema = Schema.Struct({
   worktreePath: Schema.NullOr(Schema.String),
   startFromOrigin: Schema.optional(Schema.Boolean),
   pullRequestReference: Schema.optional(Schema.String),
+  role: Schema.optional(AgentRoleName),
 });
 
 export const QueuedThreadMessageSchema = Schema.Struct({
@@ -80,6 +83,7 @@ export interface QueuedThreadCreation {
   readonly worktreePath: string | null;
   readonly startFromOrigin?: boolean;
   readonly pullRequestReference?: string;
+  readonly role?: AgentRoleNameType;
 }
 
 export interface QueuedThreadMessage {

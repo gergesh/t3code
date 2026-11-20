@@ -45,6 +45,7 @@ import * as VcsProcess from "../../../vcs/VcsProcess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as ProjectHandlers from "./handlers.ts";
+import * as AgentRoles from "../../../project/AgentRoles.ts";
 import { ProjectToolkit } from "./tools.ts";
 
 const clientLaunchHarness = (input: {
@@ -181,6 +182,7 @@ const clientLaunchHarness = (input: {
       isScratchProject: () => Effect.succeed(false),
     }),
     DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer)),
+    AgentRoles.layer.pipe(Layer.provide(NodeServices.layer)),
   ).pipe(
     Layer.provideMerge(GitVcsDriver.layer),
     Layer.provideMerge(VcsProcess.layer),

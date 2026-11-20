@@ -51,6 +51,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
   AuthFilesystemReadScope,
+  type AgentRoleName,
   type DesktopWslState,
   type EnvironmentId,
   type FilesystemBrowseResult,
@@ -83,6 +84,7 @@ import {
   SquarePenIcon,
   TextSearchIcon,
   UserPlusIcon,
+  IdCardIcon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
 import { dispatchPreviewAction } from "./preview/previewActionBus";
@@ -121,6 +123,7 @@ import { configuredHostedAppUrl } from "../hostedPairing";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
 import { filesystemEnvironment, useFilesystemReadAccess } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
+import { useAgentRoles } from "../state/agentRoles";
 import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
 import { threadEnvironment } from "../state/threads";
@@ -707,6 +710,21 @@ function OpenCommandPaletteDialog(props: {
   };
 
   const { projectByKey } = useProjectLookups();
+  const activeThreadProject = activeThread
+    ? projectByKey.get(`${activeThread.environmentId}:${activeThread.projectId}`)
+    : undefined;
+  const activeThreadRoles = useAgentRoles(
+    activeThread?.environmentId ?? null,
+    activeThread ? (activeThread.worktreePath ?? activeThreadProject?.workspaceRoot ?? null) : null,
+  );
+  const canChangeActiveThreadRole = useEnvironmentScope(
+    activeThread?.environmentId ?? null,
+    AuthOrchestrationOperateScope,
+  );
+  const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
+    label: "change thread role",
+    reportFailure: false,
+  });
 
   const activeThreadKey = activeThread
     ? scopedThreadKey(scopeThreadRef(activeThread.environmentId, activeThread.id))
@@ -1535,6 +1553,53 @@ function OpenCommandPaletteDialog(props: {
       run: async () => {
         openGuestShareDialog(threadRef);
       },
+    });
+  }
+
+  const activeThreadRole = activeThread?.source.role ?? null;
+  if (
+    activeThread !== null &&
+    canChangeActiveThreadRole &&
+    (activeThreadRoles.length > 0 || activeThreadRole !== null)
+  ) {
+    const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
+    const setRole = async (role: AgentRoleName | null) => {
+      const result = await updateThreadMetadata({
+        environmentId: threadRef.environmentId,
+        input: { threadId: threadRef.threadId, role },
+      });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    };
+    const roleItems: CommandPaletteActionItem[] = [
+      {
+        kind: "action",
+        value: "role:none",
+        searchTerms: ["none", "clear", "remove"],
+        title: gt("No role"),
+        icon: <IdCardIcon className={ITEM_ICON_CLASS} />,
+        checked: activeThreadRole === null,
+        run: () => setRole(null),
+      },
+      ...activeThreadRoles.map((role): CommandPaletteActionItem => ({
+        kind: "action",
+        value: `role:${role.name}`,
+        searchTerms: [role.name, role.title, ...(role.description ? [role.description] : [])],
+        title: `@${role.name}`,
+        ...(role.title !== role.name ? { description: role.title } : {}),
+        icon: <IdCardIcon className={ITEM_ICON_CLASS} />,
+        checked: activeThreadRole === role.name,
+        run: () => setRole(role.name),
+      })),
+    ];
+    actionItems.push({
+      kind: "submenu",
+      value: "action:change-thread-role",
+      searchTerms: ["role", "agent role", "persona", "brief", ".agents/roles"],
+      title: gt("Change thread role..."),
+      ...(activeThreadRole === null ? {} : { description: `@${activeThreadRole}` }),
+      icon: <IdCardIcon className={ITEM_ICON_CLASS} />,
+      addonIcon: <IdCardIcon className={ADDON_ICON_CLASS} />,
+      groups: [{ value: "thread-roles", label: gt("Roles"), items: roleItems }],
     });
   }
 

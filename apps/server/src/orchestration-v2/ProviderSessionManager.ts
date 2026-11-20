@@ -71,6 +71,15 @@ const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_IDLE_PIN_MS = 4 * 60 * 60 * 1000;
 const RELEASE_SCOPE_CLOSE_TIMEOUT_MS = 30 * 1000;
 /** Past adapters' own 10 s stop fallbacks, so they settle first when the provider answers at all. */
+
+const sameRoleTools = (
+  left: ReadonlyArray<string> | undefined,
+  right: ReadonlyArray<string> | undefined,
+) =>
+  left === undefined || right === undefined
+    ? left === right
+    : left.length === right.length && left.every((tool, index) => tool === right[index]);
+
 export const PROVIDER_INTERRUPT_TIMEOUT_MS = 15 * 1000;
 
 const busyTurnPrefix = (providerThreadId: ProviderThreadId) => `${providerThreadId}#`;
@@ -555,6 +564,7 @@ export const layerWithOptions = (
       const prepareMcpSession = (
         threadId: ThreadId,
         providerInstanceId: ProviderInstanceId,
+        roleTools: ReadonlyArray<string> | undefined,
       ): Effect.Effect<PreparedMcpCredential> =>
         options.configureMcp === false
           ? mcpSessions
@@ -597,7 +607,8 @@ export const layerWithOptions = (
                     resolved.capabilities.has("preview") === browserToolsAvailable &&
                     resolved.capabilities.has("device") === deviceToolsAvailable &&
                     // A credential issued while the lineage read failed is replaced once it works.
-                    (resolved.thread.subagent === true) === subagent
+                    (resolved.thread.subagent === true) === subagent &&
+                    sameRoleTools(resolved.thread.roleTools, roleTools)
                   ) {
                     return { mcpCredentialId: existing.providerSessionId, issued: false };
                   }
@@ -610,6 +621,7 @@ export const layerWithOptions = (
                   browserToolsAvailable,
                   capabilities,
                   subagent,
+                  ...(roleTools === undefined ? {} : { roleTools }),
                 });
                 yield* mcpSessions.set({
                   ...credential.config,
@@ -1745,6 +1757,7 @@ export const layerWithOptions = (
         readonly providerSessionId: ProviderSessionId;
         readonly threadId: ThreadId;
         readonly providerInstanceId: ProviderInstanceId;
+        readonly roleTools?: ReadonlyArray<string> | undefined;
       }) =>
         Effect.suspend(() => {
           let attachedTo: ProviderAdapter.ProviderAdapterV2SessionRuntime | undefined;
@@ -1764,7 +1777,11 @@ export const layerWithOptions = (
               Effect.uninterruptible,
             );
             if (attached !== undefined) {
-              const prepared = yield* prepareMcpSession(input.threadId, input.providerInstanceId);
+              const prepared = yield* prepareMcpSession(
+                input.threadId,
+                input.providerInstanceId,
+                input.roleTools,
+              );
               preparedForCleanup = prepared;
               if (prepared.mcpCredentialId !== undefined) {
                 const mcpCredentialId = prepared.mcpCredentialId;
@@ -2348,6 +2365,7 @@ export const layerWithOptions = (
                 providerSessionId,
                 threadId: input.threadId,
                 providerInstanceId: runtime.instanceId,
+                roleTools: input.runtimePolicy?.roleTools,
               }),
             ).pipe(
               Effect.andThen(loadNatively(runtime.ensureThread(input))),
@@ -2385,6 +2403,7 @@ export const layerWithOptions = (
                 providerSessionId,
                 threadId,
                 providerInstanceId: runtime.instanceId,
+                roleTools: input.runtimePolicy?.roleTools,
               }),
             ).pipe(
               Effect.andThen(
@@ -2439,6 +2458,7 @@ export const layerWithOptions = (
                 providerSessionId,
                 threadId: input.targetThreadId,
                 providerInstanceId: runtime.instanceId,
+                roleTools: input.runtimePolicy?.roleTools,
               }),
             ).pipe(
               Effect.andThen(loadNatively(runtime.forkThread(input))),
@@ -2468,6 +2488,7 @@ export const layerWithOptions = (
                 providerSessionId,
                 threadId: input.threadId,
                 providerInstanceId: runtime.instanceId,
+                roleTools: input.runtimePolicy?.roleTools,
               }),
             ).pipe(
               // Failed or stopped starts may omit turn.terminal; clear their turns so sessions can idle.
@@ -3017,6 +3038,7 @@ export const layerWithOptions = (
                   providerSessionId: input.providerSessionId,
                   threadId: input.threadId,
                   providerInstanceId: existing.runtime.instanceId,
+                  roleTools: input.runtimePolicy.roleTools,
                 });
                 yield* touchActivity(input.providerSessionId);
                 return existing.exposedRuntime;
@@ -3036,6 +3058,7 @@ export const layerWithOptions = (
               const prepared = yield* prepareMcpSession(
                 input.threadId,
                 input.modelSelection.instanceId,
+                input.runtimePolicy.roleTools,
               );
               const mcpCredentialId = prepared.mcpCredentialId;
               let reservationDropped = mcpCredentialId === undefined;

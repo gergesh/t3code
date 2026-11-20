@@ -1471,11 +1471,12 @@ export function useComposerSend(input: ComposerSendInput) {
           : null;
       // Read the live session, not the render snapshot: the draft is finalized away once the
       // thread exists.
-      const checkoutPullRequestUrl = isLocalDraftThread
-        ? checkoutPullRequestUrlToLink(
-            draftId === null ? null : useComposerDraftStore.getState().getDraftSession(draftId),
-          )
-        : null;
+      const liveDraftSession =
+        isLocalDraftThread && draftId !== null
+          ? useComposerDraftStore.getState().getDraftSession(draftId)
+          : null;
+      const checkoutPullRequestUrl = checkoutPullRequestUrlToLink(liveDraftSession);
+      const draftRole = liveDraftSession?.role;
       if (backgroundThreadRef) beginBackgroundDraftSubmissionByRef(backgroundThreadRef);
       const startPromise = startThreadTurn({
         environmentId,
@@ -1499,6 +1500,7 @@ export function useComposerSend(input: ComposerSendInput) {
           dispatchMode: turnDispatchMode,
           ...(freshArm === undefined ? {} : { freshContext: true }),
           ...(bootstrap ? { bootstrap } : {}),
+          ...(draftRole === undefined ? {} : { role: draftRole }),
           createdAt: messageCreatedAt,
         },
       });

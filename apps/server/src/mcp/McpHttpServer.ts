@@ -53,6 +53,7 @@ import * as McpToolAccess from "./McpToolAccess.ts";
 import * as McpToolExposure from "./McpToolExposure.ts";
 import { MCP_TOOL_EXPOSURE_HEADER } from "@t3tools/provider-core/server/mcpSession";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
+import * as AgentRoles from "../project/AgentRoles.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
 import * as PreviewControlsHandlers from "./toolkits/previewControls/handlers.ts";
 import { EnvironmentToolkit } from "./toolkits/environment/tools.ts";
@@ -1317,7 +1318,11 @@ export const layerPreviewToolkit = Layer.mergeAll(
 export const layerOrchestratorToolkit = toolkitRegistration(
   OrchestratorToolkit,
   OrchestratorHandlers.layer,
-).pipe(Layer.provide(OrchestratorMcpService.layer), Layer.provide(ThreadMetadataMcpService.layer));
+).pipe(
+  Layer.provide(OrchestratorMcpService.layer),
+  Layer.provide(ThreadMetadataMcpService.layer),
+  Layer.provide(AgentRoles.layer),
+);
 
 export const layerThreadToolkit = toolkitRegistration(ThreadToolkit, ThreadHandlers.layer);
 
@@ -1342,7 +1347,10 @@ const layerThemeToolkit = toolkitRegistration(ThemeToolkit, ThemeHandlers.layer)
   Layer.provide(ThreadCommandExecutor.layer),
 );
 
-export const layerProjectRegistration = toolkitRegistration(ProjectToolkit, ProjectHandlers.layer);
+export const layerProjectRegistration = toolkitRegistration(
+  ProjectToolkit,
+  ProjectHandlers.layer,
+).pipe(Layer.provide(AgentRoles.layer));
 
 export const layerAttachmentToolkit = toolkitRegistration(
   AttachmentToolkit,
@@ -1433,16 +1441,25 @@ const layerToolExposure = Layer.effect(
 /**
  * A provider session that sends `MCP_TOOL_EXPOSURE_HEADER: deferred` lists only
  * the direct tools and what its `tool_search` calls loaded. Calls are never
- * gated, and every other client lists everything but `tool_search`.
+ * gated by that, and every other client lists everything but `tool_search`.
+ * A thread role's `tools` hides the rest from its session, for lists and calls.
  */
 const layerDeferredListing = McpServer.visibility(
   Effect.gen(function* () {
     const exposure = yield* McpToolExposure.McpToolExposure;
     // Untraced: it runs once per tool on every list request.
     return Effect.fnUntraced(function* ({ method, target, headers }: McpServer.MiddlewareOptions) {
-      if (method !== "tools/list") return true;
       const scope = yield* Effect.serviceOption(McpInvocationContext.McpInvocationContext);
-      const providerSessionId = Option.getOrUndefined(scope)?.thread?.providerSessionId;
+      const thread = Option.getOrUndefined(scope)?.thread;
+      if (
+        method.startsWith("tools/") &&
+        target !== McpToolExposure.TOOL_SEARCH &&
+        !AgentRoles.roleToolAllowed(thread?.roleTools, target)
+      ) {
+        return false;
+      }
+      if (method !== "tools/list") return true;
+      const providerSessionId = thread?.providerSessionId;
       if (headers[MCP_TOOL_EXPOSURE_HEADER] !== "deferred" || providerSessionId === undefined) {
         return target !== McpToolExposure.TOOL_SEARCH;
       }

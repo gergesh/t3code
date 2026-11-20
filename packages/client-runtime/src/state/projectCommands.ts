@@ -171,6 +171,12 @@ export function createProjectEnvironmentAtoms<R, E>(
       staleTimeMs: 15_000,
     }),
     readFile,
+    listAgentRoles: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:list-agent-roles",
+      tag: WS_METHODS.projectsListAgentRoles,
+      staleTimeMs: 30_000,
+      idleTtlMs: 5 * 60_000,
+    }),
     optimisticFile: (target: OptimisticProjectFileTarget) =>
       optimisticFileFamily(optimisticProjectFileKey(target)),
     create: createEnvironmentCommand(runtime, {
