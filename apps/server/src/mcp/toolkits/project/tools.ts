@@ -17,6 +17,7 @@ import {
   ProjectId,
   OrchestratorMcpClientRequestId,
   OrchestratorMcpEnvironmentTarget,
+  OrchestratorMcpTaskRole,
   OrchestratorMcpFailure,
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
@@ -31,6 +32,7 @@ import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
+import * as AgentRoles from "../../../project/AgentRoles.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
@@ -145,6 +147,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     modelSelection: Schema.optional(ModelSelection),
     runtimeMode: Schema.optional(RuntimeMode),
     interactionMode: Schema.optional(ProviderInteractionMode),
+    role: Schema.optional(OrchestratorMcpTaskRole),
     workspaceStrategy: Schema.optional(
       OrchestrationV2ThreadLaunchWorkspaceStrategy.annotate({
         description:
@@ -183,6 +186,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     ServerConfig.ServerConfig,
     ServerSettings.ServerSettingsService,
     ProviderRegistry.ProviderRegistry,
+    AgentRoles.AgentRoles,
     DocumentText.DocumentText,
     Digest.Digest,
   ],

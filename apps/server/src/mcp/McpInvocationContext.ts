@@ -34,6 +34,8 @@ export interface McpThreadCaller {
   readonly providerInstanceId: ProviderInstanceId;
   /** A delegated child task; its parent owns the work it hands back. */
   readonly subagent?: boolean;
+  /** The thread role's `tools`: the T3 Code tools this session sees, by name or `prefix*`. */
+  readonly roleTools?: ReadonlyArray<string>;
 }
 
 export interface McpClientCaller {

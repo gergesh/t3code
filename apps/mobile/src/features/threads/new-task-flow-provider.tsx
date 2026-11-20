@@ -8,6 +8,8 @@ import * as Dialog from "../../components/ui/Dialog";
 import React, { useRef, useState } from "react";
 
 import type {
+  AgentRole,
+  AgentRoleName,
   EnvironmentId,
   ModelSelection,
   ProviderOptionSelection,
@@ -95,6 +97,7 @@ import {
 import { isSameRepository, resolveEnvironmentProjectMatch } from "./new-task-project-selection";
 import { useNewTaskProjectDefaults } from "./use-new-task-project-defaults";
 import { resolveNewThreadRuntimeMode } from "./thread-settings-options";
+import { agentRoleModelOption } from "./thread-settings-sheet-state";
 import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
 import {
   INACTIVE_FLOW_KEY,
@@ -173,6 +176,7 @@ type NewTaskFlowContextValue = {
   readonly availableBranches: ReadonlyArray<VcsRef>;
   readonly currentCheckoutBranchName: string | null;
   readonly runtimeMode: RuntimeMode;
+  readonly role: AgentRoleName | null;
   readonly expandedProvider: string | null;
   readonly environments: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
@@ -227,6 +231,8 @@ type NewTaskFlowContextValue = {
   readonly setSubmitting: (value: boolean) => void;
   readonly loadBranches: () => void;
   readonly setRuntimeMode: (value: RuntimeMode) => void;
+  /** Also picks the role's model when the picker offers it. */
+  readonly setRole: (role: AgentRole | null) => void;
   readonly setSelectedModelOptions: (
     value: ReadonlyArray<ProviderOptionSelection> | undefined,
   ) => void;
@@ -783,6 +789,15 @@ export function NewTaskFlowProvider(
     };
   };
 
+  const setRole = (role: AgentRole | null) => {
+    if (!selectedProjectDraftKey) return;
+    const modelOption = role ? agentRoleModelOption(role, modelOptions) : null;
+    updateComposerDraftSettings(selectedProjectDraftKey, {
+      role: role?.name,
+      ...(modelOption ? { modelSelection: withRememberedModelOptions(modelOption.selection) } : {}),
+    });
+  };
+
   const buildPendingTaskMessage = (
     metadata: TurnCommandMetadata,
     options?: { readonly currentCheckoutBranch?: string | null },
@@ -833,6 +848,7 @@ export function NewTaskFlowProvider(
         projectTitle: selectedProject.title,
         projectCwd: selectedProject.workspaceRoot,
         workspaceMode: mode,
+        ...(draft.role ? { role: draft.role } : {}),
         ...(mode === "worktree" && workspaceSelection?.pullRequestReference
           ? { pullRequestReference: workspaceSelection.pullRequestReference }
           : {}),
@@ -941,6 +957,7 @@ export function NewTaskFlowProvider(
     availableBranches,
     currentCheckoutBranchName,
     runtimeMode,
+    role: selectedProjectDraft.role ?? null,
     expandedProvider,
     environments,
     selectedProject,
@@ -981,6 +998,7 @@ export function NewTaskFlowProvider(
     },
     loadBranches,
     setRuntimeMode,
+    setRole,
     setSelectedModelOptions,
     setExpandedProvider: (value: string | null) => updateFlow({ expandedProvider: value }),
   } satisfies NewTaskFlowContextValue;

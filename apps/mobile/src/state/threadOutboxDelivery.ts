@@ -540,6 +540,7 @@ export const restoreRejectedQueuedMessage = Effect.fn("ThreadOutbox.restoreRejec
           ? { interactionMode: queuedMessage.interactionMode }
           : {}),
         ...(queuedMessage.freshContext ? { freshContext: true } : {}),
+        ...(queuedMessage.creation?.role ? { role: queuedMessage.creation.role } : {}),
         ...(queuedMessage.creation
           ? {
               workspaceSelection: {
@@ -1203,6 +1204,7 @@ export function createThreadOutboxDelivery(): {
         modelSelection: sendSettings.modelSelection,
         runtimeMode: sendSettings.runtimeMode,
         interactionMode: sendSettings.interactionMode,
+        ...(creation.role ? { role: creation.role } : {}),
         workspaceMode: workspace.workspaceMode,
         branch: workspace.branch,
         worktreePath: workspace.worktreePath,

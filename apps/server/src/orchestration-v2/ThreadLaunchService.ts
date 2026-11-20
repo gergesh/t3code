@@ -3,6 +3,7 @@ import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
+  type AgentRoleName,
   CommandId,
   type ChatAttachment,
   type MessageId,
@@ -124,6 +125,7 @@ export interface ThreadLaunchInput {
   readonly linkOrigin?: OrchestrationV2LinkOrigin;
   /** The parent there, when that environment's agent delegated this as a task. */
   readonly delegatedFrom?: OrchestrationV2DelegatedFrom;
+  readonly role?: AgentRoleName;
 }
 
 type PreparationInput = Pick<
@@ -1453,6 +1455,7 @@ const make = Effect.gen(function* () {
                 commandId: input.commandId,
                 threadId: candidateThreadId,
                 expectedEmpty: true,
+                ...(input.role === undefined ? {} : { role: input.role }),
               })
             : threads.dispatch({
                 type: "thread.create",
@@ -1473,6 +1476,7 @@ const make = Effect.gen(function* () {
                 ...(input.delegatedFrom === undefined
                   ? {}
                   : { delegatedFrom: input.delegatedFrom }),
+                ...(input.role === undefined ? {} : { role: input.role }),
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
                 ...(initialMessage === undefined

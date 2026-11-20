@@ -8,6 +8,7 @@ import {
 import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
 import type { ThreadFamilyRead } from "@t3tools/client-runtime/state/threads";
 import {
+  AgentRoleName,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EnvironmentId,
@@ -19,6 +20,7 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
   ThreadId,
+  type AgentRoleName as AgentRoleNameType,
   type ModelSelection as ModelSelectionType,
   type ProjectId as ProjectIdType,
   type ProviderInteractionMode as ProviderInteractionModeType,
@@ -49,6 +51,7 @@ const QueuedThreadCreationSchema = Schema.Struct({
   pullRequestReference: Schema.optional(Schema.String),
   repositories: Schema.optional(Schema.Array(Schema.String)),
   startsFromRepositoryDefaults: Schema.optional(Schema.Boolean),
+  role: Schema.optional(AgentRoleName),
 });
 
 export const QueuedThreadMessageSchema = Schema.Struct({
@@ -87,6 +90,7 @@ export interface QueuedThreadCreation {
   readonly repositories?: ReadonlyArray<string>;
   /** The project folder is no Git repository, so a new worktree needs no base branch. */
   readonly startsFromRepositoryDefaults?: boolean;
+  readonly role?: AgentRoleNameType;
 }
 
 export interface QueuedThreadMessage {

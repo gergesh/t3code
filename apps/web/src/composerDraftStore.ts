@@ -5,6 +5,8 @@ import {
 } from "./components/chat/composerAttachmentFiles";
 import { elementContextToPreviewAnnotation } from "./lib/elementContext";
 import {
+  AgentRoleName,
+  isAgentRoleName,
   ResponseContextRecord,
   ElementContextDetails,
   DEFAULT_MODEL,
@@ -421,6 +423,7 @@ const PersistedDraftThreadState = Schema.Struct({
     Schema.Struct({ url: Schema.String, branch: Schema.String }),
   ),
   worktreeRepositories: Schema.optionalKey(Schema.Array(Schema.String)),
+  role: Schema.optionalKey(AgentRoleName),
   promotedTo: Schema.optionalKey(
     Schema.NullOr(
       Schema.Struct({
@@ -524,6 +527,8 @@ export interface DraftSessionState {
    * until the user chooses, which leaves the choice to the server's default.
    */
   worktreeRepositories?: ReadonlyArray<string>;
+  /** The `.agents/roles` role the thread starts in when this draft is sent. */
+  role?: AgentRoleName;
   promotedTo?: ScopedThreadRef | null;
 }
 
@@ -631,6 +636,7 @@ interface ComposerDraftStoreState {
       loadBalancedEnvironmentId?: EnvironmentId | null;
       checkoutPullRequest?: DraftCheckoutPullRequest | null;
       worktreeRepositories?: ReadonlyArray<string> | null;
+      role?: AgentRoleName | null;
     },
   ) => void;
   clearProjectDraftThreadId: (projectRef: ScopedProjectRef) => void;
@@ -1763,6 +1769,7 @@ function createDraftThreadState(
     options?.checkoutPullRequest,
     projectChanged,
   );
+  const role = projectChanged ? undefined : existingThread?.role;
   return {
     threadId,
     environmentId: projectRef.environmentId,
@@ -1791,6 +1798,7 @@ function createDraftThreadState(
     ...(!projectChanged && existingThread?.worktreeRepositories !== undefined
       ? { worktreeRepositories: existingThread.worktreeRepositories }
       : {}),
+    ...(role ? { role } : {}),
     promotedTo: null,
   };
 }
@@ -1853,6 +1861,7 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
     left.startFromOrigin === right.startFromOrigin &&
     checkoutPullRequestsEqual(left.checkoutPullRequest, right.checkoutPullRequest) &&
     worktreeRepositoriesEqual(left.worktreeRepositories, right.worktreeRepositories) &&
+    left.role === right.role &&
     scopedThreadRefsEqual(left.promotedTo, right.promotedTo)
   );
 }
@@ -2032,6 +2041,10 @@ function normalizePersistedDraftThreads(
                 (path): path is string => typeof path === "string",
               ),
             }
+          : {}),
+        ...(typeof candidateDraftThread.role === "string" &&
+        isAgentRoleName(candidateDraftThread.role)
+          ? { role: candidateDraftThread.role }
           : {}),
         promotedTo,
       };
@@ -2819,6 +2832,7 @@ function toHydratedDraftThreadState(
     ...(persistedDraftThread.worktreeRepositories
       ? { worktreeRepositories: persistedDraftThread.worktreeRepositories }
       : {}),
+    ...(persistedDraftThread.role ? { role: persistedDraftThread.role } : {}),
     promotedTo: persistedDraftThread.promotedTo
       ? scopeThreadRef(
           persistedDraftThread.promotedTo.environmentId as EnvironmentId,
@@ -3089,6 +3103,12 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                   ? undefined
                   : existing.worktreeRepositories
                 : (options.worktreeRepositories ?? undefined);
+            const role =
+              options.role === undefined
+                ? projectChanged
+                  ? undefined
+                  : existing.role
+                : (options.role ?? undefined);
             const nextDraftThread: DraftThreadState = {
               threadId: existing.threadId,
               environmentId: nextProjectRef.environmentId,
@@ -3114,6 +3134,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               startFromOrigin: nextStartFromOrigin,
               ...(checkoutPullRequest ? { checkoutPullRequest } : {}),
               ...(worktreeRepositories ? { worktreeRepositories } : {}),
+              ...(role ? { role } : {}),
               promotedTo: existing.promotedTo ?? null,
             };
             const isUnchanged =
@@ -3137,6 +3158,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 nextDraftThread.worktreeRepositories,
                 existing.worktreeRepositories,
               ) &&
+              nextDraftThread.role === existing.role &&
               scopedThreadRefsEqual(nextDraftThread.promotedTo, existing.promotedTo);
             if (isUnchanged) {
               return state;

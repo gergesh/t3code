@@ -27,6 +27,8 @@ export class McpToolExposure extends Context.Service<
     readonly search: (
       providerSessionId: string,
       query: string,
+      /** Only tools this accepts, such as the ones a thread role leaves visible. */
+      visible?: (tool: string) => boolean,
     ) => Effect.Effect<ReadonlyArray<ListedTool>>;
     readonly isListed: (providerSessionId: string, tool: string) => boolean;
   }
@@ -60,13 +62,13 @@ export const make = (
     }
   };
   return McpToolExposure.of({
-    search: Effect.fn("McpToolExposure.search")(function* (providerSessionId, query) {
+    search: Effect.fn("McpToolExposure.search")(function* (providerSessionId, query, visible) {
       const terms = query
         .toLowerCase()
         .split(/[^a-z0-9_]+/u)
         .filter(Boolean);
       const found = tools()
-        .filter((tool) => tool.name !== TOOL_SEARCH)
+        .filter((tool) => tool.name !== TOOL_SEARCH && (visible?.(tool.name) ?? true))
         .map((tool) => ({ tool, score: score(tool, terms) }))
         .filter((match) => match.score > 0)
         .sort((a, b) => b.score - a.score)

@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { msg } from "gt-react-native";
 import { m } from "../i18n/messages";
 import {
+  AgentRoleName,
   EnvironmentId as EnvironmentIdSchema,
   ModelSelection as ModelSelectionSchema,
   ComposerContextId,
@@ -448,6 +449,8 @@ export interface ComposerDraft {
   readonly modelSelection?: ModelSelection;
   readonly runtimeMode?: RuntimeMode;
   readonly interactionMode?: ProviderInteractionMode;
+  /** The role a new task starts in; only the send that creates the thread reads it. */
+  readonly role?: AgentRoleName;
   /** `/clear` armed this draft: its next message starts a fresh provider session. */
   readonly freshContext?: boolean;
   readonly workspaceSelection?: ComposerDraftWorkspaceSelection;
@@ -491,6 +494,7 @@ export type ComposerDraftSettingsUpdate = Pick<
   | "modelSelection"
   | "runtimeMode"
   | "interactionMode"
+  | "role"
   | "freshContext"
   | "workspaceSelection"
   | "project"
@@ -526,6 +530,7 @@ const ComposerDraftSchema = Schema.Struct({
   modelSelection: Schema.optional(ModelSelectionSchema),
   runtimeMode: Schema.optional(RuntimeModeSchema),
   interactionMode: Schema.optional(ProviderInteractionModeSchema),
+  role: Schema.optional(AgentRoleName),
   freshContext: Schema.optional(Schema.Boolean),
   workspaceSelection: Schema.optional(ComposerDraftWorkspaceSelectionSchema),
   project: Schema.optional(ComposerDraftProjectSchema),
@@ -706,6 +711,7 @@ function isEmptyDraft(draft: ComposerDraft): boolean {
     draft.modelSelection === undefined &&
     draft.runtimeMode === undefined &&
     draft.interactionMode === undefined &&
+    draft.role === undefined &&
     draft.freshContext !== true &&
     draft.workspaceSelection === undefined
   );
@@ -773,6 +779,7 @@ export function decodePersistedComposerState(value: unknown): {
               draft.attachments.length === 0 &&
               draft.runtimeMode === undefined &&
               draft.interactionMode === undefined &&
+              draft.role === undefined &&
               draft.workspaceSelection === undefined
               ? { ...draft, modelSelection: undefined }
               : draft,
@@ -1284,6 +1291,7 @@ export async function removeDeliveredCloudQueuedMessage(
         (editor.runtimeMode !== undefined && editor.runtimeMode !== message.runtimeMode) ||
         (editor.interactionMode !== undefined &&
           editor.interactionMode !== message.interactionMode) ||
+        (editor.role !== undefined && editor.role !== message.creation?.role) ||
         (editor.workspaceSelection !== undefined &&
           (editor.workspaceSelection.mode !== message.creation?.workspaceMode ||
             editor.workspaceSelection.branch !== message.creation?.branch ||
@@ -1892,6 +1900,7 @@ export function sameComposerDraftState(a: ComposerDraft, b: ComposerDraft): bool
     a.modelSelection === b.modelSelection &&
     a.runtimeMode === b.runtimeMode &&
     a.interactionMode === b.interactionMode &&
+    a.role === b.role &&
     a.freshContext === b.freshContext &&
     a.workspaceSelection === b.workspaceSelection
   );
@@ -1922,6 +1931,7 @@ export function undoComposerDraftMergeState(
       | "modelSelection"
       | "runtimeMode"
       | "interactionMode"
+      | "role"
       | "freshContext"
       | "workspaceSelection",
   >(
@@ -1943,6 +1953,7 @@ export function undoComposerDraftMergeState(
     modelSelection: undoSetting("modelSelection"),
     runtimeMode: undoSetting("runtimeMode"),
     interactionMode: undoSetting("interactionMode"),
+    role: undoSetting("role"),
     freshContext: undoSetting("freshContext"),
     workspaceSelection: undoSetting("workspaceSelection"),
   };

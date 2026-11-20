@@ -41,6 +41,7 @@ import {
 } from "./Adapters/ClaudeAdapterV2.ts";
 import { withTurnStartReservation, withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as AgentRoles from "../project/AgentRoles.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -67,6 +68,12 @@ import {
   withInlineContext,
 } from "./ContextHandoffDelivery.ts";
 import { isProviderCommand, outputInstructions } from "./runOutput.ts";
+import {
+  compactionRunOrdinals,
+  latestRoleNote,
+  ROLE_NOTE_OFF,
+  roleNoteToSend,
+} from "./agentRoleNote.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -281,6 +288,7 @@ export const layer: Layer.Layer<
   | ServerSettings.ServerSettingsService
   | GitWorkflowService.GitWorkflowService
   | ProjectService.ProjectService
+  | AgentRoles.AgentRoles
   | ProviderAuthService.ProviderAuthService
   | ProjectionStore.ProjectionStoreV2
   | ProviderSessionManager.ProviderSessionManagerV2
@@ -298,6 +306,7 @@ export const layer: Layer.Layer<
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const projects = yield* ProjectService.ProjectService;
+    const agentRoles = yield* AgentRoles.AgentRoles;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -895,7 +904,16 @@ export const layer: Layer.Layer<
         });
         return;
       }
-      const resolvedRuntimePolicy = resolvedPolicy.success;
+      const roleName = projection.thread.role ?? undefined;
+      const role =
+        roleName === undefined || resolvedPolicy.success.cwd === null
+          ? undefined
+          : yield* agentRoles.get(resolvedPolicy.success.cwd, roleName);
+      const resolvedRuntimePolicy = {
+        ...resolvedPolicy.success,
+        ...(role?.skills === undefined ? {} : { roleSkills: role.skills }),
+        ...(role?.tools === undefined ? {} : { roleTools: role.tools }),
+      };
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,
@@ -1952,11 +1970,52 @@ export const layer: Layer.Layer<
         status: "running",
         startedAt: run.startedAt ?? now,
       };
+      const roleBrief =
+        roleName === undefined ? undefined : AgentRoles.agentRoleBrief({ name: roleName, role });
+      const latestRole = latestRoleNote({
+        nativeThreadId: runningProviderThread.nativeThreadRef?.nativeId ?? undefined,
+        runs: projection.runs,
+        attempts: projection.attempts,
+        providerTurns: projection.providerTurns,
+      });
+      const roleCompactionRunIds =
+        latestRole !== undefined && latestRole.note !== ROLE_NOTE_OFF
+          ? yield* projectionStore
+              .getThreadRecords(projection.thread.id, ["turnItems"], {
+                turnItemTypes: ["compaction"],
+              })
+              .pipe(
+                Effect.map(({ turnItems }) => turnItems.map((item) => item.runId)),
+                // Resending the brief is the safe side of an unreadable history.
+                Effect.orElseSucceed(() => [run.id]),
+              )
+          : [];
+      // A goal command reaches the provider without inline context.
+      const roleNote = goalCommand
+        ? undefined
+        : roleNoteToSend({
+            desired:
+              roleName === undefined || roleBrief === undefined
+                ? undefined
+                : `${roleName}:${AgentRoles.agentRoleBriefDigest(roleBrief)}`,
+            latest: latestRole,
+            compactionRunOrdinals: compactionRunOrdinals(
+              [...projection.runs, run],
+              roleCompactionRunIds,
+            ),
+          });
+      const roleNoteText =
+        roleNote === undefined
+          ? ""
+          : roleNote === ROLE_NOTE_OFF
+            ? AgentRoles.AGENT_ROLE_ENDED_NOTE
+            : (roleBrief ?? "");
       const runningAttempt: OrchestrationV2RunAttempt = {
         ...attempt,
         ...(runningProviderThread.nativeThreadRef?.nativeId == null
           ? {}
           : { nativeThreadId: runningProviderThread.nativeThreadRef.nativeId }),
+        ...(roleNote === undefined ? {} : { roleNote }),
         status: "running",
         startedAt: now,
       };
@@ -2135,7 +2194,7 @@ export const layer: Layer.Layer<
             ),
             ...(sideChatContext === "" || sideChatHandoff === undefined ? [] : [sideChatHandoff]),
           ];
-          const context = [delivery.context, sideChatContext, restartNote]
+          const context = [delivery.context, sideChatContext, roleNoteText, restartNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
@@ -2238,9 +2297,10 @@ export const layer: Layer.Layer<
               }),
         ),
       );
-      const deliverySession = carriesPendingContext
-        ? makeDeliverySession(session, startWithHandoffs)
-        : session;
+      const deliverySession =
+        carriesPendingContext || roleNote !== undefined
+          ? makeDeliverySession(session, startWithHandoffs)
+          : session;
       return runExecution.startRootRun({
         commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
         appThread: projection.thread,

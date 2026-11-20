@@ -137,15 +137,20 @@ export const OrchestratorMcpInteractionMode = Schema.Union([
 ]);
 export type OrchestratorMcpInteractionMode = typeof OrchestratorMcpInteractionMode.Type;
 
-export const OrchestratorMcpTaskRole = Schema.Literals([
+/** Kinds of work a task can name without the project defining a role for them. */
+export const ORCHESTRATOR_MCP_TASK_KINDS = [
   "implementation",
   "research",
   "review",
   "design",
   "test",
   "general",
-]);
-export type OrchestratorMcpTaskRole = typeof OrchestratorMcpTaskRole.Type;
+] as const;
+
+export const OrchestratorMcpTaskRole = TrimmedNonEmptyString.annotate({
+  description:
+    "A project role from `orchestrator_capabilities` `roles`: the child follows its brief and defaults to its provider, model and runtime mode.",
+});
 
 export const OrchestratorMcpDelegatedTaskStatus = Schema.Literals([
   "queued",
@@ -707,6 +712,18 @@ export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
   inheritedOptions: Schema.optional(Schema.Array(ProviderOptionSelection)),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
+  /** This thread's own role, when it has one. */
+  role: Schema.optional(Schema.String),
+  /** Project roles this thread may pass to `delegate_task` `role`. */
+  roles: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.String,
+        title: Schema.optional(Schema.String),
+        description: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
   providers: Schema.Array(OrchestratorMcpProviderCapability),
   features: Schema.Struct({
     appOwnedSubagents: Schema.Boolean,

@@ -221,6 +221,7 @@ import * as WorkspaceFolders from "./workspace/WorkspaceFolders.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
+import * as AgentRoles from "./project/AgentRoles.ts";
 import { readWorkflowScript } from "./orchestration-v2/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
@@ -1579,6 +1580,7 @@ export const layerWsRpc = (
       const workspaceFolders = yield* WorkspaceFolders.WorkspaceFolders;
       const taskFolders = yield* TaskFolders.TaskFolders;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+      const agentRoles = yield* AgentRoles.AgentRoles;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
       const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
@@ -2233,6 +2235,7 @@ export const layerWsRpc = (
                           modelSelection: input.modelSelection,
                           runtimeMode: input.runtimeMode,
                           interactionMode: input.interactionMode,
+                          ...(input.role === undefined ? {} : { role: input.role }),
                           workspaceStrategy: input.workspaceStrategy,
                           ...(input.initialMessage === undefined
                             ? {}
@@ -3057,6 +3060,7 @@ export const layerWsRpc = (
                 }),
             ),
           ),
+        [WS_METHODS.projectsListAgentRoles]: (input) => agentRoles.list(input.cwd),
         [WS_METHODS.projectsReadFile]: (input) =>
           workspaceFileSystem.readFile(input).pipe(
             Effect.mapError(

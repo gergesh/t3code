@@ -142,6 +142,7 @@ import * as TaskFolders from "./workspace/TaskFolders.ts";
 import * as TaskFolderStore from "./workspace/TaskFolderStore.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
+import * as AgentRoles from "./project/AgentRoles.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsAutomaticFetchInterval from "./vcs/VcsAutomaticFetchInterval.ts";
@@ -564,6 +565,7 @@ const layerWorkspaceFileSystem = WorkspaceFileSystem.layer.pipe(
 
 const layerWorkspace = Layer.mergeAll(
   WorkspacePaths.layer,
+  AgentRoles.layer,
   layerWorkspaceEntries,
   layerWorkspaceFileSystem,
   WorkspaceFolders.layer.pipe(

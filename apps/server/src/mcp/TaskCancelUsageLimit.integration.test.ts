@@ -44,6 +44,7 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
+import * as AgentRolesTestkit from "../project/AgentRoles.testkit.ts";
 
 const driver = ProviderDriverKind.make("claudeAgent");
 const instanceId = ProviderInstanceId.make("claudeAgent");
@@ -174,6 +175,7 @@ it.effect.each([
       const layerTest = Layer.merge(
         OrchestratorMcpService.layer.pipe(
           Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
+          Layer.provide(AgentRolesTestkit.layerNone),
           Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
         ),
         layerRecovery,

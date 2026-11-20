@@ -21,6 +21,7 @@ import { outputRequestProblem } from "../../../orchestration-v2/runOutput.ts";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
+import * as AgentRoles from "../../../project/AgentRoles.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import { mutateProjectWithClone } from "../../../project/ProjectMutation.ts";
@@ -309,6 +310,40 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
               );
         if (project !== undefined && input.workspaceStrategy?.type === "existing_worktree")
           yield* assertProjectWorktree(project.workspaceRoot, input.workspaceStrategy.worktreePath);
+        const launchRole =
+          input.role === undefined || project === undefined
+            ? undefined
+            : yield* Effect.gen(function* () {
+                const { roles } = yield* (yield* AgentRoles.AgentRoles).list(project.workspaceRoot);
+                const resolved = AgentRoles.resolveRequestedRole({
+                  roles,
+                  callerRole: caller?.role,
+                  requested: input.role!,
+                });
+                return "role" in resolved
+                  ? resolved.role
+                  : yield* new OrchestratorMcpFailure({
+                      code: "invalid_request",
+                      message: resolved.problem,
+                    });
+              });
+        const roleModelSelection =
+          launchRole?.model === undefined || input.modelSelection !== undefined || replaying
+            ? undefined
+            : yield* Effect.gen(function* () {
+                const providers = yield* (yield* ProviderRegistry.ProviderRegistry).getProviders;
+                const instanceId =
+                  launchRole.provider === undefined
+                    ? caller?.modelSelection.instanceId
+                    : providers.find(
+                        (provider) =>
+                          provider.instanceId === launchRole.provider ||
+                          provider.driver === launchRole.provider,
+                      )?.instanceId;
+                return instanceId === undefined
+                  ? undefined
+                  : { instanceId, model: launchRole.model! };
+              });
         if (!replaying && input.modelSelection !== undefined) {
           const { instanceId, model } = input.modelSelection;
           const registry = yield* ProviderRegistry.ProviderRegistry;
@@ -397,6 +432,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         const modelSelection =
           input.modelSelection ??
           launchedModel ??
+          roleModelSelection ??
           caller?.modelSelection ??
           (projectDefaults
             ? resolveNewThreadModelSelection({
@@ -417,9 +453,11 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             message:
               "Pass modelSelection: the project has no default model. orchestrator_capabilities lists providers and models.",
           });
+        const defaultRuntimeMode =
+          launchRole?.runtimeMode ?? projectDefaults?.defaultRuntimeMode ?? undefined;
         let startedRuntimeMode =
-          projectDefaults !== undefined && input.runtimeMode === undefined
-            ? yield* resolveRuntimeMode(runtimeMode, projectDefaults.defaultRuntimeMode).pipe(
+          defaultRuntimeMode !== undefined && input.runtimeMode === undefined
+            ? yield* resolveRuntimeMode(runtimeMode, defaultRuntimeMode).pipe(
                 Effect.orElseSucceed(() => runtimeMode),
               )
             : runtimeMode;
@@ -442,6 +480,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           modelSelection,
           runtimeMode: startedRuntimeMode,
           interactionMode,
+          ...(launchRole === undefined ? {} : { role: launchRole.name }),
           workspaceStrategy: strategy ?? { type: "root" },
           ...(input.message === undefined && attachments.length === 0
             ? {}

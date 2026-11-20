@@ -2727,6 +2727,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onModelPickerOpenChange={setIsComposerModelPickerOpen}
       modelPickerIconClassName={composerProviderState.modelPickerIconClassName}
       getModelDisabledReason={getModelDisabledReason}
+      serverThreadRole={activeThread?.source.role ?? null}
+      canChangeRole={canOperateThread}
     />
   );
   // An open question owns the space above the composer. Only a machine problem,

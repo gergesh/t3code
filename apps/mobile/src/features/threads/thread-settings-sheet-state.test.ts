@@ -12,6 +12,7 @@ import {
   withRememberedModelOptions,
 } from "../../state/use-model-option-memory";
 import {
+  agentRoleModelOption,
   canCommitPendingModel,
   pendingModelAfterPress,
   visibleCatalogModels,
@@ -180,5 +181,41 @@ describe("thread settings sheet state", () => {
     expect(visible("")).toEqual(["gpt-next"]);
     expect(visible("   ")).toEqual(["gpt-next"]);
     expect(visible("Claude Opus 4.8")).toEqual(["Claude Opus 4.8"]);
+  });
+});
+
+describe("agentRoleModelOption", () => {
+  const instance = (model: string, instanceId: string, driver: string): ModelOption => ({
+    ...modelOption(model),
+    key: `${instanceId}:${model}`,
+    providerKey: instanceId,
+    providerDriver: driver,
+    selection: { instanceId: ProviderInstanceId.make(instanceId), model },
+  });
+  const work = instance("gpt-5.6-sol", "codex-work", "codex");
+  const personal = instance("gpt-5.6-sol", "codex", "codex");
+  const claude = instance("claude-opus-5-5", "claude", "claudeAgent");
+
+  it("matches the instance id before the driver kind", () => {
+    const options = [work, personal, claude];
+    expect(agentRoleModelOption({ model: "gpt-5.6-sol", provider: "codex" }, options)).toBe(
+      personal,
+    );
+    expect(agentRoleModelOption({ model: "gpt-5.6-sol", provider: "codex-work" }, options)).toBe(
+      work,
+    );
+    expect(agentRoleModelOption({ model: "gpt-5.6-sol", provider: "codex" }, [work])).toBe(work);
+    expect(agentRoleModelOption({ model: "gpt-5.6-sol" }, options)).toBe(work);
+  });
+
+  it("finds nothing for a missing, unavailable or mismatched model", () => {
+    expect(agentRoleModelOption({}, [claude])).toBeNull();
+    expect(agentRoleModelOption({ model: "unknown" }, [claude])).toBeNull();
+    expect(
+      agentRoleModelOption({ model: "gpt-5.6-sol", provider: "claude" }, [work, claude]),
+    ).toBeNull();
+    expect(
+      agentRoleModelOption({ model: "claude-opus-5-5" }, [{ ...claude, isUnavailable: true }]),
+    ).toBeNull();
   });
 });
