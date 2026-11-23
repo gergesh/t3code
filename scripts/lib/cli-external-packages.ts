@@ -65,7 +65,8 @@ export function isExternalCliDependency(id: string): boolean {
   return isRuntimeExternalCliDependency(id);
 }
 
-// The standalone executable leaves `t3 tui` out, so OpenTUI's own dependencies bundle there.
+// The executable imports only built-ins, so OpenTUI's dependencies the server uses bundle there.
+// OpenTUI itself loads from disk at runtime (apps/server/src/cli/opentuiStandalone.ts).
 export function isExternalCliExecutableDependency(id: string): boolean {
   return (
     isRuntimeExternalCliDependency(id) &&

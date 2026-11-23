@@ -142,7 +142,7 @@ export default mergeConfig(
       alias: {
         "jsonc-parser": "jsonc-parser/lib/esm/main.js",
         ...(packExecutable
-          ? { "@t3tools/tui": NodePath.join(import.meta.dirname, "src/cli/tuiStandalone.ts") }
+          ? { "@opentui/core": NodePath.join(import.meta.dirname, "src/cli/opentuiStandalone.ts") }
           : {}),
       },
       deps: {
